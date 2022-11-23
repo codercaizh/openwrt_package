@@ -25,7 +25,7 @@ jobs:
           path: openwrt
           repository: coolsnowwolf/lede
 
-       - name: Initialization environment
+      - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
