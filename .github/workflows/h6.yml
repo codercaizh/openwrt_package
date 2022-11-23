@@ -14,6 +14,11 @@ jobs:
     name: Build H6 Openwrt
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout package script
+        uses: actions/checkout@v2
+        with:
+          path: package_scirpt
+    
       - name: Checkout openwrt
         uses: actions/checkout@v2
         with:
@@ -39,7 +44,7 @@ jobs:
 
       - name: Copy config
         run: |
-          cp h6.config openwrt/.config
+          cp package_scirpt/h6.config openwrt/.config
         working-directory: ./
 
       - name: Download lib
