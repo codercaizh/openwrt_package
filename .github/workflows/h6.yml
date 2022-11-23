@@ -49,7 +49,7 @@ jobs:
 
       - name: Download lib
         run: |
-           sudo make download -j8
+           sudo make download -j`nproc`
         working-directory: openwrt
       
       - name: Build openwrt
