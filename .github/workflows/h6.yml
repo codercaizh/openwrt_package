@@ -13,11 +13,6 @@ jobs:
   build:
     name: Build H6 Openwrt
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: openwrt
-
     steps:
       - name: Checkout openwrt
         uses: actions/checkout@v2
