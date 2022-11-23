@@ -54,7 +54,7 @@ jobs:
         working-directory: openwrt
       
       - name: Build openwrt
-        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j`nproc`
+        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j1
         env:
           FORCE_UNSAFE_CONFIGURE: 1
         working-directory: openwrt
