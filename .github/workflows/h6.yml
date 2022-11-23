@@ -14,8 +14,61 @@ jobs:
     name: Build H6 Openwrt
     runs-on: ubuntu-latest
     steps:
-      - name: Update system
+      - name: Checkout package script
+        uses: actions/checkout@v2
+        with:
+          path: package_scirpt
+    
+      - name: Checkout openwrt
+        uses: actions/checkout@v2
+        with:
+          path: openwrt
+          repository: coolsnowwolf/lede
+
+       - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          echo $FORCE_UNSAFE_CONFIGURE
-        env: 
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: Update & Install feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+        working-directory: openwrt
+
+      - name: Copy config
+        run: cp package_scirpt/h6.config openwrt/.config
+        working-directory: ./
+
+      - name: Download lib
+        run: |
+          make defconfig
+          sudo make download -j`nproc`
+        working-directory: openwrt
+      
+      - name: Build openwrt
+        run: sudo make V=s -j`nproc`
+        env:
           FORCE_UNSAFE_CONFIGURE: 1
+        working-directory: openwrt
+
+      - name: Package Armvirt as OpenWrt
+        uses: unifreq/openwrt_packit@master
+        env:
+          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
+          PACKAGE_SOC: s905d_vplus
+          KERNEL_VERSION_NAME: 6.0.1
+          WHOAMI: 菜头君
+
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          path: ${{ env.PACKAGED_OUTPUTPATH }}/*
