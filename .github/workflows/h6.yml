@@ -49,10 +49,23 @@ jobs:
 
       - name: Download lib
         run: |
-           make download -j$(nproc)
+           sudo make download -j$(nproc)
         working-directory: openwrt
       
+      - name: Build openwrt
+        run: |
+           sudo make V=s -j$(nproc)
+        working-directory: openwrt
+
+      - name: Package Armvirt as OpenWrt
+        uses: unifreq/openwrt_packit@master
+        env:
+          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
+          PACKAGE_SOC: s905d_vplus
+          KERNEL_VERSION_NAME: 6.0.1
+          WHOAMI: 菜头君
+
       - name: Upload built artifacts
         uses: actions/upload-artifact@v2
         with:
-          path: openwrt/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz
+          path: ${{ env.PACKAGED_OUTPUTPATH }}/*
