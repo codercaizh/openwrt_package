@@ -49,12 +49,12 @@ jobs:
 
       - name: Download lib
         run: |
-           sudo make download -j$(nproc)
+           sudo make download -j1
         working-directory: openwrt
       
       - name: Build openwrt
         run: |
-           sudo make V=s -j$(nproc)
+           sudo make V=s -j1
         working-directory: openwrt
 
       - name: Package Armvirt as OpenWrt
