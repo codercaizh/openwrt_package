@@ -43,20 +43,19 @@ jobs:
         working-directory: openwrt
 
       - name: Copy config
-        run: |
-          cp package_scirpt/h6.config openwrt/.config
+        run: cp package_scirpt/h6.config openwrt/.config
         working-directory: ./
 
       - name: Download lib
-        run: |
-           sudo make download -j`nproc`
+        run: sudo make download -j`nproc`
         working-directory: openwrt
       
       - name: Build openwrt
-        run: |
-           export FORCE_UNSAFE_CONFIGURE=1
-           sudo make V=s -j`nproc`
+        run: sudo make V=s -j1
+        env:
+          FORCE_UNSAFE_CONFIGURE: 1
         working-directory: openwrt
+
 
       - name: Package Armvirt as OpenWrt
         uses: unifreq/openwrt_packit@master
