@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     name: Build H6 Openwrt
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout package script
         uses: actions/checkout@v2
