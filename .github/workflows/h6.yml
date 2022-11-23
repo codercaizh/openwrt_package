@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Update system
         run: |
-          export test=123
-          echo $test
-          echo $test2
+          echo $FORCE_UNSAFE_CONFIGURE
         env: 
-          test2: 666
+          FORCE_UNSAFE_CONFIGURE: 1
