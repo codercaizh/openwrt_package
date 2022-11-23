@@ -14,58 +14,10 @@ jobs:
     name: Build H6 Openwrt
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout package script
-        uses: actions/checkout@v2
-        with:
-          path: package_scirpt
-    
-      - name: Checkout openwrt
-        uses: actions/checkout@v2
-        with:
-          path: openwrt
-          repository: coolsnowwolf/lede
-
       - name: Update system
         run: |
-          sudo apt update -y
-          sudo apt full-upgrade -y
-          sudo apt install -y ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
-          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
-          mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils \
-          rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-
-      - name: Update & Install feeds
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-        working-directory: openwrt
-
-      - name: Copy config
-        run: cp package_scirpt/h6.config openwrt/.config
-        working-directory: ./
-
-      - name: Download lib
-        run: sudo make download -j`nproc`
-        working-directory: openwrt
-      
-      - name: Build openwrt
-        run: sudo make V=s -j`nproc`
-        env:
-          FORCE_UNSAFE_CONFIGURE: 1
-        working-directory: openwrt
-
-
-      - name: Package Armvirt as OpenWrt
-        uses: unifreq/openwrt_packit@master
-        env:
-          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
-          PACKAGE_SOC: s905d_vplus
-          KERNEL_VERSION_NAME: 6.0.1
-          WHOAMI: 菜头君
-
-      - name: Upload built artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          path: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          export test=123
+          echo $test
+          echo $test2
+        env: 
+          test2: 666
