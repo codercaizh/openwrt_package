@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build Openwrt
+    name: Openwrt Build With Common Config
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout package script
@@ -48,9 +48,7 @@ jobs:
         working-directory: ./
 
       - name: Download lib
-        run: |
-          sudo make defconfig
-          sudo make download -j`nproc`
+        run: sudo make download -j`nproc`
         working-directory: openwrt
       
       - name: Build openwrt
