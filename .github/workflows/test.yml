@@ -1,0 +1,18 @@
+---
+name: Openwrt Build Simulation
+on:
+  workflow_dispatch: 
+jobs:
+  build:
+    name: Test
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout package script
+        uses: actions/checkout@v2
+        with:
+          path: package_scirpt
+      - name: Build openwrt
+        run:  echo 'skip build openwrt' #sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j`nproc`
+        working-directory: openwrt
+        env:
+          NOW: $(TZ=':Asia/Shanghai' date '+%y.%m.%d')"
