@@ -1,14 +1,44 @@
 ---
-name: Openwrt Build With Common Config
+name: Openwrt Build
 
 on:
-  push:
-    branches:
-      - master
+  workflow_dispatch: 
+    inputs:
+      target:
+        description: '目标盒子'
+        required: true
+        default: 'vplus' 
+        type: choice
+        options:
+        - vplus
+        - beikeyun
+        - l1pro 
+        - rock5b
+        - h88k
+        - r66s 
+        - r68s
+        - h68k
+        - e25 
+        - s905
+        - s905d
+        - s905x2 
+        - s905x3
+        - s912
+        - s922x 
+        - s922x-n2 
+        - qemu 
+      config:
+        description: '插件配置'
+        required: true
+        default: 'common' 
+        type: choice
+        options:
+        - common
+        - simple
 
 jobs:
   build:
-    name: Openwrt Build With Common Config
+    name: Openwrt Build For ${{ inputs.target }}
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout package script
@@ -44,7 +74,7 @@ jobs:
         working-directory: openwrt
 
       - name: Copy config
-        run: cp package_scirpt/common.config openwrt/.config
+        run: cp package_scirpt/${{ inputs.config }}.config openwrt/.config
         working-directory: ./
 
       - name: Download lib
@@ -59,7 +89,7 @@ jobs:
         uses: unifreq/openwrt_packit@master
         env:
           OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
-          PACKAGE_SOC: s905d_vplus_s912
+          PACKAGE_SOC: ${{ inputs.target }}
           KERNEL_VERSION_NAME: 6.0.1
           WHOAMI: 菜头君
           SW_FLOWOFFLOAD: 0
