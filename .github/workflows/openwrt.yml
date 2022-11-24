@@ -1,17 +1,14 @@
 ---
 name: Openwrt Build
 
-# yamllint disable-line rule:truthy
 on:
   push:
     branches:
       - master
 
-  workflow_dispatch:
-
 jobs:
   build:
-    name: Build H6 Openwrt
+    name: Build Openwrt
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout package script
@@ -36,9 +33,10 @@ jobs:
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           
-
       - name: Update & Install feeds
         run: |
+          cp ../package_scirpt/scripts/* ./
+          ./update_feeds.sh
           ./scripts/feeds update -a
           ./scripts/feeds install -a
         working-directory: openwrt
@@ -54,20 +52,23 @@ jobs:
         working-directory: openwrt
       
       - name: Build openwrt
-        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j1
-        env:
-          FORCE_UNSAFE_CONFIGURE: 1
+        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j`nproc`
         working-directory: openwrt
 
       - name: Package Armvirt as OpenWrt
         uses: unifreq/openwrt_packit@master
         env:
           OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
-          PACKAGE_SOC: s905d_vplus
+          PACKAGE_SOC: s905d_vplus_s912
           KERNEL_VERSION_NAME: 6.0.1
           WHOAMI: 菜头君
+          SW_FLOWOFFLOAD: 0
+          SFE_FLOW: 0
+          ENABLE_WIFI_K504: 0
+          ENABLE_WIFI_K510: 0
 
       - name: Upload built artifacts
         uses: actions/upload-artifact@v2
         with:
+          name: imgs.zip
           path: ${{ env.PACKAGED_OUTPUTPATH }}/*
