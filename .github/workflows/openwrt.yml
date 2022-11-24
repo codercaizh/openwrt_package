@@ -48,7 +48,7 @@ jobs:
 
       - name: Download lib
         run: |
-          make defconfig
+          sudo make defconfig
           sudo make download -j`nproc`
         working-directory: openwrt
       
