@@ -1,0 +1,75 @@
+---
+name: Openwrt Build
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    name: Build Openwrt
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout package script
+        uses: actions/checkout@v2
+        with:
+          path: package_scirpt
+    
+      - name: Checkout openwrt
+        uses: actions/checkout@v2
+        with:
+          path: openwrt
+          repository: coolsnowwolf/lede
+
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo chown -R $USER openwrt
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          
+      - name: Update & Install feeds
+        run: |
+          sudo chmod +x ../package_scirpt/scripts/*.sh
+          cp ../package_scirpt/scripts/*.sh ./
+          sudo ./update_feeds.sh
+          sudo ./scripts/feeds update -a
+          sudo ./scripts/feeds install -a
+        working-directory: openwrt
+
+      - name: Copy config
+        run: cp package_scirpt/common.config openwrt/.config
+        working-directory: ./
+
+      - name: Download lib
+        run: |
+          sudo make defconfig
+          sudo make download -j`nproc`
+        working-directory: openwrt
+      
+      - name: Build openwrt
+        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j`nproc`
+        working-directory: openwrt
+
+      - name: Package Armvirt as OpenWrt
+        uses: unifreq/openwrt_packit@master
+        env:
+          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
+          PACKAGE_SOC: s905d_vplus_s912
+          KERNEL_VERSION_NAME: 6.0.1
+          WHOAMI: 菜头君
+          SW_FLOWOFFLOAD: 0
+          SFE_FLOW: 0
+          ENABLE_WIFI_K504: 0
+          ENABLE_WIFI_K510: 0
+
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: imgs.zip
+          path: ${{ env.PACKAGED_OUTPUTPATH }}/*
