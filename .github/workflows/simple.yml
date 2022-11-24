@@ -1,11 +1,6 @@
 ---
 name: Openwrt Build With Simple Config
 
-on:
-  push:
-    branches:
-      - master
-
 jobs:
   build:
     name: Openwrt Build With Simple Config
