@@ -7,9 +7,10 @@ on:
       target:
         description: '目标盒子'
         required: true
-        default: 'vplus' 
+        default: 'all' 
         type: choice
         options:
+        - all
         - vplus
         - beikeyun
         - l1pro 
