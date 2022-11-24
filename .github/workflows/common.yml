@@ -44,7 +44,7 @@ jobs:
         working-directory: openwrt
 
       - name: Copy config
-        run: cp package_scirpt/simple.config openwrt/.config
+        run: cp package_scirpt/common.config openwrt/.config
         working-directory: ./
 
       - name: Download lib
