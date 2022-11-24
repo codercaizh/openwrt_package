@@ -42,12 +42,12 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout package script
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.5.0
         with:
           path: package_scirpt
     
       - name: Checkout openwrt
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.5.0
         with:
           path: openwrt
           repository: coolsnowwolf/lede
@@ -98,7 +98,8 @@ jobs:
           ENABLE_WIFI_K510: 0
 
       - name: Upload built artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3.1.1
         with:
           name: imgs.zip
           path: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          retention-days: 2
