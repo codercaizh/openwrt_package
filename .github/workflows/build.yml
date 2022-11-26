@@ -68,13 +68,11 @@ jobs:
       - name: Update & Install feeds
         run: |
           sudo chmod +x ../package_scirpt/scripts/*.sh
-          cp ../package_scirpt/scripts/update_feeds.sh ./
-          cp ../package_scirpt/scripts/add_package.sh ./package/
-          sudo ./update_feeds.sh
+          cp ../package_scirpt/scripts/*.sh ./
+          sudo ./before_update_feeds.sh
           sudo ./scripts/feeds update -a
           sudo ./scripts/feeds install -a
-          cd ./package
-          sudo ./add_package.sh
+          sudo ./after_update_feeds.sh
         working-directory: openwrt
 
       - name: Copy config
