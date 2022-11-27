@@ -27,7 +27,8 @@ on:
         - s912
         - s922x 
         - s922x-n2 
-        - qemu 
+        - qemu
+        - vplus_s912
       config:
         description: '插件配置'
         required: true
@@ -80,11 +81,11 @@ jobs:
         working-directory: ./
 
       - name: Download lib
-        run: sudo make download -j`nproc`
+        run: sudo make download -j$((`nproc` + 2))
         working-directory: openwrt
       
       - name: Build openwrt
-        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j`nproc`
+        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j$((`nproc` + 2))
         working-directory: openwrt
 
       - name: Package Armvirt as OpenWrt
@@ -103,6 +104,6 @@ jobs:
       - name: Upload built artifacts
         uses: actions/upload-artifact@v3.1.1
         with:
-          name: imgs.zip
+          name: ${{ env.NOW }}_${{ inputs.target }}.zip
           path: ${{ env.PACKAGED_OUTPUTPATH }}/*
           retention-days: 2
