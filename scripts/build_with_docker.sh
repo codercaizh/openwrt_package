@@ -23,9 +23,9 @@ cp $SCRIPT_DIR/*.sh ./
 ./after_update_feeds.sh
 echo 'feed更新完毕'
 make defconfig
-make download -j1
+make download -j1 || make download -j1 || make download -j1
 echo '编译依赖下载完毕'
-make V=s -j1
+make V=s -j1 || make V=s -j1 || make V=s -j1
 echo '底包编译完毕'
 ####打包部分####
 if [ ! -d "$PACKIT_DIR/.git" ]; then
