@@ -107,5 +107,7 @@ case $DEVICE in
     diy)      [[ -f "${SCRIPT_DIY}" ]] && ./${SCRIPT_DIY} ;;
     *)        echo -e "找不到合适的打包脚本" && continue ;;
 esac
+mkdir $ARTIFACT_DIR/ipks
 mv $PACKIT_DIR/output/* $ARTIFACT_DIR/
+mv $OPENWRT_DIR/bin/targets/armvirt/64/packages/* $ARTIFACT_DIR/ipks
 echo '打包完毕，固件已输出到：./openwrt_build_tmp/artifact/'`ls -l $ARTIFACT_DIR | awk '{print $9}' | head -1`
