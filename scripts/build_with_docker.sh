@@ -18,5 +18,5 @@ cp $SCRIPT_DIR/*.sh ./
 ./scripts/feeds install -a
 ./after_update_feeds.sh
 make defconfig
-make download -j$((`nproc` + 1))
-make V=s -j$((`nproc` + 1))
+make download -j$((`nproc` + 1)) || make download -j1
+make V=s -j$((`nproc` + 1)) || make download -j1
