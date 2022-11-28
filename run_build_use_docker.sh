@@ -10,7 +10,7 @@ mkdir -p $BUILD_DIR
 docker rm -f $IMAGE_NAME
 [ `docker image ls $IMAGE_NAME | wc -l` -eq 2 ] || docker build . --tag=$IMAGE_NAME
 [ -d "$BUILD_DIR" ] || mkdir -p $BUILD_DIR
-cp $CONFIG.config $BUILD_DIR/.config
+cp $CONFIG.config $BUILD_DIR/openwrt/.config
 docker run -d \
 -v $BUILD_DIR/openwrt:/opt/openwrt \
 -v $BUILD_DIR/packit:/opt/openwrt_packit \
