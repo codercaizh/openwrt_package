@@ -15,4 +15,3 @@ ENV ENABLE_WIFI_K504=0
 ENV ENABLE_WIFI_K510=0
 COPY ./scripts /opt/scripts
 ENTRYPOINT ["/bin/bash", "/opt/scripts/build_with_docker.sh"]
-CMD ["vplus"]

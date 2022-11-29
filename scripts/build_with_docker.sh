@@ -22,9 +22,15 @@ cp $SCRIPT_DIR/*.sh ./
 ./scripts/feeds install -a
 ./after_update_feeds.sh
 echo 'feed更新完毕'
+if test -z "$DEVICE";then
+    make menuconfig
+    exit 0
+fi
 make defconfig
+echo '开始下载依赖'
 make download -j1 || make download -j1 || make download -j1
 echo '编译依赖下载完毕'
+echo '开始编译底包'
 make V=s -j1 || make V=s -j1 || make V=s -j1
 echo '底包编译完毕'
 ####打包部分####
