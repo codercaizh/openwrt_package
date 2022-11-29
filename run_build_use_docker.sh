@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 usage() {
-  echo "Complier Usage: ${0} [-c|--configName] [-d|--device] [-f|--force]" 1>&2
+  echo "Complier Usage: ${0} [-c|--configName] [-d|--device]" 1>&2
   echo "Make menuconfig Usage: menuconfig" 1>&2
   exit 1 
 }

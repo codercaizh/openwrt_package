@@ -6,6 +6,7 @@ PACKIT_DIR=/opt/openwrt_packit
 ARTIFACT_DIR=/opt/artifact
 #从外部传入的参数
 DEVICE=$1
+echo '开始编译固件：'$DEVICE
 if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo '未找到openwrt源码，正在检出源码'
     git clone https://github.com/coolsnowwolf/lede.git /opt/openwrt_tmp
