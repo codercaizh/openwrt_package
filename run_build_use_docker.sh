@@ -39,15 +39,14 @@ fi
 IMAGE_NAME=openwrt_build
 BUILD_DIR=$PWD/openwrt_build_tmp
 mkdir -p $BUILD_DIR
-docker rm -f $IMAGE_NAME
+[ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
 if test -z "$FORCE";then
    [ `docker image ls $IMAGE_NAME | wc -l` -eq 2 ] || docker build . --tag=$IMAGE_NAME
 else
    docker build . --tag=$IMAGE_NAME
-    
 fi
-[ -d "$BUILD_DIR" ] || mkdir -p $BUILD_DIR
- cp $CONFIG.config $BUILD_DIR/openwrt/.config
+[ -d "$BUILD_DIR/openwrt" ] || mkdir -p $BUILD_DIR/openwrt
+cp $CONFIG.config $BUILD_DIR/openwrt/.config
 if test -z "$IS_MAKE_MENUCONFIG";then
     echo '当前选择编译的设备：'$DEVICE
     echo '当前选择编译的配置：'$CONFIG
