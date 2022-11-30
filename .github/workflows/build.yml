@@ -58,7 +58,7 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "NOW=$(TZ=':Asia/Shanghai' date '+%y.%m.%d')" >> $GITHUB_ENV
+          echo "OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')" >> $GITHUB_ENV
           sudo chown -R $USER openwrt
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo -E apt-get -qq update
@@ -99,11 +99,11 @@ jobs:
           SFE_FLOW: 0
           ENABLE_WIFI_K504: 0
           ENABLE_WIFI_K510: 0
-          OPENWRT_VER: ${{ env.NOW }}
+          OPENWRT_VER: ${{ env.OPENWRT_VER }}
 
       - name: Upload built artifacts
         uses: actions/upload-artifact@v3.1.1
         with:
-          name: ${{ env.NOW }}_${{ inputs.target }}.zip
+          name: ${{ env.OPENWRT_VER }}_${{ inputs.target }}.zip
           path: ${{ env.PACKAGED_OUTPUTPATH }}/*
           retention-days: 2

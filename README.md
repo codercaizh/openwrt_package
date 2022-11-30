@@ -41,15 +41,17 @@
 Fork本项目，然后在Action中启动任务，在界面中可以选择盒子型号和配置，然后进行编译。由于github限制任务最大时长只能半个小时，而一旦编译配置文件包含了如Node这些大型软件，编译很容易超时，推荐使用下面的**本地Docker编译**方法
 
 ### 本地Docker编译（推荐）
-使用虚拟机或者在你的云服务器等搭一个linux系统（推荐Ubuntu20+，硬盘空闲空间不小于15G），安装好docker后，clone本项目，在目录下执行
+本地编译命令：`./run_build_use_docker.sh -c 配置文件 -d 设备型号 [-p] [-r]`
+其中配置文件参数无需填写.config后缀，只要填文件名，例如：common；设备型号参考上面表格。
+-p：（可选）表示在已编译出底包的前提下仅进行打包，不做编译操作，节约时间。适用于需要使用同个底包打包出多种盒子镜像的场景
+-r：（可选）表示从头开始编译。使用该参数会删除之前所有的编译产物、源码、内核，重新拉取最新的源码和内核进行编译，实际效果和首次编译一样
+具体用法：使用虚拟机或者在你的云服务器等搭一个linux系统（推荐Ubuntu20+，硬盘空闲空间不小于15G），安装好docker后，clone本项目，在目录下执行
 `./run_build_use_docker.sh -c 配置文件 -d 设备型号`
 如：`./run_build_use_docker.sh -c common -d s905d`
-表示使用common.config的配置编译出N1盒子的openwrt固件。设备型号参考上面表格。
+表示使用common.config的配置编译出N1盒子的openwrt固件。
 ### 如何自制配置文件
 使用虚拟机或者在你的云服务器等搭一个linux系统，安装好docker后，clone本项目，在目录下执行
 `./run_build_use_docker.sh menuconfig custom
 `即可进入固件配置界面，配置完成，会在目录下生成custom.config配置，再执行类似如：
 `./run_build_use_docker.sh -c custom -d s905d
 `则会使用刚刚生成的自定义配置文件进行编译
-
-
