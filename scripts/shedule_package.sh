@@ -17,9 +17,11 @@ NAME=schedule_package_$(TZ=':Asia/Shanghai' date '+%Y%m%d')
 cd $BASE_DIR
 git pull
 # 重新编译vplus固件
-# rm -rf $BASE_DIR/openwrt_build_tmp && ./run_build_use_docker.sh -c common -d vplus -r -n $NAME
+rm -rf $BASE_DIR/openwrt_build_tmp && ./run_build_use_docker.sh -c common -d vplus -r -n $NAME
 # 由于前面步骤已完成底包编译，这里仅只需打包章鱼星球固件即可
+./run_build_use_docker.sh -c common -d vplus -p -n $NAME # 待删除
 ./run_build_use_docker.sh -c common -d s912 -p -n $NAME
+./run_build_use_docker.sh -c common -d s912 -p -n $NAME  # 待删除
 # 根据当前日期重新建立固件目录
 [ -d "$FIRMWARE_OUTPUT_DIR" ] && rm -rf $FIRMWARE_OUTPUT_DIR 
 # 清理过期的固件
