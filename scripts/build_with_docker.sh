@@ -47,11 +47,17 @@ if test -z "$SKIP_BUILD";then
     echo '开始下载依赖'
     make download -j`nproc` || make download -j1
     echo '编译依赖下载完毕'
+    rm -rf $OPENWRT_DIR/bin
     echo '开始编译底包'
     make V=s -j`nproc` || make V=s -j1
     echo '底包编译完毕'
 else
     echo '跳过编译底包流程'
+fi
+
+if [ ! -f "$ROOTFS_TAR_PATH" ]; then
+    echo '底包编译失败，请根据日志排查原因'
+    exit -1
 fi
 ####打包部分####
 if [ ! -d "$PACKIT_DIR/.git" ]; then
