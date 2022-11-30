@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 usage() {
-  echo "Complier Usage: ${0} [-c|--configName] [-d|--device] [-r|--rebuild] [-p|--only_package]" 1>&2
+  echo "Complier Usage: ${0} [-c|--configName] [-d|--device] [-r|--rebuild] [-p|--only_package] [-n|--name]" 1>&2
   echo "Make menuconfig Usage: menuconfig" 1>&2
   exit 1 
 }
@@ -33,6 +33,10 @@ else
         ONLY_PACKAGE=1
         shift
         ;;
+        -n|--name)
+        NAME=${2}
+        shift 2
+        ;;
         *)
         usage
         shift
@@ -40,7 +44,7 @@ else
     esac
     done
 fi
-IMAGE_NAME=openwrt_build
+IMAGE_NAME=${NAME:=openwrt_build}
 BUILD_DIR=$PWD/openwrt_build_tmp
 mkdir -p $BUILD_DIR
 [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
