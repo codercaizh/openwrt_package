@@ -74,20 +74,26 @@ if test -z "$IS_MAKE_MENUCONFIG";then
         echo $line
         [[ $line == "压缩完毕"* ]] && break
         [[ $line == "wait for /dev/"* ]] && WAIT_COUNT=$((WAIT_COUNT+1))
-        [ $WAIT_COUNT -gt $MAX_WAIT_COUNT ] && echo 'wait for dev timeout,now retry' && NEED_RETRY=1
+        if [ $WAIT_COUNT -gt $MAX_WAIT_COUNT ];then
+            echo 'wait for dev timeout,now retry'
+            [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
+            docker run -d \
+            -v $BUILD_DIR/openwrt:/opt/openwrt \
+            -v $BUILD_DIR/packit:/opt/openwrt_packit \
+            -v $BUILD_DIR/kernel:/opt/kernel \
+            -v $PWD/scripts:/opt/scripts \
+            -v $BUILD_DIR/artifact:/opt/artifact \
+            --privileged \
+            --name $IMAGE_NAME $IMAGE_NAME $DEVICE 1
+            docker logs -f $IMAGE_NAME  | while read sub_line
+            do
+                echo $sub_line
+                [[ $sub_line == "压缩完毕"* ]] && break
+            done
+            break
+        fi
     done
-    if test -z "$NEED_RETRY";then
-        [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
-        docker run -d \
-        -v $BUILD_DIR/openwrt:/opt/openwrt \
-        -v $BUILD_DIR/packit:/opt/openwrt_packit \
-        -v $BUILD_DIR/kernel:/opt/kernel \
-        -v $PWD/scripts:/opt/scripts \
-        -v $BUILD_DIR/artifact:/opt/artifact \
-        --privileged \
-        --name $IMAGE_NAME $IMAGE_NAME $DEVICE 1
-        docker logs -f $IMAGE_NAME
-    fi
+    echo 'succeed!'
 else
     docker run -it \
     -v $BUILD_DIR/openwrt:/opt/openwrt \
