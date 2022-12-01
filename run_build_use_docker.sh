@@ -67,12 +67,31 @@ if test -z "$IS_MAKE_MENUCONFIG";then
     -v $BUILD_DIR/artifact:/opt/artifact \
     --privileged \
     --name $IMAGE_NAME $IMAGE_NAME $DEVICE $ONLY_PACKAGE
-    docker logs -f $IMAGE_NAME
+    WAIT_COUNT=0
+    MAX_WAIT_COUNT=3
+    docker logs -f $IMAGE_NAME | while read line
+    do
+        echo $line
+        [[ $line == "压缩完毕"* ]] && break
+        [[ $line == "wait for /dev/"* ]] && WAIT_COUNT=$((WAIT_COUNT+1))
+        [ $WAIT_COUNT -gt $MAX_WAIT_COUNT ] && echo 'wait for dev timeout,now retry' && NEED_RETRY=1
+    done
+    if test -z "$NEED_RETRY";then
+        [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
+        docker run -d \
+        -v $BUILD_DIR/openwrt:/opt/openwrt \
+        -v $BUILD_DIR/packit:/opt/openwrt_packit \
+        -v $BUILD_DIR/kernel:/opt/kernel \
+        -v $PWD/scripts:/opt/scripts \
+        -v $BUILD_DIR/artifact:/opt/artifact \
+        --privileged \
+        --name $IMAGE_NAME $IMAGE_NAME $DEVICE 1
+        docker logs -f $IMAGE_NAME
+    fi
 else
     docker run -it \
     -v $BUILD_DIR/openwrt:/opt/openwrt \
     -v $PWD/scripts:/opt/scripts \
-    --privileged \
     --name $IMAGE_NAME $IMAGE_NAME
     docker cp $IMAGE_NAME:/opt/openwrt/.config ./$CONFIG.config
 fi
