@@ -145,5 +145,5 @@ cd $PACKIT_DIR/output/
 rm -rf $ARTIFACT_DIR/*
 echo '正在压缩镜像中'
 7z a $ARTIFACT_DIR/`ls *.img | head -1`.7z ./*.img
-mkdir $ARTIFACT_DIR/ipks && mv $OPENWRT_DIR/bin/targets/armvirt/64/packages/* $ARTIFACT_DIR/ipks
+mkdir $ARTIFACT_DIR/ipks && cp $OPENWRT_DIR/bin/targets/armvirt/64/packages/* $ARTIFACT_DIR/ipks
 echo '压缩完毕，固件已输出到：./openwrt_build_tmp/artifact/'`ls -l $ARTIFACT_DIR | awk '{print $9}' | head -1`
