@@ -2,7 +2,7 @@
 # 此脚本为作者个人使用，用于在个人服务器上定时编译，若有类似需求可参考编写
 # 编译定时任务命令：crontab –e（需要安装定时任务组件: apt-get install cron）
 # 定时任务配置如下：每天凌晨3点30分执行编译
-# 30 3 * * * bash /openwrt_package/scripts/shedule_package.sh
+# 30 3 * * * bash /openwrt_package/scripts/schedule_package.sh
 source /etc/profile
 set -e
 BASE_DIR=$(cd $(dirname $0);cd ..; pwd)
