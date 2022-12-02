@@ -93,7 +93,11 @@ if test -z "$IS_MAKE_MENUCONFIG";then
             break
         fi
     done
-    echo 'succeed!'
+    if [ $? -ne 0 ];then
+        echo '编译失败'
+    else
+        echo '编译成功'
+    fi
 else
     docker run -it \
     -v $BUILD_DIR/openwrt:/opt/openwrt \
