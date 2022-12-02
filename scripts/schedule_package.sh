@@ -11,6 +11,7 @@ NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
 FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
+FIRMWARE_OUTPUT_DIR_BAK="$FIRMWARE_OUTPUT_DIR"_bak
 # 固件有效期
 FIRMWARE_EXPIRED_DAY=7
 # 编译时使用的容器名
@@ -22,8 +23,10 @@ START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
 git pull
 [ $ONLY_PACKAGE -eq 1 ] || rm -rf $BASE_DIR/openwrt_build_tmp
-# 根据当前日期重新建立固件目录
-rm -rf $FIRMWARE_OUTPUT_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
+# 根据当前日期重新建立固件目录，并且将已存在的文件夹挪到备份目录
+rm -rf $FIRMWARE_OUTPUT_DIR_BAK
+[ -d "$FIRMWARE_OUTPUT_DIR" ] && mv $FIRMWARE_OUTPUT_DIR $FIRMWARE_OUTPUT_DIR_BAK
+mkdir -p $FIRMWARE_OUTPUT_DIR
 
 # 编译固件，有新的盒子要定时编译往这里加
 ./run_build_use_docker.sh -c common -d vplus -p -n $NAME && mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
