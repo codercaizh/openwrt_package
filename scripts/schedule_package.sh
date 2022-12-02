@@ -38,7 +38,7 @@ if test -z "$ONLY_PACKAGE";then
 fi
 # 根据当前日期重新建立固件目录，并且将已存在的文件夹挪到备份
 rm -rf $FIRMWARE_OUTPUT_DIR_BAK
-[ -d "$FIRMWARE_OUTPUT_DIR" ] && rm -rf $FIRMWARE_OUTPUT_DIR_BAK && mv $FIRMWARE_OUTPUT_DIR $FIRMWARE_OUTPUT_DIR_BAK
+[ -d "$FIRMWARE_OUTPUT_DIR" ] && rm -rf $FIRMWARE_OUTPUT_DIR_BAK && mkdir -p $FIRMWARE_OUTPUT_DIR_BAK && mv $FIRMWARE_OUTPUT_DIR/!(recycle) $FIRMWARE_OUTPUT_DIR_BAK/
 mkdir -p $FIRMWARE_OUTPUT_DIR
 
 # 编译固件，有新的盒子要定时编译往这里加
