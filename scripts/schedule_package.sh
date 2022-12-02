@@ -22,8 +22,10 @@ curl $START_CONTENT
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
 git pull
-[ $ONLY_PACKAGE -eq 1 ] || rm -rf $BASE_DIR/openwrt_build_tmp
-# 根据当前日期重新建立固件目录，并且将已存在的文件夹挪到备份目录
+if test -z "$ONLY_PACKAGE";then
+    rm -rf $BASE_DIR/openwrt_build_tmp
+fi
+# 根据当前日期重新建立固件目录，并且将已存在的文件夹挪到备份
 rm -rf $FIRMWARE_OUTPUT_DIR_BAK
 [ -d "$FIRMWARE_OUTPUT_DIR" ] && mv $FIRMWARE_OUTPUT_DIR $FIRMWARE_OUTPUT_DIR_BAK
 mkdir -p $FIRMWARE_OUTPUT_DIR
