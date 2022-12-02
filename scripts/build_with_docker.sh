@@ -49,7 +49,7 @@ if test -z "$SKIP_BUILD";then
     echo '编译依赖下载完毕'
     rm -rf $OPENWRT_DIR/bin
     echo '开始编译底包'
-    make V=s -j`nproc` || make V=s -j1
+    make -j`nproc` || make -j1
     echo '底包编译完毕'
 else
     echo '跳过编译底包流程'
