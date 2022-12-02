@@ -3,6 +3,16 @@
 # 编译定时任务命令：crontab –e（需要安装定时任务组件: apt-get install cron）
 # 定时任务配置如下：每天凌晨3点30分执行编译
 # 30 3 * * * bash /openwrt_package/scripts/schedule_package.sh
+
+compile_firmware() {
+    TARGET_DEVICE=$1
+    ./run_build_use_docker.sh -c common -d $TARGET_DEVICE -p -n $NAME
+    if [ ! -d "$FIRMWARE_OUTPUT_DIR/packages" ];then
+        mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
+    else
+        mv $BASE_DIR/openwrt_build_tmp/artifact/*.7z $FIRMWARE_OUTPUT_DIR
+    fi
+}
 source /etc/profile
 set -e
 BASE_DIR=$(cd $(dirname $0);cd ..; pwd)
@@ -31,11 +41,10 @@ rm -rf $FIRMWARE_OUTPUT_DIR_BAK
 mkdir -p $FIRMWARE_OUTPUT_DIR
 
 # 编译固件，有新的盒子要定时编译往这里加
-./run_build_use_docker.sh -c common -d vplus -p -n $NAME && mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
-./run_build_use_docker.sh -c common -d s912 -p -n $NAME && mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
-./run_build_use_docker.sh -c common -d s905d -p -n $NAME &&mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
+compile_firmware 'vplus'
+compile_firmware 's912'
+compile_firmware 's905d'
 
-mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
 # 清理过期的固件
 find $FIRMWARE_DIR -mtime +$FIRMWARE_EXPIRED_DAY  -exec rm {} \;
 [ `docker ps -a | grep $NAME | wc -l` -eq 0 ] || docker rm -f $NAME
