@@ -21,7 +21,7 @@ NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
 FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
-FIRMWARE_OUTPUT_DIR_BAK="$FIRMWARE_OUTPUT_DIR"_bak
+FIRMWARE_OUTPUT_DIR_BAK=$FIRMWARE_OUTPUT_DIR/recycle
 # 固件有效期
 FIRMWARE_EXPIRED_DAY=7
 # 编译时使用的容器名
@@ -37,7 +37,7 @@ if test -z "$ONLY_PACKAGE";then
 fi
 # 根据当前日期重新建立固件目录，并且将已存在的文件夹挪到备份
 rm -rf $FIRMWARE_OUTPUT_DIR_BAK
-[ -d "$FIRMWARE_OUTPUT_DIR" ] && mv $FIRMWARE_OUTPUT_DIR $FIRMWARE_OUTPUT_DIR_BAK
+[ -d "$FIRMWARE_OUTPUT_DIR" ] && rm -rf $FIRMWARE_OUTPUT_DIR_BAK && mv $FIRMWARE_OUTPUT_DIR $FIRMWARE_OUTPUT_DIR_BAK
 mkdir -p $FIRMWARE_OUTPUT_DIR
 
 # 编译固件，有新的盒子要定时编译往这里加
