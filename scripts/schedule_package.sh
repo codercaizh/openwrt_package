@@ -7,6 +7,7 @@ source /etc/profile
 set -e
 BASE_DIR=$(cd $(dirname $0);cd ..; pwd)
 NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
+ONLY_PACKAGE=${1:=0}
 # 固件输出根目录
 FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
@@ -21,16 +22,18 @@ curl $START_CONTENT
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
 git pull
-rm -rf $BASE_DIR/openwrt_build_tmp
-./run_build_use_docker.sh -c common -d vplus -r -n $NAME
-# 由于前面步骤已完成底包编译，这里仅只需打包固件即可
-./run_build_use_docker.sh -c common -d s912 -p -n $NAME
-./run_build_use_docker.sh -c common -d s905d -p -n $NAME
+[ $ONLY_PACKAGE -eq 1 ] || rm -rf $BASE_DIR/openwrt_build_tmp
 # 根据当前日期重新建立固件目录
-[ -d "$FIRMWARE_OUTPUT_DIR" ] && rm -rf $FIRMWARE_OUTPUT_DIR 
+rm -rf $FIRMWARE_OUTPUT_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
+
+# 编译固件，有新的盒子要定时编译往这里加
+./run_build_use_docker.sh -c common -d vplus -p -n $NAME && mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
+./run_build_use_docker.sh -c common -d s912 -p -n $NAME && mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
+./run_build_use_docker.sh -c common -d s905d -p -n $NAME &&mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
+
+mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
 # 清理过期的固件
 find $FIRMWARE_DIR -mtime +$FIRMWARE_EXPIRED_DAY  -exec rm {} \;
-mkdir -p $FIRMWARE_OUTPUT_DIR && mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
 [ `docker ps -a | grep $NAME | wc -l` -eq 0 ] || docker rm -f $NAME
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
 END_TIME=`date +%Y-%m-%d_%H:%M:%S`
