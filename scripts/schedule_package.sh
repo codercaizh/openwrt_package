@@ -7,7 +7,6 @@ source /etc/profile
 set -e
 BASE_DIR=$(cd $(dirname $0);cd ..; pwd)
 NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
-ONLY_PACKAGE=${1:=0}
 # 固件输出根目录
 FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
