@@ -3,16 +3,18 @@ package_firmware(){
     packit_dir=$1
     rootfs_tar_path=$2
     device=$3
+    whoami=$4
     if [ ! -d "$packit_dir/.git" ]; then
         echo '未找到打包源码，正在检出源码'
         git clone https://github.com/unifreq/openwrt_packit --depth=1 $packit_dir
     fi
     rm -rf $packit_dir/*rootfs.tar.gz
     cp $rootfs_tar_path $packit_dir/
+    cp
     echo '打包源码与底包准备完毕'
     cd $packit_dir
     rm -rf ./output/*
-    cp $packit_dir/whoami ./
+    cp $whoami ./
     # Set the default packaging script
     SCRIPT_VPLUS_FILE="mk_h6_vplus.sh"
     SCRIPT_BEIKEYUN_FILE="mk_rk3328_beikeyun.sh"

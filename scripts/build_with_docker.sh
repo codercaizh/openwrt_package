@@ -17,7 +17,7 @@ if [ ! -d "$OPENWRT_DIR/.git" ]; then
     mv /opt/openwrt_tmp/.git $OPENWRT_DIR/
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
-    cp $SCRIPT_DIR/* ./
+    cp $SCRIPT_DIR/*feeds.sh ./
     ./before_update_feeds.sh
     ./scripts/feeds update -a
     ./scripts/feeds install -a
@@ -76,7 +76,7 @@ LATEST_KERNEL_VERSION=`ls -l $KERNEL_DIR/opt/kernel | awk '{print $9}' | sort -k
 echo '当前仓库最新内核版本：'$LATEST_KERNEL_VERSION
 cp -r $KERNEL_DIR/opt/kernel/$LATEST_KERNEL_VERSION/* $KERNEL_DIR/
 echo '开始进行打包'
-package_firmware $PACKIT_DIR $ROOTFS_TAR_PATH $DEVICE
+package_firmware $PACKIT_DIR $ROOTFS_TAR_PATH $DEVICE $SCRIPT_DIR/whoami
 cd $PACKIT_DIR/output/
 [ ! -d "$ARTIFACT_DIR" ] && mkdir -p $ARTIFACT_DIR
 rm -rf $ARTIFACT_DIR/*
