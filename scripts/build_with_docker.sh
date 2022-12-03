@@ -51,7 +51,7 @@ if test -z "$SKIP_BUILD";then
     rm -rf $OPENWRT_DIR/bin
     echo '开始编译底包'
     make -j`nproc`
-    if [ ! -d "$OPENWRT_DIR/bin" ]; then
+    if [ ! -f "$ROOTFS_TAR_PATH" ]; then
         make V=s -j1
     else
         echo '底包编译完毕'
