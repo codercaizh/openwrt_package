@@ -9,10 +9,11 @@
 |.github/workflows|使用Github action编译构建命令，一般不需要改动
 |scripts|用于存放编译过程中用到的自定义脚本，比如需要希望将某个插件的版本进行更新，或者是加入新的feeds源，都可以在里面进行自定义
 |scripts/build_with_docker.sh|本地编译时容器启动后执行的脚本，一般无需更改
-|common.config|包含常用插件的编译配置，包括一些必备的你懂的插件，如果有加减插件的需求可以改这个文件
+|configs|编译配置
+|configs/common.config|包含常用插件的编译配置，包括一些必备的你懂的插件，如果有加减插件的需求可以改这个文件
+|simple.config|仅包含最最基本的能够让盒子启动和写入到emmc的编译配置，建议可以基于此配置文件去创建你的自定义配置文件
 |Dockerfile|docker镜像文件，用于本地构建一个编译环境镜像
 |run_build_use_docker.sh|本地编译的执行脚本
-|simple.config|仅包含最最基本的能够让盒子启动和写入到emmc的编译配置，建议可以基于此配置文件去创建你的自定义配置文件
 
 ## 支持的型号列表
 `vplus`

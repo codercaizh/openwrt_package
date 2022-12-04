@@ -47,6 +47,7 @@ fi
 IMAGE_NAME=${NAME:=openwrt_build}
 BUILD_DIR=$PWD/openwrt_build_tmp
 mkdir -p $BUILD_DIR
+[ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
 [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
 if test -z "$REBUILD";then
    [ `docker image ls $IMAGE_NAME | wc -l` -eq 2 ] || docker build . --tag=$IMAGE_NAME
@@ -54,8 +55,6 @@ else
    docker build . --tag=$IMAGE_NAME
    [ -d "$BUILD_DIR" ] && rm -rf $BUILD_DIR
 fi
-[ -d "$BUILD_DIR/openwrt" ] || mkdir -p $BUILD_DIR/openwrt
-cp $CONFIG.config $BUILD_DIR/openwrt/.config
 if test -z "$IS_MAKE_MENUCONFIG";then
     echo '当前选择编译的设备：'$DEVICE
     echo '当前选择编译的配置：'$CONFIG
@@ -63,10 +62,11 @@ if test -z "$IS_MAKE_MENUCONFIG";then
     -v $BUILD_DIR/openwrt:/opt/openwrt \
     -v $BUILD_DIR/packit:/opt/openwrt_packit \
     -v $BUILD_DIR/kernel:/opt/kernel \
+    -v $PWD/configs:/opt/configs \
     -v $PWD/scripts:/opt/scripts \
     -v $BUILD_DIR/artifact:/opt/artifact \
     --privileged \
-    --name $IMAGE_NAME $IMAGE_NAME $DEVICE $ONLY_PACKAGE
+    --name $IMAGE_NAME $IMAGE_NAME $DEVICE $CONFIG $ONLY_PACKAGE
     WAIT_COUNT=0
     MAX_WAIT_COUNT=3
     docker logs -f $IMAGE_NAME | while read line
@@ -81,10 +81,11 @@ if test -z "$IS_MAKE_MENUCONFIG";then
             -v $BUILD_DIR/openwrt:/opt/openwrt \
             -v $BUILD_DIR/packit:/opt/openwrt_packit \
             -v $BUILD_DIR/kernel:/opt/kernel \
+            -v $PWD/configs:/opt/configs \
             -v $PWD/scripts:/opt/scripts \
             -v $BUILD_DIR/artifact:/opt/artifact \
             --privileged \
-            --name $IMAGE_NAME $IMAGE_NAME $DEVICE 1
+            --name $IMAGE_NAME $IMAGE_NAME $DEVICE $CONFIG 1
             docker logs -f $IMAGE_NAME  | while read sub_line
             do
                 echo $sub_line
@@ -102,9 +103,13 @@ if test -z "$IS_MAKE_MENUCONFIG";then
 else
     docker run -it \
     -v $BUILD_DIR/openwrt:/opt/openwrt \
+    -v $BUILD_DIR/packit:/opt/openwrt_packit \
+    -v $BUILD_DIR/kernel:/opt/kernel \
+    -v $PWD/configs:/opt/configs \
     -v $PWD/scripts:/opt/scripts \
-    --name $IMAGE_NAME $IMAGE_NAME
-    docker cp $IMAGE_NAME:/opt/openwrt/.config ./$CONFIG.config
+    -v $BUILD_DIR/artifact:/opt/artifact \
+    --privileged \
+    --name $IMAGE_NAME $IMAGE_NAME 0 $CONFIG 
 fi
 
 

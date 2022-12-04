@@ -1,20 +1,21 @@
 #!/bin/bash
 #使用docker编译时使用脚本
 SCRIPT_DIR=/opt/scripts
+CONFIG_DIR=/opt/configs
 OPENWRT_DIR=/opt/openwrt
 PACKIT_DIR=/opt/openwrt_packit
 ARTIFACT_DIR=/opt/artifact
 KERNEL_DIR=/opt/kernel
 #从外部传入的参数
 DEVICE=$1
-ONLY_PACKAGE=$2
+CONFIG=$2
+ONLY_PACKAGE=$3
 source $SCRIPT_DIR/package_firmware.sh
 if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo '未找到openwrt源码，正在检出源码'
     git clone https://github.com/coolsnowwolf/lede.git --depth=1 /opt/openwrt_tmp
     echo 'openwrt源码更新完毕'
-    mv /opt/openwrt_tmp/* $OPENWRT_DIR/
-    mv /opt/openwrt_tmp/.git $OPENWRT_DIR/
+    mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
     cp $SCRIPT_DIR/*feeds.sh ./
@@ -25,8 +26,10 @@ if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo 'feed更新完毕'
 fi
 cd $OPENWRT_DIR
-if test -z "$DEVICE";then
+cp $CONFIG_DIR/$CONFIG.config ./.config
+if [ "$DEVICE" == "0" ];then
     make menuconfig
+    cp .config $CONFIG_DIR/$CONFIG.config
     exit 0
 fi
 
