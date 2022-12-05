@@ -33,9 +33,7 @@ echo
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
 git pull
-if test -z "$ONLY_PACKAGE";then
-    rm -rf $BASE_DIR/openwrt_build_tmp
-fi
+[ -z "$ONLY_PACKAGE" ] && rm -rf $BASE_DIR/openwrt_build_tmp
 # 根据当前日期重新建立固件目录
 rm -rf $FIRMWARE_OUTPUT_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
 
