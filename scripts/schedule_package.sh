@@ -43,7 +43,7 @@ compile_firmware 's912'
 compile_firmware 's905d'
 
 # 清理过期的固件
-find $FIRMWARE_DIR -mtime +$FIRMWARE_EXPIRED_DAY  -exec rm {} \;
+find $FIRMWARE_DIR -mtime +$FIRMWARE_EXPIRED_DAY  -exec rm -rf {} \;
 [ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
 END_TIME=`date +%Y-%m-%d_%H:%M:%S`
