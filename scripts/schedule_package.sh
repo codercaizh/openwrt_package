@@ -22,7 +22,7 @@ FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
 # 固件有效期
-FIRMWARE_EXPIRED_DAY=7
+FIRMWARE_EXPIRED_DAY=3
 NAME_PREFIX=schedule_package
 # 编译时使用的容器名
 NAME=$NAME_PREFIX_$NOW_DATE
