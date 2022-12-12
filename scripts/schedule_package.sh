@@ -21,8 +21,6 @@ NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
 FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
-# 固件有效期
-FIRMWARE_EXPIRED_DAY=3
 NAME_PREFIX=schedule_package
 # 编译时使用的容器名
 NAME=$NAME_PREFIX"_"$NOW_DATE
@@ -32,18 +30,16 @@ curl $START_CONTENT
 echo
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
-git pull
 [ -z "$ONLY_PACKAGE" ] && rm -rf $BASE_DIR/openwrt_build_tmp
 # 根据当前日期重新建立固件目录
-rm -rf $FIRMWARE_OUTPUT_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
+rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
+git pull
 
 # 编译固件，有新的盒子要定时编译往这里加
 compile_firmware 'vplus'
 compile_firmware 's912'
 compile_firmware 's905d'
 
-# 清理过期的固件
-find $FIRMWARE_DIR -mtime +$FIRMWARE_EXPIRED_DAY  -exec rm -rf {} \;
 [ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
 END_TIME=`date +%Y-%m-%d_%H:%M:%S`
