@@ -72,7 +72,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
     docker logs -f $IMAGE_NAME | while read line
     do
         echo $line
-        [[ $line == "压缩完毕"* ]] && break
+        [[ $line == "编译固件成功"* ]] && break
         [[ $line == "wait for /dev/"* ]] && WAIT_COUNT=$((WAIT_COUNT+1))
         if [ $WAIT_COUNT -gt $MAX_WAIT_COUNT ];then
             echo 'wait for dev timeout,now retry'
@@ -89,7 +89,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
             docker logs -f $IMAGE_NAME  | while read sub_line
             do
                 echo $sub_line
-                [[ $sub_line == "压缩完毕"* ]] && break
+                [[ $sub_line == "编译固件成功"* ]] && break
             done
             break
         fi

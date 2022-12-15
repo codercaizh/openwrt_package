@@ -6,7 +6,8 @@
 
 compile_firmware() {
     TARGET_DEVICE=$1
-    ./run_build_use_docker.sh -c common -d $TARGET_DEVICE -p -n $NAME
+    TARGET_CONFIG=$2
+    ./run_build_use_docker.sh -c $TARGET_CONFIG -d $TARGET_DEVICE -p -n $NAME
     if [ ! -d "$FIRMWARE_OUTPUT_DIR/packages" ];then
         mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
     else
@@ -36,9 +37,9 @@ rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
 git pull
 
 # 编译固件，有新的盒子要定时编译往这里加
-compile_firmware 'vplus'
-compile_firmware 's912'
-compile_firmware 's905d'
+compile_firmware 'vplus' 'armv8'
+compile_firmware 's912' 'armv8'
+compile_firmware 's905d' 'armv8'
 
 [ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR

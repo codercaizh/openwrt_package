@@ -5,7 +5,7 @@ on:
   workflow_dispatch: 
     inputs:
       target:
-        description: '目标盒子'
+        description: '目标设备'
         required: true
         default: 'all' 
         type: choice
@@ -32,10 +32,11 @@ on:
       config:
         description: '插件配置'
         required: true
-        default: 'common' 
+        default: 'armv8' 
         type: choice
         options:
-        - common
+        - armv8
+        - r3g
         - simple
 
 jobs:
