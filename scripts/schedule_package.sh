@@ -8,11 +8,8 @@ compile_firmware() {
     TARGET_DEVICE=$1
     TARGET_CONFIG=$2
     ./run_build_use_docker.sh -c $TARGET_CONFIG -d $TARGET_DEVICE -p -n $NAME
-    if [ ! -d "$FIRMWARE_OUTPUT_DIR/packages" ];then
-        mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR
-    else
-        mv $BASE_DIR/openwrt_build_tmp/artifact/*.7z $FIRMWARE_OUTPUT_DIR
-    fi
+    mkdir -p $FIRMWARE_OUTPUT_DIR/$TARGET_DEVICE/
+    mv $BASE_DIR/openwrt_build_tmp/artifact/*.7z $FIRMWARE_OUTPUT_DIR/$TARGET_DEVICE/
 }
 source /etc/profile
 set -e
@@ -36,10 +33,13 @@ cd $BASE_DIR
 rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
 git pull
 
-# 编译固件，有新的盒子要定时编译往这里加
+# 编译盒子固件，有新的盒子要定时编译往这里加
 compile_firmware 'vplus' 'armv8'
 compile_firmware 's912' 'armv8'
 compile_firmware 's905d' 'armv8'
+# 清理掉环境，开始编译路由固件
+rm -rf $BASE_DIR/openwrt_build_tmp
+compile_firmware 'r3g' 'r3g'
 
 [ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
