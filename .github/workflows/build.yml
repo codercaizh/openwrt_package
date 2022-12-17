@@ -28,7 +28,7 @@ on:
         - s922x 
         - s922x-n2 
         - qemu
-        - vplus_s912
+        - r3g
       config:
         description: '插件配置'
         required: true
