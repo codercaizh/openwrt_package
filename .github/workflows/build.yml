@@ -82,15 +82,30 @@ jobs:
         working-directory: ./
 
       - name: Download lib
-        run: sudo make download -j$((`nproc` + 2))
+        run: sudo make download -j$((`nproc` + 1))
         working-directory: openwrt
       
       - name: Build openwrt
-        run: sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j$((`nproc` + 2))
+        run:  |
+          sudo make FORCE_UNSAFE_CONFIGURE=1 -j$((`nproc` + 1))
+          if [ "${{ inputs.config }}" == "armv8" ];then
+              if ls bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz 1> /dev/null 2>&1; then
+                  echo "ARM固件编译成功"
+              else
+                  sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j1
+              fi
+          else
+              if ls bin/targets/ramips/*/*.bin 1> /dev/null 2>&1; then
+                  echo "路由固件编译成功"
+              else
+                  sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j1
+              fi
+          fi
         working-directory: openwrt
 
       - name: Package Armvirt as OpenWrt
         uses: unifreq/openwrt_packit@master
+        if: (github.event.inputs.config == 'armv8')
         env:
           OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
           PACKAGE_SOC: ${{ inputs.target }}
@@ -102,9 +117,18 @@ jobs:
           ENABLE_WIFI_K510: 0
           OPENWRT_VER: ${{ env.OPENWRT_VER }}
 
-      - name: Upload built artifacts
+      - name: Upload armvirt built artifacts
+        if: (github.event.inputs.config == 'armv8')
         uses: actions/upload-artifact@v3.1.1
         with:
           name: ${{ env.OPENWRT_VER }}_${{ inputs.target }}.zip
           path: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          retention-days: 2
+
+      - name: Upload route built artifacts
+        if: (github.event.inputs.config != 'armv8')
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: ${{ env.OPENWRT_VER }}_${{ inputs.target }}.zip
+          path: openwrt/bin/targets/ramips/*/*.bin
           retention-days: 2
