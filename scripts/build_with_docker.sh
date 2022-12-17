@@ -84,14 +84,16 @@ check_complie_status
  if [ "$IS_COMPLIE" == "0" ]; then
     echo '编译失败，即将使用单线程重试编译'
     make V=s -j1
+    check_complie_status
+    if [ "$IS_COMPLIE" == "0" ]; then
+        echo '编译失败，请根据日志排查原因'
+        exit -1
+    fi
 else
     echo '编译完毕'
 fi
-check_complie_status
-if [ "$IS_COMPLIE" == "0" ]; then
-    echo '编译失败，请根据日志排查原因'
-    exit -1
-fi
+
+
 
 ####打包部分####
 if [ "$CONFIG" == "armv8" ];then
