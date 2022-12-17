@@ -3,4 +3,4 @@
 rm -rf package/lean/n2n/patches
 sed -i 's/PKG_VERSION:=3.0/PKG_VERSION:=3.1.1/g' package/lean/n2n/Makefile
 sed -i 's/^PKG_HASH:.*/PKG_HASH:=skip/g' package/lean/n2n/Makefile
-sed -i 's/KERNEL_PATCHVER:=5.4/KERNEL_PATCHVER:=5.10/g' target/linux/ramips/Makefile
+sed -i 's/KERNEL_PATCHVER:=5.4/KERNEL_PATCHVER:=5.15/g' target/linux/ramips/Makefile
