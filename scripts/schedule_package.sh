@@ -34,12 +34,14 @@ rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
 git pull
 
 # 编译盒子固件，有新的盒子要定时编译往这里加
-# compile_firmware 'vplus' 'armv8'
-# compile_firmware 's912' 'armv8'
-# compile_firmware 's905d' 'armv8'
-# rm -rf $BASE_DIR/openwrt_build_tmp
+compile_firmware 'vplus' 'armv8'
+compile_firmware 's912' 'armv8'
+compile_firmware 's905d' 'armv8'
+rm -rf $BASE_DIR/openwrt_build_tmp
 # 清理掉环境，开始编译路由固件
 compile_firmware 'r3g' 'r3g'
+compile_firmware 'r3p' 'r3p'
+compile_firmware 'rm2100' 'rm2100'
 
 [ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
