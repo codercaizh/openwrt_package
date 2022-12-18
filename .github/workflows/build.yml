@@ -29,6 +29,8 @@ on:
         - s922x-n2 
         - qemu
         - r3g
+        - r3p
+        - rm2100
       config:
         description: '插件配置'
         required: true
@@ -37,6 +39,8 @@ on:
         options:
         - armv8
         - r3g
+        - r3p
+        - rm2100
         - simple
 
 jobs:
