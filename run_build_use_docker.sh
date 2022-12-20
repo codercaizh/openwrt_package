@@ -96,7 +96,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
             break
         fi
     done
-    if [ "$(ls -A $BUILD_DIR/artifact)" ]; then
+    if ls $BUILD_DIR/artifact/$DEVICE/*.7z &> /dev/null; then
         echo '编译成功'
     else
         echo '编译失败'
