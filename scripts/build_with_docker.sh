@@ -109,8 +109,7 @@ if [ "$CONFIG" == "armv8" ];then
     echo '开始进行打包'
     package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz $DEVICE $SCRIPT_DIR/whoami
     cd $PACKIT_DIR/output/
-    [ ! -d "$OUTPUT_DIR" ] && mkdir -p $OUTPUT_DIR
-    rm -rf $OUTPUT_DIR/*
+    rm -rf $OUTPUT_DIR && mkdir -p $OUTPUT_DIR
     echo '正在压缩镜像中'
     7z a $OUTPUT_DIR/`ls *.img | head -1`.7z ./*.img
 else

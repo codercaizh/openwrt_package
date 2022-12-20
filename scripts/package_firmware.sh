@@ -10,12 +10,12 @@ package_firmware(){
         git clone https://github.com/unifreq/openwrt_packit --depth=1 $packit_dir
     fi
     rm -rf $packit_dir/*rootfs.tar.gz
-    cp $rootfs_tar_path $packit_dir/
-    cp
-    echo '打包源码与底包准备完毕'
-    cd $packit_dir
     rm -rf ./output/*
+    cp $rootfs_tar_path $packit_dir/
     cp $whoami ./
+    cd $packit_dir
+    rm -rf tmp
+    echo '打包源码与底包准备完毕'
     # Set the default packaging script
     SCRIPT_VPLUS_FILE="mk_h6_vplus.sh"
     SCRIPT_BEIKEYUN_FILE="mk_rk3328_beikeyun.sh"
