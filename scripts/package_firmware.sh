@@ -75,6 +75,6 @@ package_firmware(){
         s922x-n2) [[ -f "${SCRIPT_S922X_N2}" ]] && ./${SCRIPT_S922X_N2} ;;
         qemu)     [[ -f "${SCRIPT_QEMU}" ]] && ./${SCRIPT_QEMU} ;;
         diy)      [[ -f "${SCRIPT_DIY}" ]] && ./${SCRIPT_DIY} ;;
-        *)        echo -e "找不到合适的打包脚本" && continue ;;
+        *)        echo -e "找不到合适的打包脚本" && exit -1 ;;
     esac
 }
