@@ -8,8 +8,8 @@ compile_firmware() {
     TARGET_DEVICE=$1
     TARGET_CONFIG=$2
     ./run_build_use_docker.sh -c $TARGET_CONFIG -d $TARGET_DEVICE -p -n $NAME
-    mkdir -p $FIRMWARE_OUTPUT_DIR/$TARGET_DEVICE/
-    mv $BASE_DIR/openwrt_build_tmp/artifact/*.7z $FIRMWARE_OUTPUT_DIR/$TARGET_DEVICE/
+    mkdir -p $FIRMWARE_OUTPUT_DIR
+    mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR/
 }
 source /etc/profile
 set -e
