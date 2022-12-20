@@ -6,7 +6,7 @@ package_firmware(){
     whoami=$4
     if [ ! -d "$packit_dir/.git" ]; then
         echo '未找到打包源码，正在检出源码'
-        rm -rf $packit_dir
+        rm -rf $packit_dir/*
         git clone https://github.com/unifreq/openwrt_packit --depth=1 $packit_dir
     fi
     rm -rf $packit_dir/*rootfs.tar.gz
