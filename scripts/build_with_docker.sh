@@ -110,10 +110,20 @@ if [ "$CONFIG" == "armv8" ];then
     package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz $DEVICE $SCRIPT_DIR/whoami
     cd $PACKIT_DIR/output/
     rm -rf $OUTPUT_DIR && mkdir -p $OUTPUT_DIR
-    echo '正在压缩镜像中'
-    7z a $OUTPUT_DIR/`ls *.img | head -1`.7z ./*.img
+    if ls *.img &> /dev/null; then
+        echo '正在压缩镜像中'
+        7z a $OUTPUT_DIR/`ls *.img | head -1`.7z ./*.img
+    else
+        echo '盒子固件打包失败'
+        exit -1
+    fi
 else
-    echo '打包固件中'
-    7z a $OUTPUT_DIR/$DEVICE'.bin.7z' $OPENWRT_DIR/bin/targets/ramips/*/*.bin
+     if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin &> /dev/null; then
+        echo '打包固件中'
+        7z a $OUTPUT_DIR/$DEVICE'.bin.7z' $OPENWRT_DIR/bin/targets/ramips/*/*.bin
+    else
+        echo '路由固件打包失败'
+        exit -1
+    fi
 fi
 echo '编译固件成功：'${DEVICE}
