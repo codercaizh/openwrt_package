@@ -65,6 +65,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
     -v $PWD/configs:/opt/configs \
     -v $PWD/scripts:/opt/scripts \
     -v $BUILD_DIR/artifact:/opt/artifact \
+    --net=host \
     --privileged \
     --name $IMAGE_NAME $IMAGE_NAME $DEVICE $CONFIG $ONLY_PACKAGE
     WAIT_COUNT=0
@@ -84,6 +85,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
             -v $PWD/configs:/opt/configs \
             -v $PWD/scripts:/opt/scripts \
             -v $BUILD_DIR/artifact:/opt/artifact \
+            --net=host \
             --privileged \
             --name $IMAGE_NAME $IMAGE_NAME $DEVICE $CONFIG 1
             docker logs -f $IMAGE_NAME  | while read sub_line
@@ -108,6 +110,7 @@ else
     -v $PWD/configs:/opt/configs \
     -v $PWD/scripts:/opt/scripts \
     -v $BUILD_DIR/artifact:/opt/artifact \
+    --net=host \
     --privileged \
     --name $IMAGE_NAME $IMAGE_NAME 0 $CONFIG 
 fi

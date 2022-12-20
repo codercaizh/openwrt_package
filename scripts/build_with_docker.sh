@@ -13,16 +13,16 @@ ONLY_PACKAGE=$3
 OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 IS_COMPLIE=0
 check_complie_status() {
-    COMPLIE_CONFIG=$1
+    COMPLIE_CONFIG=$CONFIG
     if [ "$COMPLIE_CONFIG" == "armv8" ];then
-        if ls $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz 1> /dev/null 2>&1; then
+        if ls $OPENWRT_DIR/bin/targets/armvirt/64/*-rootfs.tar.gz &> /dev/null; then
             echo "ARM盒子固件已存在"
             IS_COMPLIE=1
         else
             IS_COMPLIE=0
         fi
     else
-        if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin 1> /dev/null 2>&1; then
+        if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin &> /dev/null1; then
             echo "硬路由固件已存在"
             IS_COMPLIE=1
         else
