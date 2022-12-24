@@ -104,7 +104,7 @@ if [ "$CONFIG" == "armv8" ];then
         echo '内核下载完毕'
     fi
     LATEST_KERNEL_VERSION=`ls -l $KERNEL_DIR/opt/kernel | awk '{print $9}' | sort -k1.1r | head -1`
-    KERNEL_VERSION=`ls -l $KERNEL_DIR/opt/kerne/$LATEST_KERNEL_VERSION | awk '{print $9}' | grep boot | head -1`
+    KERNEL_VERSION=`ls -l $KERNEL_DIR/opt/kernel/$LATEST_KERNEL_VERSION | awk '{print $9}' | grep boot | head -1`
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
     KERNEL_VERSION=${KERNEL_VERSION##boot-}
     export KERNEL_VERSION
