@@ -32,7 +32,7 @@ cd $BASE_DIR
 # 根据当前日期重新建立固件目录
 rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
 git pull
-
+[ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 # 编译盒子固件，有新的盒子要定时编译往这里加
 compile_firmware 'vplus' 'armv8'
 compile_firmware 's912' 'armv8'
@@ -42,8 +42,6 @@ rm -rf $BASE_DIR/openwrt_build_tmp
 compile_firmware 'r3g' 'r3g'
 compile_firmware 'r3p' 'r3p'
 compile_firmware 'rm2100' 'rm2100'
-
-[ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
 END_TIME=`date +%Y-%m-%d_%H:%M:%S`
 END_CONTENT='http://www.pushplus.plus/send?token='${PUSH_TOKEN}'&title=openwrt%E5%9B%BA%E4%BB%B6%E7%BC%96%E8%AF%91%E5%AE%8C%E6%88%90&content=openwrt%E5%9B%BA%E4%BB%B6%E6%89%80%E5%9C%A8%E7%9B%AE%E5%BD%95%EF%BC%9A'$NOW_DATE'%EF%BC%8C%E7%BC%96%E8%AF%91%E5%BC%80%E5%A7%8B%E6%97%B6%E9%97%B4%EF%BC%9A'$START_TIME'%EF%BC%8C%E7%BC%96%E8%AF%91%E5%AE%8C%E6%88%90%E6%97%B6%E9%97%B4%EF%BC%9A'$END_TIME
