@@ -9,11 +9,8 @@ package_firmware(){
         rm -rf $packit_dir/*
         git clone https://github.com/unifreq/openwrt_packit --depth=1 $packit_dir
     fi
-    rm -rf $packit_dir/*rootfs.tar.gz
-    rm -rf $packit_dir/output/*
-    rm -rf $packit_dir/rm -rf tmp
-    cp $rootfs_tar_path $packit_dir/
-    cp $whoami ./
+    rm -rf $packit_dir/*rootfs.tar.gz $packit_dir/output/* $packit_dir/tmp
+    cp $rootfs_tar_path $whoami $packit_dir/
     cd $packit_dir
     echo '打包源码与底包准备完毕'
     # Set the default packaging script
