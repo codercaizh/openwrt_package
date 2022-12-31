@@ -7,7 +7,7 @@
 compile_firmware() {
     TARGET_DEVICE=$1
     TARGET_CONFIG=$2
-    ./run_build_use_docker.sh -c $TARGET_CONFIG -d $TARGET_DEVICE -p -n $NAME
+    ./run_build_use_docker.sh -c $TARGET_CONFIG -d $TARGET_DEVICE -p -n $NAME_PREFIX"_"$TARGET_DEVICE
     mkdir -p $FIRMWARE_OUTPUT_DIR
     mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR/
 }
@@ -20,8 +20,6 @@ FIRMWARE_DIR=/data/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
 NAME_PREFIX=schedule_package
-# 编译时使用的容器名
-NAME=$NAME_PREFIX"_"$NOW_DATE
 # 推送编译通知到手机上，可以自己到pushplus申请token配到环境中
 START_CONTENT='http://www.pushplus.plus/send?token='${PUSH_TOKEN}'&title=%E5%BC%80%E5%A7%8B%E7%BC%96%E8%AF%91openwrt%E5%9B%BA%E4%BB%B6&content=%E6%9C%AC%E6%AC%A1%E7%BC%96%E8%AF%91%E5%AE%B9%E5%99%A8%E5%90%8D%EF%BC%9A'$NAME
 curl $START_CONTENT
