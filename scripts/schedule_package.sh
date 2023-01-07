@@ -1,5 +1,5 @@
 #!/bin/bash
-# 此脚本为作者个人使用，用于在个人服务器上定时编译，若有类似需求可参考编写
+# 此脚本为定时编译示例，用于在服务器上定时编译，若有类似需求可参考编写
 # 编译定时任务命令：crontab –e（需要安装定时任务组件: apt-get install cron）
 # 定时任务配置如下：每天凌晨3点30分执行编译
 # 30 3 * * * bash /openwrt_package/scripts/schedule_package.sh
@@ -21,7 +21,7 @@ FIRMWARE_DIR=/data/webroot/firmware
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
 NAME_PREFIX=schedule_package
 # 推送编译通知到手机上，可以自己到pushplus申请token配到环境中
-START_CONTENT='http://www.pushplus.plus/send?token='${PUSH_TOKEN}'&title=%E5%BC%80%E5%A7%8B%E7%BC%96%E8%AF%91openwrt%E5%9B%BA%E4%BB%B6&content=%E6%9C%AC%E6%AC%A1%E7%BC%96%E8%AF%91%E5%AE%B9%E5%99%A8%E5%90%8D%EF%BC%9A'$NAME
+START_CONTENT='http://www.pushplus.plus/send?token='${PUSH_TOKEN}'&title=%E5%BC%80%E5%A7%8B%E7%BC%96%E8%AF%91openwrt%E5%9B%BA%E4%BB%B6&content=%E6%9C%AC%E6%AC%A1%E7%BC%96%E8%AF%91%E5%9B%BA%E4%BB%B6%E8%BE%93%E5%87%BA%E7%9B%AE%E5%BD%95%EF%BC%9A'$FIRMWARE_OUTPUT_DIR
 curl $START_CONTENT
 echo
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
