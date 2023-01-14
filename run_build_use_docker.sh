@@ -50,7 +50,7 @@ mkdir -p $BUILD_DIR
 [ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
 [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
 if test -z "$REBUILD";then
-   [ `docker image ls $IMAGE_NAME | wc -l` -eq 2 ] || docker build . --tag=$IMAGE_NAME
+   [ `docker image ls $IMAGE_NAME | wc -l` -eq 2 ] || docker build . --tag=$IMAGE_NAME --net=host -f ./Dockerfile
 else
    docker build . --tag=$IMAGE_NAME
    [ -d "$BUILD_DIR" ] && rm -rf $BUILD_DIR
