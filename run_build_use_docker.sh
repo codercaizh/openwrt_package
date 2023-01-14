@@ -52,7 +52,7 @@ mkdir -p $BUILD_DIR
 if test -z "$REBUILD";then
    [ `docker image ls $IMAGE_NAME | wc -l` -eq 2 ] || docker build . --tag=$IMAGE_NAME --net=host -f ./Dockerfile
 else
-   docker build . --tag=$IMAGE_NAME
+   docker build . --tag=$IMAGE_NAME  --net=host -f ./Dockerfile
    [ -d "$BUILD_DIR" ] && rm -rf $BUILD_DIR
 fi
 if test -z "$IS_MAKE_MENUCONFIG";then
