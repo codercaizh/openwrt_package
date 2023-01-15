@@ -2,15 +2,16 @@
 name: Openwrt Build
 
 on:
+  schedule:
+    - cron: "0 0 * * *"
   workflow_dispatch: 
     inputs:
       target:
         description: '目标设备'
         required: true
-        default: 'all' 
+        default: 'r3g' 
         type: choice
         options:
-        - all
         - vplus
         - beikeyun
         - l1pro 
@@ -34,7 +35,7 @@ on:
       config:
         description: '插件配置'
         required: true
-        default: 'armv8' 
+        default: 'r3g'
         type: choice
         options:
         - armv8
