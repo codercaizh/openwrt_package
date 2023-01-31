@@ -8,7 +8,9 @@ compile_firmware() {
     TARGET_DEVICE=$1
     TARGET_CONFIG=$2
     ./run_build_use_docker.sh -c $TARGET_CONFIG -d $TARGET_DEVICE -p -n $NAME_PREFIX"_"$TARGET_DEVICE
-    mkdir -p $FIRMWARE_OUTPUT_DIR
+    if [ ! -d "$FIRMWARE_OUTPUT_DIR" ]; then
+        rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
+    fi
     mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR/
 }
 source /etc/profile
@@ -16,7 +18,7 @@ set -e
 BASE_DIR=$(cd $(dirname $0);cd ..; pwd)
 NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
 # 固件输出根目录
-FIRMWARE_DIR=/data/webroot/firmware
+FIRMWARE_DIR=/home/webroot/firmware
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
 NAME_PREFIX=schedule_package
@@ -27,8 +29,6 @@ echo
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
 [ -z "$ONLY_PACKAGE" ] && rm -rf $BASE_DIR/openwrt_build_tmp
-# 根据当前日期重新建立固件目录
-rm -rf $FIRMWARE_DIR && mkdir -p $FIRMWARE_OUTPUT_DIR
 git pull
 [ `docker ps -a | grep $NAME_PREFIX | wc -l` -eq 0 ] || docker rm -f $(docker ps -a |  grep "$NAME_PREFIX"  | awk '{print $1}')
 # 编译盒子固件，有新的盒子要定时编译往这里加
