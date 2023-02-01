@@ -46,7 +46,6 @@ else
 fi
 IMAGE_NAME=${NAME:=openwrt_build}
 BUILD_DIR=$PWD/openwrt_build_tmp
-mkdir -p $BUILD_DIR
 [ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
 [ `docker ps -a | grep $IMAGE_NAME | wc -l` -eq 0 ] || docker rm -f $IMAGE_NAME
 if test -z "$REBUILD";then
@@ -55,6 +54,7 @@ else
    docker build . --tag=$IMAGE_NAME --network=host -f ./Dockerfile
    [ -d "$BUILD_DIR" ] && rm -rf $BUILD_DIR
 fi
+mkdir -p $BUILD_DIR
 if test -z "$IS_MAKE_MENUCONFIG";then
     echo '当前选择编译的设备：'$DEVICE
     echo '当前选择编译的配置：'$CONFIG
