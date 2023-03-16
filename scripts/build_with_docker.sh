@@ -93,7 +93,8 @@ fi
 if test -z "$SKIP_BUILD";then
     make defconfig
     echo '开始下载依赖'
-    make download -j`nproc` || make download -j1
+    make download -j`nproc`
+    set +e
     echo '编译依赖下载完毕'
     rm -rf $OPENWRT_DIR/bin
     echo '开始编译'
