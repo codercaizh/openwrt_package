@@ -6,12 +6,27 @@ OPENWRT_DIR=/opt/openwrt
 PACKIT_DIR=/opt/openwrt_packit
 ARTIFACT_DIR=/opt/artifact
 KERNEL_DIR=/opt/kernel
+OPENWRT_VERSION_FILE=/opt/build_openwrt_version
 #从外部传入的参数
 DEVICE=$1
 CONFIG=$2
 ONLY_PACKAGE=$3
 OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 IS_COMPLIE=0
+
+# 判断文件是否存在以及文件内容是否为空
+if [ -f "$OPENWRT_VERSION_FILE" ] && [ -s "$OPENWRT_VERSION_FILE" ]
+then
+    # 使用cut命令获取日期和commitId
+    OPENWRT_VER=$(cut -d ':' -f 1 "$file_path")
+    OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$file_path")
+else
+    # 文件不存在或者文件内容为空时，获取当前日期和空字符串
+    OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+    OPENWRT_COMMIT_ID=""
+fi
+
+
 check_complie_status() {
     COMPLIE_CONFIG=$CONFIG
     if [ "$COMPLIE_CONFIG" == "armv8" ];then
@@ -38,6 +53,11 @@ if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo 'openwrt源码更新完毕'
     mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
     cd $OPENWRT_DIR
+    if [ ! -z "$OPENWRT_COMMIT_ID" ]; then
+        # 如果 OPENWRT_COMMIT_ID 变量不为空
+        git pull # 拉取最新代码
+        git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
+    fi
     chmod +x $SCRIPT_DIR/*.sh
     cp $SCRIPT_DIR/*feeds.sh ./
     ./before_update_feeds.sh
@@ -68,7 +88,7 @@ else
 fi
 
 if test -z "$SKIP_BUILD";then
-    # make defconfig
+    make defconfig
     echo '开始下载依赖'
     make download -j`nproc` || make download -j1
     echo '编译依赖下载完毕'

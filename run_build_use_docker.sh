@@ -65,6 +65,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
     -v $PWD/configs:/opt/configs \
     -v $PWD/scripts:/opt/scripts \
     -v $BUILD_DIR/artifact:/opt/artifact \
+    -v $PWD/build_openwrt_version:/opt/build_openwrt_version \
     --net=host \
     --privileged \
     --name $IMAGE_NAME $IMAGE_NAME $DEVICE $CONFIG $ONLY_PACKAGE
@@ -85,6 +86,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
             -v $PWD/configs:/opt/configs \
             -v $PWD/scripts:/opt/scripts \
             -v $BUILD_DIR/artifact:/opt/artifact \
+            -v $PWD/build_openwrt_version:/opt/build_openwrt_version \
             --net=host \
             --privileged \
             --name $IMAGE_NAME $IMAGE_NAME $DEVICE $CONFIG 1
@@ -110,6 +112,7 @@ else
     -v $PWD/configs:/opt/configs \
     -v $PWD/scripts:/opt/scripts \
     -v $BUILD_DIR/artifact:/opt/artifact \
+    -v $PWD/build_openwrt_version:/opt/build_openwrt_version \
     --net=host \
     --privileged \
     --name $IMAGE_NAME $IMAGE_NAME 0 $CONFIG 

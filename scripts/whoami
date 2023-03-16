@@ -1,5 +1,4 @@
 WHOAMI="菜头君"
-OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
 SW_FLOWOFFLOAD=0
 SFE_FLOW=0
 ENABLE_WIFI_K504=0
