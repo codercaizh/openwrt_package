@@ -1,5 +1,6 @@
 #!/bin/bash
 #使用docker编译时使用脚本
+set -e
 SCRIPT_DIR=/opt/scripts
 CONFIG_DIR=/opt/configs
 OPENWRT_DIR=/opt/openwrt
@@ -18,14 +19,15 @@ IS_COMPLIE=0
 if [ -f "$OPENWRT_VERSION_FILE" ] && [ -s "$OPENWRT_VERSION_FILE" ]
 then
     # 使用cut命令获取日期和commitId
-    OPENWRT_VER=$(cut -d ':' -f 1 "$file_path")
-    OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$file_path")
+    OPENWRT_VER=$(cut -d ':' -f 1 "$OPENWRT_VERSION_FILE")
+    OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$OPENWRT_VERSION_FILE")
 else
     # 文件不存在或者文件内容为空时，获取当前日期和空字符串
     OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
     OPENWRT_COMMIT_ID=""
 fi
-
+echo '当前选择OP时间版本为：'$OPENWRT_VER
+echo '当前选择OP的CommitId为：'$OPENWRT_COMMIT_ID
 
 check_complie_status() {
     COMPLIE_CONFIG=$CONFIG
@@ -49,7 +51,7 @@ check_complie_status() {
 source $SCRIPT_DIR/package_firmware.sh
 if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo '未找到openwrt源码，正在检出源码'
-    git clone https://github.com/coolsnowwolf/lede.git --depth=1 /opt/openwrt_tmp
+    git clone https://github.com/coolsnowwolf/lede.git /opt/openwrt_tmp
     echo 'openwrt源码更新完毕'
     mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
     cd $OPENWRT_DIR
@@ -57,6 +59,7 @@ if [ ! -d "$OPENWRT_DIR/.git" ]; then
         # 如果 OPENWRT_COMMIT_ID 变量不为空
         git pull # 拉取最新代码
         git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
+        echo 'commit 切换完毕'
     fi
     chmod +x $SCRIPT_DIR/*.sh
     cp $SCRIPT_DIR/*feeds.sh ./
