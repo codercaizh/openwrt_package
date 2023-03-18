@@ -1,6 +1,4 @@
----
 name: Openwrt Build
-
 on:
   workflow_dispatch: 
     inputs:
