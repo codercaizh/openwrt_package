@@ -56,9 +56,16 @@ jobs:
         run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }}
         working-directory: package_scirpt
 
-      - name: Upload artifacts
+      - name: Set artifact
+        run: |
+          ARTIFACT_PATH=$(ls package_scirpt/openwrt_build_tmp/artifact/*/*.7z)
+          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
+          echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
+        working-directory: ./
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v3.1.1
         with:
-          name: R${{ env.OPENWRT_VER }}_${{ inputs.target }}.7z.zip
-          path: package_scirpt/openwrt_build_tmp/artifact/*.7z
+          name: ${{ env.ARTIFACT_FILE }}
+          path: package_scirpt/${{ env.ARTIFACT_PATH }}
           retention-days: 2

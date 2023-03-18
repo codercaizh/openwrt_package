@@ -1,0 +1,60 @@
+---
+name: Openwrt Build Schedule
+
+on:
+    schedule:
+    - cron: 05 17 * * *
+
+jobs:
+  build:
+    name: Openwrt Build Schedule For VPlus
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout package script
+        uses: actions/checkout@v2.5.0
+        with:
+          path: package_scirpt
+
+      - name: Build openwrt
+        run: sudo ./run_build_use_docker.sh -c armv8 -d vplus
+        working-directory: package_scirpt
+
+     - name: Set artifact
+        run: |
+          ARTIFACT_PATH=$(ls package_scirpt/openwrt_build_tmp/artifact/*/*.7z)
+          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
+          echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
+        working-directory: ./
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: ${{ env.ARTIFACT_FILE }}
+          path: package_scirpt/${{ env.ARTIFACT_PATH }}
+          retention-days: 2
+  build:
+    name: Openwrt Build Schedule For R3G
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout package script
+        uses: actions/checkout@v2.5.0
+        with:
+          path: package_scirpt
+
+      - name: Build openwrt
+        run: sudo ./run_build_use_docker.sh -c r3g -d r3g
+        working-directory: package_scirpt
+
+      - name: Set artifact
+        run: |
+          ARTIFACT_PATH=$(ls package_scirpt/openwrt_build_tmp/artifact/*/*.7z)
+          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
+          echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
+        working-directory: ./
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: ${{ env.ARTIFACT_FILE }}
+          path: package_scirpt/${{ env.ARTIFACT_PATH }}
+          retention-days: 2
