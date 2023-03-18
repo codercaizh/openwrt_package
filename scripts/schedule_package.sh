@@ -1,9 +1,9 @@
 #!/bin/bash
-# 此脚本为定时编译示例，用于在服务器上定时编译，若有类似需求可参考编写
-# 编译定时任务命令：crontab –e（需要安装定时任务组件: apt-get install cron）
-# 定时任务配置如下：每天凌晨3点30分执行编译
-# 30 3 * * * bash /openwrt_package/scripts/schedule_package.sh
-
+# 此脚本为定时编译示例，用于在服务器orGithub Action上定时编译，若有类似需求可参考编写
+# 调用方法 ./schedule_package xxx token，其中xxx为固件输出目录，token为推送token（可为空）
+set -e
+OUTPUT_DIR=${1:-"$PWD"}
+PUSH_TOKEN=${2:-""}
 compile_firmware() {
     TARGET_DEVICE=$1
     TARGET_CONFIG=$2
@@ -13,18 +13,17 @@ compile_firmware() {
     fi
     mv $BASE_DIR/openwrt_build_tmp/artifact/* $FIRMWARE_OUTPUT_DIR/
 }
-source /etc/profile
-set -e
+
 BASE_DIR=$(cd $(dirname $0);cd ..; pwd)
 NOW_DATE=$(TZ=':Asia/Shanghai' date '+%Y%m%d')
 # 固件输出根目录
-FIRMWARE_DIR=/home/webroot/firmware
+FIRMWARE_DIR=$OUTPUT_DIR
 # 固件输出具体目录（按照日期建立目录）
 FIRMWARE_OUTPUT_DIR=$FIRMWARE_DIR/$NOW_DATE
 NAME_PREFIX=schedule_package
 # 推送编译通知到手机上，可以自己到pushplus申请token配到环境中
 START_CONTENT='http://www.pushplus.plus/send?token='${PUSH_TOKEN}'&title=%E5%BC%80%E5%A7%8B%E7%BC%96%E8%AF%91openwrt%E5%9B%BA%E4%BB%B6&content=%E6%9C%AC%E6%AC%A1%E7%BC%96%E8%AF%91%E5%9B%BA%E4%BB%B6%E8%BE%93%E5%87%BA%E7%9B%AE%E5%BD%95%EF%BC%9A'$FIRMWARE_OUTPUT_DIR
-curl $START_CONTENT
+[ -n "$PUSH_TOKEN" ] && curl $START_CONTENT
 echo
 START_TIME=`date +%Y-%m-%d_%H:%M:%S`
 cd $BASE_DIR
@@ -44,4 +43,4 @@ echo '固件定时编译完毕：'$FIRMWARE_OUTPUT_DIR
 END_TIME=`date +%Y-%m-%d_%H:%M:%S`
 END_CONTENT='http://www.pushplus.plus/send?token='${PUSH_TOKEN}'&title=openwrt%E5%9B%BA%E4%BB%B6%E7%BC%96%E8%AF%91%E5%AE%8C%E6%88%90&content=openwrt%E5%9B%BA%E4%BB%B6%E6%89%80%E5%9C%A8%E7%9B%AE%E5%BD%95%EF%BC%9A'$NOW_DATE'%EF%BC%8C%E7%BC%96%E8%AF%91%E5%BC%80%E5%A7%8B%E6%97%B6%E9%97%B4%EF%BC%9A'$START_TIME'%EF%BC%8C%E7%BC%96%E8%AF%91%E5%AE%8C%E6%88%90%E6%97%B6%E9%97%B4%EF%BC%9A'$END_TIME
 echo
-curl $END_CONTENT
+[ -n "$PUSH_TOKEN" ] && curl $END_CONTENT
