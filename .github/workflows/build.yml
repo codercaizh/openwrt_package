@@ -67,7 +67,7 @@ jobs:
           echo "OPENWRT_COMMIT_ID=$OPENWRT_COMMIT_ID" >> $GITHUB_ENV
           echo '当前选择OP时间版本为：'$OPENWRT_VER
           echo '当前选择OP的CommitId为：'$OPENWRT_COMMIT_ID
-        working-directory: ./
+        working-directory: package_scirpt
     
       - name: Checkout openwrt
         uses: actions/checkout@v2.5.0
