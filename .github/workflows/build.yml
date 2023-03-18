@@ -45,8 +45,8 @@ on:
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
-    container:
-      image: codercai/openwrt_package
+    runs-on: ubuntu-latest
+    container: codercai/openwrt_package
     steps:
       - name: Checkout package script
         uses: actions/checkout@v2.5.0
