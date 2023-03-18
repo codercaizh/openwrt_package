@@ -7,7 +7,7 @@ on:
       target:
         description: '目标设备'
         required: true
-        default: 'r3g' 
+        default: 'vplus' 
         type: choice
         options:
         - vplus
@@ -33,7 +33,7 @@ on:
       config:
         description: '插件配置'
         required: true
-        default: 'r3g'
+        default: 'armv8'
         type: choice
         options:
         - armv8
