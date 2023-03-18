@@ -98,7 +98,7 @@ jobs:
         working-directory: openwrt
 
       - name: Copy config
-        run: cp package_scirpt/configs/${{ inputs.config }}.config openwrt/.config
+        run: sudo cp package_scirpt/configs/${{ inputs.config }}.config openwrt/.config
         working-directory: ./
 
       - name: Download lib
