@@ -4,30 +4,44 @@ on:
   schedule:
     - cron: "22 17 * * *"
 jobs:
-  build:
-    name: Openwrt Build Schedule
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout package script
-        uses: actions/checkout@v2.5.0
-        with:
-          path: package_scirpt
+    Schedule_ARMV8:
+        runs-on: ubuntu-20.04
+        steps:
+          - name: Checkout package script
+            uses: actions/checkout@v2.5.0
+            with:
+              path: package_scirpt
 
-      - name: Build openwrt
-        run: sudo bash $PWD/scripts/schedule_package.sh $PWD/output ${{ secrets.PUSH_TOKEN }}
-        working-directory: package_scirpt
+          - name: Build openwrt
+            run: sudo ./run_build_use_docker.sh -c armv8 -d vplus -p
+            run: sudo ./run_build_use_docker.sh -c armv8 -d s905d -p
+            run: sudo ./run_build_use_docker.sh -c armv8 -d s912 -p
+            working-directory: package_scirpt
 
-      - name: Set artifact
-        run: |
-          ARTIFACT_PATH=$(ls $PWD/output/*)
-          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
-          echo "ARTIFACT_DIR=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
-          working-directory: package_scirpt
+          - name: Upload artifact
+            uses: actions/upload-artifact@v3.1.1
+            with:
+              name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+              path: package_scirpt/openwrt_build_tmp/artifact
+              retention-days: 2
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3.1.1
-        with:
-          name: schedule_build_${{ env.ARTIFACT_DIR }}.zip
-          path: ${{ env.ARTIFACT_PATH }}
-          retention-days: 2
+    Schedule_ROUTE:
+        runs-on: ubuntu-20.04
+        steps:
+          - name: Checkout package script
+            uses: actions/checkout@v2.5.0
+            with:
+              path: package_scirpt
 
+          - name: Build openwrt
+            run: sudo ./run_build_use_docker.sh -c r3g -d r3g -p
+            run: sudo ./run_build_use_docker.sh -c r3p -d r3p -p
+            run: sudo ./run_build_use_docker.sh -c rm2100 -d rm2100 -p
+            working-directory: package_scirpt
+
+          - name: Upload artifact
+            uses: actions/upload-artifact@v3.1.1
+            with:
+              name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+              path: package_scirpt/openwrt_build_tmp/artifact
+              retention-days: 2

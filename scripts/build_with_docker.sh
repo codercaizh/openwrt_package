@@ -107,12 +107,17 @@ fi
 # 检测编译是否成功
 check_complie_status
  if [ "$IS_COMPLIE" == "0" ]; then
-    echo '编译失败，即将使用单线程重试编译'
-    make V=s -j1
+    echo '第一次编译失败，重试编译'
+    make -j`nproc`
     check_complie_status
     if [ "$IS_COMPLIE" == "0" ]; then
-        echo '编译失败，请根据日志排查原因'
-        exit -1
+        echo '第二次编译失败，启用低速编译排查问题'
+        make -j1
+        check_complie_status
+        if [ "$IS_COMPLIE" == "0" ]; then
+            echo '最终编译失败，请根据日志排查原因'
+            exit -1
+        fi
     fi
 else
     echo '编译完毕'
