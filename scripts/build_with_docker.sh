@@ -71,6 +71,8 @@ if [ ! -d "$OPENWRT_DIR/.git" ]; then
 fi
 cd $OPENWRT_DIR
 cp $CONFIG_DIR/$CONFIG.config ./.config
+## 以下命令确保兼容新的一些内核配置
+make defconfig
 if [ "$DEVICE" == "0" ];then
     make menuconfig
     cp .config $CONFIG_DIR/$CONFIG.config

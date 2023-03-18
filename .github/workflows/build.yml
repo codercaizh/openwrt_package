@@ -98,8 +98,8 @@ jobs:
         working-directory: openwrt
 
       - name: Copy config
-        run: sudo cp package_scirpt/configs/${{ inputs.config }}.config openwrt/.config
-        working-directory: ./
+        run: sudo cp ./configs/${{ inputs.config }}.config openwrt/.config
+        working-directory: package_scirpt
 
       - name: Download lib
         run: sudo make download -j$((`nproc` + 1))
