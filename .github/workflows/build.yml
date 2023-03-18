@@ -45,76 +45,18 @@ on:
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
-    runs-on: ubuntu-latest
-    container: codercai/openwrt_package
+    runs-on: ubuntu-20.04
     steps:
-      - name: Checkout package script
-        uses: actions/checkout@v2.5.0
-        with:
-          path: package_scirpt
+      - name: Initialization environment
+        run: sudo -E apt-get install docker.io
     
-      - name: Set openwrt version
-        run: |
-          OPENWRT_VERSION_FILE=build_openwrt_version
-          if [ -f "$OPENWRT_VERSION_FILE" ] && [ -s "$OPENWRT_VERSION_FILE" ]
-          then
-              OPENWRT_VER=$(cut -d ':' -f 1 "$OPENWRT_VERSION_FILE")
-              OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$OPENWRT_VERSION_FILE")
-          else
-              OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
-              OPENWRT_COMMIT_ID="master"
-          fi
-          echo "OPENWRT_VER=R$OPENWRT_VER" >> $GITHUB_ENV
-          echo "OPENWRT_COMMIT_ID=$OPENWRT_COMMIT_ID" >> $GITHUB_ENV
-          echo '当前选择OP时间版本为：'$OPENWRT_VER
-          echo '当前选择OP的CommitId为：'$OPENWRT_COMMIT_ID
-        working-directory: package_scirpt
-    
-      - name: Checkout openwrt
-        uses: actions/checkout@v2.5.0
-        with:
-          path: openwrt
-          repository: coolsnowwolf/lede
-          ref: ${{ env.OPENWRT_COMMIT_ID }}
-
-      - name: Copy config
-        run: cp ./configs/${{ inputs.config }}.config openwrt/.config
-        working-directory: package_scirpt
-
-      - name: Download lib
-        run: make download -j$((`nproc` + 1))
-        working-directory: openwrt
-      
       - name: Build openwrt
-        run:  make -j$((`nproc` + 1)) ||  make V=s -j1
-        working-directory: openwrt
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }}
+        working-directory: package_scirpt
 
-      - name: Package Armvirt as OpenWrt
-        uses: unifreq/openwrt_packit@master
-        if: (github.event.inputs.config == 'armv8')
-        env:
-          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
-          PACKAGE_SOC: ${{ inputs.target }}
-          KERNEL_VERSION_NAME: 6.1.1
-          WHOAMI: 菜头君
-          SW_FLOWOFFLOAD: 0
-          SFE_FLOW: 0
-          ENABLE_WIFI_K504: 0
-          ENABLE_WIFI_K510: 0
-          OPENWRT_VER: ${{ env.OPENWRT_VER }}
-
-      - name: Upload armvirt built artifacts
-        if: (github.event.inputs.config == 'armv8')
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3.1.1
         with:
-          name: ${{ env.OPENWRT_VER }}_${{ inputs.target }}.zip
-          path: ${{ env.PACKAGED_OUTPUTPATH }}/*
-          retention-days: 2
-
-      - name: Upload route built artifacts
-        if: (github.event.inputs.config != 'armv8')
-        uses: actions/upload-artifact@v3.1.1
-        with:
-          name: ${{ env.OPENWRT_VER }}_${{ inputs.target }}.zip
-          path: openwrt/bin/targets/ramips/*/*.bin
+          name: R${{ env.OPENWRT_VER }}_${{ inputs.target }}.7z.zip
+          path: package_scirpt/openwrt_build_tmp/artifact/*.7z
           retention-days: 2
