@@ -52,17 +52,34 @@ jobs:
         with:
           path: package_scirpt
     
+      - name: Set openwrt version
+        run: |
+          OPENWRT_VERSION_FILE=build_openwrt_version
+          if [ -f "$OPENWRT_VERSION_FILE" ] && [ -s "$OPENWRT_VERSION_FILE" ]
+          then
+              OPENWRT_VER=$(cut -d ':' -f 1 "$OPENWRT_VERSION_FILE")
+              OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$OPENWRT_VERSION_FILE")
+          else
+              OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+              OPENWRT_COMMIT_ID=""
+          fi
+          echo "OPENWRT_VER=R$OPENWRT_VER" >> $GITHUB_ENV
+          echo "OPENWRT_COMMIT_ID=$OPENWRT_COMMIT_ID" >> $GITHUB_ENV
+          echo '当前选择OP时间版本为：'$OPENWRT_VER
+          echo '当前选择OP的CommitId为：'$OPENWRT_COMMIT_ID
+        working-directory: ./
+    
       - name: Checkout openwrt
         uses: actions/checkout@v2.5.0
         with:
           path: openwrt
           repository: coolsnowwolf/lede
+          ref: ${{ env.OPENWRT_COMMIT_ID }}
 
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')" >> $GITHUB_ENV
           sudo chown -R $USER openwrt
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo -E apt-get -qq update
@@ -98,7 +115,7 @@ jobs:
         env:
           OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
           PACKAGE_SOC: ${{ inputs.target }}
-          KERNEL_VERSION_NAME: 6.0.1
+          KERNEL_VERSION_NAME: 6.1.1
           WHOAMI: 菜头君
           SW_FLOWOFFLOAD: 0
           SFE_FLOW: 0
