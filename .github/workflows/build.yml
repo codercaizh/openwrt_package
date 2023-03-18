@@ -47,6 +47,11 @@ jobs:
     name: Openwrt Build For ${{ inputs.target }}
     runs-on: ubuntu-20.04
     steps:
+      - name: Checkout package script
+        uses: actions/checkout@v2.5.0
+        with:
+          path: package_scirpt
+
       - name: Build openwrt
         run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }}
         working-directory: package_scirpt
