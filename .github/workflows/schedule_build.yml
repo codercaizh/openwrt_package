@@ -3,11 +3,10 @@ name: Openwrt Build Schedule
 
 on:
     schedule:
-    - cron: '10 17 * * *'
+      - cron: '13 17 * * *'
 
 jobs:
     Schedule_VPlus:
-        name: Openwrt Build Schedule For VPlus
         runs-on: ubuntu-20.04
         steps:
           - name: Checkout package script
@@ -33,7 +32,6 @@ jobs:
               path: package_scirpt/${{ env.ARTIFACT_PATH }}
               retention-days: 2
     Schedule_R3G:
-        name: Openwrt Build Schedule For R3G
         runs-on: ubuntu-20.04
         steps:
           - name: Checkout package script
