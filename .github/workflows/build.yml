@@ -78,15 +78,15 @@ jobs:
           ref: ${{ env.OPENWRT_COMMIT_ID }}
 
       - name: Copy config
-        run: sudo cp ./configs/${{ inputs.config }}.config openwrt/.config
+        run: cp ./configs/${{ inputs.config }}.config openwrt/.config
         working-directory: package_scirpt
 
       - name: Download lib
-        run: sudo make download -j$((`nproc` + 1))
+        run: make download -j$((`nproc` + 1))
         working-directory: openwrt
       
       - name: Build openwrt
-        run:  sudo make FORCE_UNSAFE_CONFIGURE=1 -j$((`nproc` + 1)) ||  sudo make FORCE_UNSAFE_CONFIGURE=1 V=s -j1
+        run:  make -j$((`nproc` + 1)) ||  make V=s -j1
         working-directory: openwrt
 
       - name: Package Armvirt as OpenWrt
