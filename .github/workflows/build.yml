@@ -45,7 +45,8 @@ on:
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
-    runs-on: ubuntu-20.04
+    container:
+      image: codercai/openwrt_package
     steps:
       - name: Checkout package script
         uses: actions/checkout@v2.5.0
@@ -75,27 +76,6 @@ jobs:
           path: openwrt
           repository: coolsnowwolf/lede
           ref: ${{ env.OPENWRT_COMMIT_ID }}
-
-      - name: Initialization environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo chown -R $USER openwrt
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
-          
-      - name: Update & Install feeds
-        run: |
-          sudo chmod +x ../package_scirpt/scripts/*.sh
-          cp ../package_scirpt/scripts/*.sh ./
-          sudo ./before_update_feeds.sh
-          sudo ./scripts/feeds update -a
-          sudo ./scripts/feeds install -a
-          sudo ./after_update_feeds.sh
-        working-directory: openwrt
 
       - name: Copy config
         run: sudo cp ./configs/${{ inputs.config }}.config openwrt/.config
