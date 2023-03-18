@@ -1,4 +1,4 @@
-# 执行脚本的目录在openwrt
+# dir: ./openwrt
 ## 更换n2n版本为最新版本
 N2N_DIR=package/feeds/packages/n2n
 rm -rf $N2N_DIR/patches
@@ -14,3 +14,5 @@ sed -i 's/+EXTRA_CFLAGS += -DCONFIG_MT76_LEDS/+EXTRA_CFLAGS += -DCONFIG_MT76_LED
 # sed -i 's/pll = rt_memc_r32(MEMC_REG_CPU_PLL);/pll = rt_memc_r32(MEMC_REG_CPU_PLL);\n+       pll \&= ~(0x7ff);\n+       pll |=  (0x362);\n+       rt_memc_w32(pll,MEMC_REG_CPU_PLL);\n+       for(i=0;i<1024;i++){}/g' target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch
 ## 临时修复插件BUG
 rm -rf package/feeds/small8/*mmdvm*
+## 以下命令确保兼容新的一些内核配置
+make defconfig

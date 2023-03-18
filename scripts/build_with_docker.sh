@@ -91,7 +91,6 @@ else
 fi
 
 if test -z "$SKIP_BUILD";then
-    make defconfig
     echo '开始下载依赖'
     make download -j`nproc`
     set +e
