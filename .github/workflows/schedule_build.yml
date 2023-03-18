@@ -1,5 +1,6 @@
 name: Openwrt Build Schedule
 on:
+  workflow_dispatch: 
   schedule:
     - cron: "22 17 * * *"
 jobs:
