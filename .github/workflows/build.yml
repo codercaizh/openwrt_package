@@ -61,7 +61,7 @@ jobs:
               OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$OPENWRT_VERSION_FILE")
           else
               OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
-              OPENWRT_COMMIT_ID=""
+              OPENWRT_COMMIT_ID="master"
           fi
           echo "OPENWRT_VER=R$OPENWRT_VER" >> $GITHUB_ENV
           echo "OPENWRT_COMMIT_ID=$OPENWRT_COMMIT_ID" >> $GITHUB_ENV
