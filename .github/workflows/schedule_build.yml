@@ -14,6 +14,7 @@ jobs:
 
           - name: Build openwrt
             run: |
+              rm -rf version.sh
               sudo ./run_build_use_docker.sh -c armv8 -d vplus -p
               sudo ./run_build_use_docker.sh -c armv8 -d s905d -p
               sudo ./run_build_use_docker.sh -c armv8 -d s912 -p
@@ -36,6 +37,7 @@ jobs:
 
           - name: Build openwrt
             run: |
+              rm -rf version.sh
               sudo ./run_build_use_docker.sh -c r3g -d r3g -p
               sudo ./run_build_use_docker.sh -c r3p -d r3p -p
               sudo ./run_build_use_docker.sh -c rm2100 -d rm2100 -p
