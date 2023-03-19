@@ -1,4 +1,5 @@
-# dir: ./openwrt
+#!/bin/bash
+# 执行脚本的目录在openwrt
 ## 更换n2n版本为最新版本
 N2N_DIR=package/feeds/packages/n2n
 rm -rf $N2N_DIR/patches

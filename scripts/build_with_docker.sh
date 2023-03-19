@@ -7,27 +7,20 @@ OPENWRT_DIR=/opt/openwrt
 PACKIT_DIR=/opt/openwrt_packit
 ARTIFACT_DIR=/opt/artifact
 KERNEL_DIR=/opt/kernel
-OPENWRT_VERSION_FILE=/opt/build_openwrt_version
+OPENWRT_VERSION_FILE=/opt/version.sh
 #从外部传入的参数
 DEVICE=$1
 CONFIG=$2
 ONLY_PACKAGE=$3
 OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 IS_COMPLIE=0
-
-# 判断文件是否存在以及文件内容是否为空
-if [ -f "$OPENWRT_VERSION_FILE" ] && [ -s "$OPENWRT_VERSION_FILE" ]
-then
-    # 使用cut命令获取日期和commitId
-    OPENWRT_VER=$(cut -d ':' -f 1 "$OPENWRT_VERSION_FILE")
-    OPENWRT_COMMIT_ID=$(cut -d ':' -f 2 "$OPENWRT_VERSION_FILE")
-else
-    # 文件不存在或者文件内容为空时，获取当前日期和空字符串
-    OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
-    OPENWRT_COMMIT_ID=""
-fi
-echo '当前选择OP时间版本为：'$OPENWRT_VER
-echo '当前选择OP的CommitId为：'$OPENWRT_COMMIT_ID
+# 设置编译版本
+[ -f "$OPENWRT_VERSION_FILE" ] && source $OPENWRT_VERSION_FILE
+export OPENWRT_VER=${OPENWRT_VER:-"R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"}
+export OPENWRT_COMMIT_ID=${OPENWRT_COMMIT_ID:-master}
+export OPENWRT_PACKAGES_COMMIT_ID=${OPENWRT_PACKAGES_COMMIT_ID:-master}
+export SMALL_PACKAGE_COMMIT_ID=${SMALL_PACKAGE_COMMIT_ID:-master}
+echo '当前选择编译版本为：'$OPENWRT_VER
 
 check_complie_status() {
     COMPLIE_CONFIG=$CONFIG
@@ -48,6 +41,7 @@ check_complie_status() {
     fi
 }
 
+# 切换源码
 source $SCRIPT_DIR/package_firmware.sh
 if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo '未找到openwrt源码，正在检出源码'
@@ -55,24 +49,28 @@ if [ ! -d "$OPENWRT_DIR/.git" ]; then
     echo 'openwrt源码更新完毕'
     mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
     cd $OPENWRT_DIR
-    if [ ! -z "$OPENWRT_COMMIT_ID" ]; then
-        # 如果 OPENWRT_COMMIT_ID 变量不为空
-        git pull # 拉取最新代码
-        git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
-        echo 'commit 切换完毕'
-    fi
-    chmod +x $SCRIPT_DIR/*.sh
-    cp $SCRIPT_DIR/*feeds.sh ./
-    ./before_update_feeds.sh
-    ./scripts/feeds update -a
-    ./scripts/feeds install -a
-    ./after_update_feeds.sh
-    echo 'feed更新完毕'
+    git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
+else
+    cd $OPENWRT_DIR
+    git reset --hard
+    git fetch --all # 拉取最新代码
+    git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
+    rm -rf *.feeds.sh
 fi
+
+# 更新源与配置
 cd $OPENWRT_DIR
+chmod +x $SCRIPT_DIR/*.sh
+cp $SCRIPT_DIR/*feeds.sh ./
+./before_update_feeds.sh
+./scripts/feeds update -a
+./scripts/feeds install -a
+./after_update_feeds.sh
+echo 'feed更新完毕'
 cp $CONFIG_DIR/$CONFIG.config ./.config
-## 以下命令确保兼容新的一些内核配置
 make defconfig
+
+cd $OPENWRT_DIR
 if [ "$DEVICE" == "0" ];then
     make menuconfig
     cp .config $CONFIG_DIR/$CONFIG.config
@@ -93,9 +91,9 @@ else
 fi
 
 if test -z "$SKIP_BUILD";then
-    echo '开始下载依赖'
-    make download -j`nproc`
     set +e
+    echo '开始下载依赖'
+    make download -j`nproc` || make download -j`nproc`
     echo '编译依赖下载完毕'
     rm -rf $OPENWRT_DIR/bin
     echo '开始编译'
@@ -106,7 +104,7 @@ fi
 
 # 检测编译是否成功
 check_complie_status
- if [ "$IS_COMPLIE" == "0" ]; then
+if [ "$IS_COMPLIE" == "0" ]; then
     echo '第一次编译失败，重试编译'
     make -j`nproc`
     check_complie_status
@@ -122,8 +120,6 @@ check_complie_status
 else
     echo '编译完毕'
 fi
-
-
 
 ####打包部分####
 if [ "$CONFIG" == "armv8" ];then

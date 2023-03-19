@@ -1,4 +1,10 @@
+#!/bin/bash
 # 执行脚本的目录在openwrt
-sed -i '$a src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
-sed -i '$a src-git small8 https://github.com/kenzok8/small-package' feeds.conf.default
-# git clone https://github.com/sirpdboy/luci-app-ddns-go.git --depth=1 package/ddns-go
+cd package && PACKAGE_DIR=$PWD
+
+# 有新的feeds按照下面格式添加即可
+rm -rf $PACKAGE_DIR/kenzo && git clone https://github.com/kenzok8/openwrt-packages $PACKAGE_DIR/kenzo
+cd $PACKAGE_DIR/kenzo && git checkout $OPENWRT_PACKAGES_COMMIT_ID
+
+rm -rf $PACKAGE_DIR/small8 && git clone https://github.com/kenzok8/small-package $PACKAGE_DIR/small8
+cd $PACKAGE_DIR/small8 && git checkout $SMALL_PACKAGE_COMMIT_ID
