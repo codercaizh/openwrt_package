@@ -58,24 +58,6 @@ else
     rm -rf *.feeds.sh
 fi
 
-# 更新源与配置
-cd $OPENWRT_DIR
-chmod +x $SCRIPT_DIR/*.sh
-cp $SCRIPT_DIR/*feeds.sh ./
-./before_update_feeds.sh
-./scripts/feeds update -a
-./scripts/feeds install -a
-./after_update_feeds.sh
-echo 'feed更新完毕'
-cp $CONFIG_DIR/$CONFIG.config ./.config
-make defconfig
-
-cd $OPENWRT_DIR
-if [ "$DEVICE" == "0" ];then
-    make menuconfig
-    cp .config $CONFIG_DIR/$CONFIG.config
-    exit 0
-fi
 if test -z "$ONLY_PACKAGE";then
     echo '仅打包选项未开启，进入编译流程'
 else
@@ -92,6 +74,24 @@ fi
 
 if test -z "$SKIP_BUILD";then
     set +e
+    # 更新源与配置
+    cd $OPENWRT_DIR
+    chmod +x $SCRIPT_DIR/*.sh
+    cp $SCRIPT_DIR/*feeds.sh ./
+    ./before_update_feeds.sh
+    ./scripts/feeds update -a
+    ./scripts/feeds install -a
+    ./after_update_feeds.sh
+    echo 'feed更新完毕'
+    cp $CONFIG_DIR/$CONFIG.config ./.config
+    make defconfig
+
+    cd $OPENWRT_DIR
+    if [ "$DEVICE" == "0" ];then
+        make menuconfig
+        cp .config $CONFIG_DIR/$CONFIG.config
+        exit 0
+    fi
     echo '开始下载依赖'
     make download -j`nproc` || make download -j`nproc`
     echo '编译依赖下载完毕'
