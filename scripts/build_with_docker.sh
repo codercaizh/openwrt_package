@@ -127,14 +127,16 @@ if [ "$CONFIG" == "armv8" ];then
     if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
         echo "内核目录不为空，跳过下载内核步骤"
     else
-        [[ "${DEVICE}" == "rk3588" ]] && kernel_tag="rk3588" || kernel_tag="stable"
+        [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
         apt-get install -y jq
-        KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$kernel_tag | jq -r '.assets[].name' | sort -rV | head -n 1)"
+        LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
         cd $KERNEL_DIR
-        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$kernel_tag/$KERNEL_VERSION"
-        tar -vxf $KERNEL_VERSION && mv ${KERNEL_VERSION%%.tar.gz}/* $KERNEL_DIR/
+        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q
+        tar -vxf $LATEST_KERNEL_VERSION && mv ${LATEST_KERNEL_VERSION%%.tar.gz}/* $KERNEL_DIR/
     fi
+    KERNEL_VERSION=`ls -l $KERNEL_DIR | awk '{print $9}' | grep boot | head -1`
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
+    KERNEL_VERSION=${KERNEL_VERSION##boot-}
     export KERNEL_VERSION
     echo '当前仓库最新内核版本：'$KERNEL_VERSION
     echo '开始进行打包'
