@@ -124,12 +124,12 @@ fi
 ####打包部分####
 if [ "$CONFIG" == "armv8" ];then
     # 拉取内核
-    if [ "$(ls -A $KERNEL_DIR)" ]; then
-        echo "内核目录不为空"
+    if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
+        echo "内核目录不为空，跳过下载内核步骤"
     else
         [[ "${DEVICE}" == "rk3588" ]] && kernel_tag="rk3588" || kernel_tag="stable"
         KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$kernel_tag | jq -r '.assets[].name' | sort -rV | head -n 1)"
-        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$kernel_tag/$KERNEL_VERSION" -q -P "${KERNEL_DIR}"
+        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$kernel_tag/$KERNEL_VERSION" -q -P "$KERNEL_DIR"
     fi
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
     export KERNEL_VERSION
