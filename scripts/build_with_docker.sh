@@ -77,7 +77,7 @@ if test -z "$SKIP_BUILD";then
     # 更新源与配置
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
-    cp $SCRIPT_DIR/*feeds.sh ./
+    cp $SCRIPT_DIR/*.sh ./
     ./before_update_feeds.sh
     ./scripts/feeds update -a
     ./scripts/feeds install -a
