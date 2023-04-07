@@ -128,6 +128,7 @@ if [ "$CONFIG" == "armv8" ];then
         echo "内核目录不为空，跳过下载内核步骤"
     else
         [[ "${DEVICE}" == "rk3588" ]] && kernel_tag="rk3588" || kernel_tag="stable"
+        sudo apt-get install -y jq
         KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$kernel_tag | jq -r '.assets[].name' | sort -rV | head -n 1)"
         wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$kernel_tag/$KERNEL_VERSION" -q -P "$KERNEL_DIR"
     fi
