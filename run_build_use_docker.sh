@@ -40,12 +40,14 @@ else
     esac
     done
 fi
+
 CONTAINER_NAME=${NAME:=openwrt_build}
 BUILD_DIR=$PWD/openwrt_build_tmp
 BUILD_IMAGE=codercai/openwrt_package
 [ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
 [ `docker ps -a | grep $CONTAINER_NAME | wc -l` -eq 0 ] || docker rm -f $CONTAINER_NAME
 mkdir -p $BUILD_DIR
+docker pull $BUILD_IMAGE
 if test -z "$IS_MAKE_MENUCONFIG";then
     echo '当前选择编译的设备：'$DEVICE
     echo '当前选择编译的配置：'$CONFIG
