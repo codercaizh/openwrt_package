@@ -7,4 +7,4 @@ rm -rf $PACKAGE_DIR/kenzo && git clone https://github.com/kenzok8/openwrt-packag
 cd $PACKAGE_DIR/kenzo && git checkout $OPENWRT_PACKAGES_COMMIT_ID
 
 rm -rf $PACKAGE_DIR/passwall && git clone https://github.com/xiaorouji/openwrt-passwall.git $PACKAGE_DIR/passwall
-# cd $PACKAGE_DIR/passwall && git checkout $SMALL_PACKAGE_COMMIT_ID
+cd $PACKAGE_DIR/passwall && git checkout $PASSWALL_PACKAGE_COMMIT_ID

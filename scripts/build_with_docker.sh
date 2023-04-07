@@ -19,7 +19,7 @@ IS_COMPLIE=0
 export OPENWRT_VER=${OPENWRT_VER:-"R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"}
 export OPENWRT_COMMIT_ID=${OPENWRT_COMMIT_ID:-master}
 export OPENWRT_PACKAGES_COMMIT_ID=${OPENWRT_PACKAGES_COMMIT_ID:-master}
-export SMALL_PACKAGE_COMMIT_ID=${SMALL_PACKAGE_COMMIT_ID:-master}
+export PASSWALL_PACKAGE_COMMIT_ID=${PASSWALL_PACKAGE_COMMIT_ID:-packages}
 echo '当前选择编译版本为：'$OPENWRT_VER
 
 check_complie_status() {
@@ -128,7 +128,6 @@ if [ "$CONFIG" == "armv8" ];then
         echo "内核目录不为空，跳过下载内核步骤"
     else
         [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
-        apt-get install -y jq
         LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
         cd $KERNEL_DIR
         wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q
