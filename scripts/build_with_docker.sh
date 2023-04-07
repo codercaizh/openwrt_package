@@ -124,18 +124,16 @@ fi
 ####打包部分####
 if [ "$CONFIG" == "armv8" ];then
     # 拉取内核
-    if [ ! -d "$KERNEL_DIR/opt/kernel" ]; then
-        echo '未找到内核，正在下载最新内核'
-        git clone https://github.com/breakings/OpenWrt --depth=1 $KERNEL_DIR 
-        echo '内核下载完毕'
+    if [ "$(ls -A $KERNEL_DIR)" ]; then
+        echo "内核目录不为空"
+    else
+        [[ "${DEVICE}" == "rk3588" ]] && kernel_tag="rk3588" || kernel_tag="stable"
+        KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$kernel_tag | jq -r '.assets[].name' | sort -rV | head -n 1)"
+        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$kernel_tag/$KERNEL_VERSION" -q -P "${KERNEL_DIR}"
     fi
-    LATEST_KERNEL_VERSION=`ls -l $KERNEL_DIR/opt/kernel | awk '{print $9}' | sort -k1.1r | head -1`
-    KERNEL_VERSION=`ls -l $KERNEL_DIR/opt/kernel/$LATEST_KERNEL_VERSION | awk '{print $9}' | grep boot | head -1`
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
-    KERNEL_VERSION=${KERNEL_VERSION##boot-}
     export KERNEL_VERSION
     echo '当前仓库最新内核版本：'$KERNEL_VERSION
-    cp -r $KERNEL_DIR/opt/kernel/$LATEST_KERNEL_VERSION/* $KERNEL_DIR/
     echo '开始进行打包'
     package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz $DEVICE $SCRIPT_DIR/whoami
     cd $PACKIT_DIR/output/
