@@ -87,6 +87,7 @@ if test -z "$SKIP_BUILD";then
     make defconfig
 
     cd $OPENWRT_DIR
+    ./before_compile.sh
     if [ "$DEVICE" == "0" ];then
         make menuconfig
         cp .config $CONFIG_DIR/$CONFIG.config
