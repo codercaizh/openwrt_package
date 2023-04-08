@@ -70,7 +70,7 @@ jobs:
 
       - name: Set use latest code
         if:  ${{ inputs.useLatestCode }} 
-        run: sudo rm -rf version.sh
+        run: sudo echo '' > version.sh
         working-directory: source
 
       - name: Build firmware
