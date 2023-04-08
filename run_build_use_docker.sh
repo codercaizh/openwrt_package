@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 usage() {
-  echo "Complier Usage: ${0} [-c|--configName] [-d|--device] [-p|--only_package] [-n|--name]" 1>&2
+  echo "Complier Usage: ${0} [-c|--configName] [-d|--device] [-p|--only_package] [-n|--name] [-o|--output_path]" 1>&2
   echo "Make menuconfig Usage: menuconfig" 1>&2
   exit 1 
 }
@@ -25,6 +25,10 @@ else
         DEVICE=${2}
         shift 2
         ;;
+        -o|--output_path)
+        OUTPUT_PATH=${2}
+        shift 2
+        ;;
         -p|--only_package)
         ONLY_PACKAGE=1
         shift
@@ -42,7 +46,7 @@ else
 fi
 
 CONTAINER_NAME=${NAME:=openwrt_build}
-BUILD_DIR=$PWD/openwrt_build_tmp
+BUILD_DIR=${OUTPUT_PATH:="$PWD/openwrt_build_tmp"}
 BUILD_IMAGE=codercai/openwrt_package
 [ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
 [ `docker ps -a | grep $CONTAINER_NAME | wc -l` -eq 0 ] || docker rm -f $CONTAINER_NAME

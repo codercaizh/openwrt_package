@@ -52,32 +52,31 @@ on:
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
-    #runs-on: ubuntu-20.04
+    #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
     runs-on: self-hosted
     steps:
-      - name: Clean environment
-        if:  ${{ !inputs.useCache }} 
-        run: sudo rm -rf * .*
-        working-directory: compile_dir
+      - name: Clean source
+        run: sudo rm -rf  * .*
+        working-directory: source
 
       - name: Checkout source
-        if:  ${{ !inputs.useCache }} 
         uses: actions/checkout@v2.5.0
         with:
-          path: compile_dir
+          path: source
       
-      - name: Update source
-        run: sudo git reset --hard && git pull
-        working-directory: compile_dir
-      
-      - name: Use latest code
+      - name: Set use latest
         if:  ${{ inputs.useLatestCode }} 
         run: rm -rf version.sh
-        working-directory: compile_dir
+        working-directory: source
+
+
+      - name: Clean environment
+        if:  ${{ !inputs.useCache }} 
+        run: sudo rm -rf ./compile_dir
 
       - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }}
-        working-directory: compile_dir
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubAction_${{ env.GITHUB_RUN_ID}" -o ${{ env.GITHUB_WORKSPACE }}/compile_dir
+        working-directory: source
 
       - name: Set artifact
         run: |
