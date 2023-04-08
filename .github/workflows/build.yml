@@ -68,16 +68,16 @@ jobs:
         with:
           path: source
 
-      - name: Set use latest
+      - name: Set use latest code
         if:  ${{ inputs.useLatestCode }} 
         run: sudo rm -rf version.sh
         working-directory: source
 
-      - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubActionBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir -p
+      - name: Build firmware
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubActionBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
         working-directory: source
 
-      - name: Set artifact
+      - name: Set artifact path
         run: |
           ARTIFACT_PATH=$PWD/$(ls artifact/*/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV

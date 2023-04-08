@@ -8,3 +8,10 @@ cd $PACKAGE_DIR/kenzo && git checkout $OPENWRT_PACKAGES_COMMIT_ID
 
 rm -rf $PACKAGE_DIR/passwall && git clone https://github.com/xiaorouji/openwrt-passwall.git $PACKAGE_DIR/passwall
 cd $PACKAGE_DIR/passwall && git checkout $PASSWALL_PACKAGE_COMMIT_ID
+
+# 添加自定义的部分源
+rm -rf $PACKAGE_DIR/small-package && mkdir -p $PACKAGE_DIR/small-package && git clone https://github.com/kenzok8/small-package.git --depth=1 /tmp/small-package
+cp -r /tmp/small-package/luci-app-tencentddns $PACKAGE_DIR/small-package/
+cp -r /tmp/small-package/luci-app-netspeedtest $PACKAGE_DIR/small-package/
+cp -r /tmp/small-package/luci-app-wolplus $PACKAGE_DIR/small-package/
+rm -rf /tmp/small-package

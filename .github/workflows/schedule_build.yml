@@ -25,7 +25,7 @@ jobs:
 
       - name: Build n1
         run:  |
-          sudo ./run_build_use_docker.sh -c armv8 -d s905d -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
+          sudo ./run_build_use_docker.sh -c armv8_full -d s905d -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
         working-directory: source
 
       - name: Echo version

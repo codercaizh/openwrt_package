@@ -46,6 +46,7 @@ else
 fi
 
 CONTAINER_NAME=${NAME:=openwrt_build}
+[ "$1" = "menuconfig" ] && CONTAINER_NAME="$CONTAINER_NAME"_menuconfig
 BUILD_DIR=${OUTPUT_PATH:="$PWD/openwrt_build_tmp"}
 BUILD_IMAGE=codercai/openwrt_package
 [ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
