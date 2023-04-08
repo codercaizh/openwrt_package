@@ -32,16 +32,19 @@ jobs:
         run: |
           echo "R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"
           cd openwrt
+          git config --global --add safe.directory $PWD
           echo "OPENWRT_COMMIT_ID: $(git rev-parse HEAD)"
           cd package/kenzo
+          git config --global --add safe.directory $PWD
           echo "OPENWRT_PACKAGES_COMMIT_ID: $(git rev-parse HEAD)"
           cd ../passwall
+          git config --global --add safe.directory $PWD
           echo "PASSWALL_PACKAGE_COMMIT_ID: $(git rev-parse HEAD)"
         working-directory: compile_dir
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3.1.1
         with:
-          name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+          name: schedule_build_${{ TZ=':Asia/Shanghai' date '+%y.%m.%d' }}
           path: compile_dir/artifact
           retention-days: 3
