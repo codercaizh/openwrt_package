@@ -46,13 +46,13 @@ jobs:
     #runs-on: ubuntu-20.04
     runs-on: self-hosted
     steps:
-      - name: Checkout package script
-        uses: actions/checkout@v2.5.0
-        with:
-          path: package_scirpt
+      # - name: Checkout package script
+      #   uses: actions/checkout@v2.5.0
+      #   with:
+      #     path: package_scirpt
 
       - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }}
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -p
         working-directory: package_scirpt
 
       - name: Set artifact
