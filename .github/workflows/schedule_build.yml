@@ -30,7 +30,9 @@ jobs:
 
       - name: Echo version
         run: |
-          echo "R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"
+          NOW=$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+          echo "OPENWRT_VER: R$NOW"
+          echo "NOW=$NOW" >> $GITHUB_ENV
           cd openwrt
           git config --global --add safe.directory $PWD
           echo "OPENWRT_COMMIT_ID: $(git rev-parse HEAD)"
@@ -45,6 +47,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3.1.1
         with:
-          name: schedule_build_${{ TZ=':Asia/Shanghai' date '+%y.%m.%d' }}
+          name: schedule_build_${{ env.NOW }}
           path: compile_dir/artifact
           retention-days: 3
