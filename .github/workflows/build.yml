@@ -73,7 +73,7 @@ jobs:
         working-directory: source
 
       - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubAction_${{ env.GITHUB_RUN_ID}" -o ${{ env.GITHUB_WORKSPACE }}/compile_dir
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubAction_${{ env.GITHUB_RUN_ID }}" -o ${{ env.GITHUB_WORKSPACE }}/compile_dir
         working-directory: source
 
       - name: Set artifact
