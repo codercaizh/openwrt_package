@@ -39,6 +39,14 @@ on:
         - r3p
         - rm2100
         - simple
+      useCache:
+        description: '是否使用上一次编译的缓存进行编译'
+        required: true
+        type: boolean
+      useLatestCode:
+        description: '是否使用最新的Openwrt源码和插件源码进行编译'
+        required: true
+        type: boolean
 
 jobs:
   build:
@@ -46,25 +54,40 @@ jobs:
     #runs-on: ubuntu-20.04
     runs-on: self-hosted
     steps:
-      # - name: Checkout package script
-      #   uses: actions/checkout@v2.5.0
-      #   with:
-      #     path: package_scirpt
+      - name: Clean environment
+        if:  ${{ !inputs.useCache }} 
+        run: sudo rm -rf * .*
+        working-directory: compile_dir
+
+      - name: Checkout source
+        if:  ${{ !inputs.useCache }} 
+        uses: actions/checkout@v2.5.0
+        with:
+          path: compile_dir
+      
+      - name: Update source
+        run: sudo git reset --hard && git pull
+        working-directory: compile_dir
+      
+      - name: Use latest code
+        if:  ${{ inputs.useLatestCode }} 
+        run: rm -rf version.sh
+        working-directory: compile_dir
 
       - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -p
-        working-directory: package_scirpt
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }}
+        working-directory: compile_dir
 
       - name: Set artifact
         run: |
           ARTIFACT_PATH=$PWD/$(ls openwrt_build_tmp/artifact/*/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
-        working-directory: package_scirpt
+        working-directory: compile_dir
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3.1.1
         with:
           name: ${{ env.ARTIFACT_FILE }}
           path: ${{ env.ARTIFACT_PATH }}
-          retention-days: 2
+          retention-days: 3
