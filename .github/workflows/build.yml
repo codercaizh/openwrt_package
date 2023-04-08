@@ -35,6 +35,7 @@ on:
         type: choice
         options:
         - armv8
+        - armv8_full
         - r3g
         - r3p
         - rm2100
@@ -73,12 +74,12 @@ jobs:
         working-directory: source
 
       - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubActionBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubActionBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir -p
         working-directory: source
 
       - name: Set artifact
         run: |
-          ARTIFACT_PATH=$PWD/$(ls openwrt_build_tmp/artifact/*/*.7z)
+          ARTIFACT_PATH=$PWD/$(ls artifact/*/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
         working-directory: compile_dir
