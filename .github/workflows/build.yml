@@ -40,11 +40,12 @@ on:
         - rm2100
         - simple
       useCache:
-        description: '是否使用上一次编译的缓存进行编译'
+        description: '使用编译缓存加速编译（如果有）'
         required: true
         type: boolean
+        default: true
       useLatestCode:
-        description: '是否使用最新的Openwrt源码和插件源码进行编译'
+        description: '使用最新源代码编译'
         required: true
         type: boolean
 
