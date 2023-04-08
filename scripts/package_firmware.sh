@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 执行打包脚本，失败时重试
+# 执行打包脚本，失败时重试 &&
 invoke_script(){
     script_file=$1
     ./${script_file} || ./${script_file} || ./${script_file}
@@ -61,24 +61,24 @@ package_firmware(){
     [[ -n "${SCRIPT_DIY}" ]] || SCRIPT_DIY="${SCRIPT_DIY_FILE}"
     case $device in
         vplus)    [[ -f "${SCRIPT_VPLUS}" ]] && invoke_script ${SCRIPT_VPLUS};;
-        beikeyun) [[ -f "${SCRIPT_BEIKEYUN}" ]] invoke_script ${SCRIPT_BEIKEYUN} ;;
-        l1pro)    [[ -f "${SCRIPT_L1PRO}" ]] invoke_script ${SCRIPT_L1PRO} ;;
-        r66s)     [[ -f "${SCRIPT_R66S}" ]] invoke_script ${SCRIPT_R66S} ;;
-        r68s)     [[ -f "${SCRIPT_R68S}" ]] invoke_script ${SCRIPT_R68S} ;;
-        h66k)     [[ -f "${SCRIPT_H66K}" ]] invoke_script ${SCRIPT_H66K} ;;
-        h68k)     [[ -f "${SCRIPT_H68K}" ]] invoke_script ${SCRIPT_H68K} ;;
-        rock5b)   [[ -f "${SCRIPT_ROCK5B}" ]] invoke_script ${SCRIPT_ROCK5B} ;;
-        h88k)     [[ -f "${SCRIPT_H88K}" ]] invoke_script ${SCRIPT_H88K} ;;
-        e25)      [[ -f "${SCRIPT_E25}" ]] invoke_script ${SCRIPT_E25} ;;
-        s905)     [[ -f "${SCRIPT_S905}" ]] invoke_script ${SCRIPT_S905} ;;
-        s905d)    [[ -f "${SCRIPT_S905D}" ]] invoke_script ${SCRIPT_S905D} ;;
-        s905x2)   [[ -f "${SCRIPT_S905X2}" ]] invoke_script ${SCRIPT_S905X2} ;;
-        s905x3)   [[ -f "${SCRIPT_S905X3}" ]] invoke_script ${SCRIPT_S905X3} ;;
-        s912)     [[ -f "${SCRIPT_S912}" ]] invoke_script ${SCRIPT_S912} ;;
-        s922x)    [[ -f "${SCRIPT_S922X}" ]] invoke_script ${SCRIPT_S922X} ;;
-        s922x-n2) [[ -f "${SCRIPT_S922X_N2}" ]] invoke_script ${SCRIPT_S922X_N2} ;;
-        qemu)     [[ -f "${SCRIPT_QEMU}" ]] invoke_script ${SCRIPT_QEMU} ;;
-        diy)      [[ -f "${SCRIPT_DIY}" ]] invoke_script ${SCRIPT_DIY} ;;
+        beikeyun) [[ -f "${SCRIPT_BEIKEYUN}" ]] && invoke_script ${SCRIPT_BEIKEYUN} ;;
+        l1pro)    [[ -f "${SCRIPT_L1PRO}" ]] && invoke_script ${SCRIPT_L1PRO} ;;
+        r66s)     [[ -f "${SCRIPT_R66S}" ]] && invoke_script ${SCRIPT_R66S} ;;
+        r68s)     [[ -f "${SCRIPT_R68S}" ]] && invoke_script ${SCRIPT_R68S} ;;
+        h66k)     [[ -f "${SCRIPT_H66K}" ]] && invoke_script ${SCRIPT_H66K} ;;
+        h68k)     [[ -f "${SCRIPT_H68K}" ]] && invoke_script ${SCRIPT_H68K} ;;
+        rock5b)   [[ -f "${SCRIPT_ROCK5B}" ]] && invoke_script ${SCRIPT_ROCK5B} ;;
+        h88k)     [[ -f "${SCRIPT_H88K}" ]] && invoke_script ${SCRIPT_H88K} ;;
+        e25)      [[ -f "${SCRIPT_E25}" ]] && invoke_script ${SCRIPT_E25} ;;
+        s905)     [[ -f "${SCRIPT_S905}" ]] && invoke_script ${SCRIPT_S905} ;;
+        s905d)    [[ -f "${SCRIPT_S905D}" ]] && invoke_script ${SCRIPT_S905D} ;;
+        s905x2)   [[ -f "${SCRIPT_S905X2}" ]] && invoke_script ${SCRIPT_S905X2} ;;
+        s905x3)   [[ -f "${SCRIPT_S905X3}" ]] && invoke_script ${SCRIPT_S905X3} ;;
+        s912)     [[ -f "${SCRIPT_S912}" ]] && invoke_script ${SCRIPT_S912} ;;
+        s922x)    [[ -f "${SCRIPT_S922X}" ]] && invoke_script ${SCRIPT_S922X} ;;
+        s922x-n2) [[ -f "${SCRIPT_S922X_N2}" ]] && invoke_script ${SCRIPT_S922X_N2} ;;
+        qemu)     [[ -f "${SCRIPT_QEMU}" ]] && invoke_script ${SCRIPT_QEMU} ;;
+        diy)      [[ -f "${SCRIPT_DIY}" ]] && invoke_script ${SCRIPT_DIY} ;;
         *)        echo -e "找不到合适的打包脚本" && exit -1 ;;
     esac
 }
