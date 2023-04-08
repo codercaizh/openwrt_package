@@ -40,7 +40,7 @@ on:
         - rm2100
         - simple
       useCache:
-        description: '使用编译缓存加速编译（如果有）'
+        description: '使用上一次编译缓存进行加速'
         required: true
         type: boolean
         default: true
