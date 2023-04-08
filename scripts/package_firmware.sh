@@ -3,7 +3,7 @@
 # 执行打包脚本，失败时重试 &&
 invoke_script(){
     script_file=$1
-    ./${script_file} || ./${script_file} || ./${script_file}
+    sudo ./${script_file} || sudo ./${script_file} || sudo ./${script_file}
 }
 
 package_firmware(){
