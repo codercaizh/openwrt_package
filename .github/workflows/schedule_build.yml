@@ -6,12 +6,8 @@ jobs:
     name: Schedule Openwrt Build
     runs-on: self-hosted
     steps:
-      - name: Clean source
-        run: sudo rm -rf ./source
-
-      - name: Clean environment
-        if:  ${{ !inputs.useCache }} 
-        run: sudo rm -rf ./compile_dir
+      - name: Clean all
+        run: sudo rm -rf ./source && sudo rm -rf ./compile_dir
 
       - name: Checkout source
         uses: actions/checkout@v2.5.0
@@ -19,17 +15,34 @@ jobs:
           path: source
 
       - name: Set use latest
-        if:  ${{ inputs.useLatestCode }} 
         run: sudo rm -rf version.sh
         working-directory: source
 
-      - name: Build openwrt
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubActionBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
+      - name: Build vplus
+        run:  |
+          sudo ./run_build_use_docker.sh -c armv8 -d vplus -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
         working-directory: source
 
-          - name: Upload artifact
-            uses: actions/upload-artifact@v3.1.1
-            with:
-              name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
-              path: package_scirpt/openwrt_build_tmp/artifact
-              retention-days: 3
+      - name: Build n1
+        run:  |
+          sudo ./run_build_use_docker.sh -c armv8 -d s905d -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
+        working-directory: source
+
+      - name: Echo version
+        run: |
+          echo "R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"
+          cd openwrt
+          echo "OPENWRT_COMMIT_ID: $(git rev-parse HEAD)"
+          cd package/kenzo
+          echo "OPENWRT_PACKAGES_COMMIT_ID: $(git rev-parse HEAD)"
+          cd ../passwall
+          echo "PASSWALL_PACKAGE_COMMIT_ID: $(git rev-parse HEAD)"
+
+        working-directory: compile_dir
+
+       - name: Upload artifact
+         uses: actions/upload-artifact@v3.1.1
+         with:
+            name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+            path: compile_dir/artifact
+            retention-days: 3
