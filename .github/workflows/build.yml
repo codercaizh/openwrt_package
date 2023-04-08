@@ -66,5 +66,5 @@ jobs:
         uses: actions/upload-artifact@v3.1.1
         with:
           name: ${{ env.ARTIFACT_FILE }}
-          path: package_scirpt/${{ env.ARTIFACT_PATH }}
+          path: ${{ env.ARTIFACT_PATH }}
           retention-days: 2
