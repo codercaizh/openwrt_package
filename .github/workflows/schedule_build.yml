@@ -6,27 +6,27 @@ jobs:
     name: Schedule Openwrt Build
     runs-on: self-hosted
     steps:
-      - name: Clean all
-        run: sudo rm -rf ./source && sudo rm -rf ./compile_dir
+      # - name: Clean all
+      #   run: sudo rm -rf ./source && sudo rm -rf ./compile_dir
 
-      - name: Checkout source
-        uses: actions/checkout@v2.5.0
-        with:
-          path: source
+      # - name: Checkout source
+      #   uses: actions/checkout@v2.5.0
+      #   with:
+      #     path: source
 
-      - name: Set use latest
-        run: sudo echo '' > version.sh
-        working-directory: source
+      # - name: Set use latest
+      #   run: sudo echo '' > version.sh
+      #   working-directory: source
 
-      - name: Build vplus
-        run:  |
-          sudo ./run_build_use_docker.sh -c armv8 -d vplus -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
-        working-directory: source
+      # - name: Build vplus
+      #   run:  |
+      #     sudo ./run_build_use_docker.sh -c armv8 -d vplus -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
+      #   working-directory: source
 
-      - name: Build n1
-        run:  |
-          sudo ./run_build_use_docker.sh -c armv8_full -d s905d -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
-        working-directory: source
+      # - name: Build n1
+      #   run:  |
+      #     sudo ./run_build_use_docker.sh -c armv8_full -d s905d -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
+      #   working-directory: source
 
       - name: Echo version
         run: |
