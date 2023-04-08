@@ -43,7 +43,8 @@ on:
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
-    runs-on: ubuntu-20.04
+    #runs-on: ubuntu-20.04
+    runs-on: self-hosted
     steps:
       - name: Checkout package script
         uses: actions/checkout@v2.5.0
