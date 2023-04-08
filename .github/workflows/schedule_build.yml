@@ -5,7 +5,8 @@ on:
     - cron: "0 16 * * *"
 jobs:
     Schedule_ARMV8:
-        runs-on: ubuntu-20.04
+        #runs-on: ubuntu-20.04
+        runs-on: self-hosted
         steps:
           - name: Checkout package script
             uses: actions/checkout@v2.5.0
@@ -16,8 +17,6 @@ jobs:
             run: |
               rm -rf version.sh
               sudo ./run_build_use_docker.sh -c armv8 -d vplus -p
-              sudo ./run_build_use_docker.sh -c armv8 -d s905d -p
-              sudo ./run_build_use_docker.sh -c armv8 -d s912 -p
             working-directory: package_scirpt
 
           - name: Upload artifact
@@ -39,8 +38,6 @@ jobs:
             run: |
               rm -rf version.sh
               sudo ./run_build_use_docker.sh -c r3g -d r3g -p
-              sudo ./run_build_use_docker.sh -c r3p -d r3p -p
-              sudo ./run_build_use_docker.sh -c rm2100 -d rm2100 -p
             working-directory: package_scirpt
 
           - name: Upload artifact
