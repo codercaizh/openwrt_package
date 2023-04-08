@@ -37,12 +37,11 @@ jobs:
           echo "OPENWRT_PACKAGES_COMMIT_ID: $(git rev-parse HEAD)"
           cd ../passwall
           echo "PASSWALL_PACKAGE_COMMIT_ID: $(git rev-parse HEAD)"
-
         working-directory: compile_dir
 
-       - name: Upload artifact
-         uses: actions/upload-artifact@v3.1.1
-         with:
-            name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
-            path: compile_dir/artifact
-            retention-days: 3
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: schedule_build_$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
+          path: compile_dir/artifact
+          retention-days: 3
