@@ -57,10 +57,10 @@ jobs:
 
       - name: Set artifact
         run: |
-          ARTIFACT_PATH=$(ls package_scirpt/openwrt_build_tmp/artifact/*/*.7z)
+          ARTIFACT_PATH=$PWD/$(ls openwrt_build_tmp/artifact/*/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
-        working-directory: ./
+        working-directory: package_scirpt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3.1.1
