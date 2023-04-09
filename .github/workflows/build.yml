@@ -62,7 +62,7 @@ jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
     #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
-    runs-on: ${{ inputts.compile_env }}
+    runs-on: ${{ inputs.compile_env }}
     timeout-minutes: 2880
     env:
       package_build_tool_path: 'source' # 存放本项目工具的目录名称
