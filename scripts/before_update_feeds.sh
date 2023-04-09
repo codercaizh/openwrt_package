@@ -14,4 +14,5 @@ rm -rf $PACKAGE_DIR/small-package && mkdir -p $PACKAGE_DIR/small-package && git 
 cp -r /tmp/small-package/luci-app-tencentddns $PACKAGE_DIR/small-package/
 cp -r /tmp/small-package/luci-app-netspeedtest $PACKAGE_DIR/small-package/
 cp -r /tmp/small-package/luci-app-wolplus $PACKAGE_DIR/small-package/
+cp -r /tmp/small-package/homebox $PACKAGE_DIR/small-package/
 rm -rf /tmp/small-package
