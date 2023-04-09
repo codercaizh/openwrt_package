@@ -40,8 +40,16 @@ on:
         - r3p
         - rm2100
         - simple
+      compile_env:
+        description: '编译环境'
+        required: true
+        default: 'ubuntu-20.04'
+        type: choice
+        options:
+        - ubuntu-20.04
+        - self-hosted
       useCache:
-        description: '使用上一次编译缓存进行加速'
+        description: '使用编译缓存进行加速（仅self-hosted编译环境生效）'
         required: true
         type: boolean
         default: true
@@ -54,36 +62,40 @@ jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
     #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
-    runs-on: self-hosted
+    runs-on: ${{ inputts.compile_env }}
     timeout-minutes: 2880
+    env:
+      package_build_tool_path: 'source' # 存放本项目工具的目录名称
+      compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
+      container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
     steps:
       - name: Clean source
-        run: sudo rm -rf ./source
+        run: sudo rm -rf ${{ env.package_build_tool_path }}
 
       - name: Clean environment
         if:  ${{ !inputs.useCache }} 
-        run: sudo rm -rf ./compile_dir
+        run: sudo rm -rf ${{ env.compile_path }}
 
       - name: Checkout source
         uses: actions/checkout@v2.5.0
         with:
-          path: source
+          path: ${{ env.package_build_tool_path }}
 
       - name: Set use latest code
         if:  ${{ inputs.useLatestCode }} 
         run: sudo echo '' > version.sh
-        working-directory: source
+        working-directory: ${{ env.package_build_tool_path }}
 
       - name: Build firmware
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n "GithubActionBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
-        working-directory: source
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/{{ env.compile_path }}
+        working-directory: ${{ env.package_build_tool_path }}
 
       - name: Set artifact path
         run: |
           ARTIFACT_PATH=$PWD/$(ls artifact/*/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
-        working-directory: compile_dir
+        working-directory: ${{ env.compile_path }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3.1.1
@@ -91,3 +103,7 @@ jobs:
           name: ${{ env.ARTIFACT_FILE }}
           path: ${{ env.ARTIFACT_PATH }}
           retention-days: 3
+
+      - name: Remove container
+        if: always()
+        run: sudo docker rm -f ${{ env.container_name }} && echo 'remove success' || echo 'unnecessary remove'
