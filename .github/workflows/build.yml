@@ -86,6 +86,9 @@ jobs:
       compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
       container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
     steps:
+      - name: Print input
+        run: echo "${{ toJSON(github.event.inputs) }}"
+
       - name: Expand disk space
         if: ${{ !inputs.useSelfHosted }}
         uses: easimon/maximize-build-space@master

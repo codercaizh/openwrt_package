@@ -14,3 +14,8 @@ jobs:
     with:
       target: 's905d'
       config: 'armv8_full'
+  build_r3g:
+    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
+    with:
+      target: 'r3g'
+      config: 'r3g'
