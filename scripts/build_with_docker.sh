@@ -24,7 +24,7 @@ echo '当前选择编译版本为：'$OPENWRT_VER
 
 check_complie_status() {
     COMPLIE_CONFIG=$CONFIG
-    if [ "$COMPLIE_CONFIG" == "armv8" ];then
+    if [[ $COMPLIE_CONFIG == *armv8* ]];then
         if ls $OPENWRT_DIR/bin/targets/armvirt/64/*-rootfs.tar.gz &> /dev/null; then
             echo "ARM盒子固件已存在"
             IS_COMPLIE=1
@@ -118,7 +118,7 @@ else
 fi
 
 ####打包部分####
-if [ "$CONFIG" == "armv8" ];then
+if [[ $CONFIG == *armv8* ]];then
     # 拉取内核
     if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
         echo "内核目录不为空，跳过下载内核步骤"
