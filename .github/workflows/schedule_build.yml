@@ -7,6 +7,7 @@ jobs:
   build:
     name: Schedule Openwrt Build
     runs-on: self-hosted
+    timeout-minutes: 2880
     steps:
       - name: Clean all
         run: sudo rm -rf ./source && sudo rm -rf ./compile_dir
