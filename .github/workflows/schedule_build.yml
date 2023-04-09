@@ -19,3 +19,8 @@ jobs:
     with:
       target: 'r3g'
       config: 'r3g'
+  build_rm2100:
+    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
+    with:
+      target: 'rm2100'
+      config: 'rm2100'
