@@ -87,12 +87,7 @@ jobs:
       container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
     steps:
       - name: Print input
-        run: |
-          echo "target: ${{ inputs.target }}"
-          echo "config: ${{ inputs.config }}"
-          echo "useSelfHosted: ${{ inputs.useSelfHosted }}"
-          echo "useLatestCode: ${{ inputs.useLatestCode }}"
-          echo "useCache: ${{ inputs.useCache }}"
+        run:  echo "${{ toJSON(inputs) }}"
 
       - name: Expand disk space
         if: ${{ !inputs.useSelfHosted }}
