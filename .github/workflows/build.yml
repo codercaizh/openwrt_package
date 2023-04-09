@@ -40,29 +40,27 @@ on:
         - r3p
         - rm2100
         - simple
-      compile_env:
-        description: '编译环境'
-        required: true
-        default: 'ubuntu-20.04'
-        type: choice
-        options:
-        - ubuntu-20.04
-        - self-hosted
-      useCache:
-        description: '使用编译缓存进行加速（仅self-hosted编译环境生效）'
+      useSelfHosted:
+        description: '使用自建机器编译（需配置Runner）'
         required: true
         type: boolean
-        default: true
+        default: false
+      useCache:
+        description: '使用编译缓存进行加速（仅自建机器下生效）'
+        required: true
+        type: boolean
+        default: false
       useLatestCode:
         description: '使用最新源代码编译'
         required: true
         type: boolean
+        default: false
 
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
     #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
-    runs-on: ${{ inputs.compile_env }}
+    runs-on: ${{ inputs.useSelfHosted && 'self-hosted' || 'ubuntu-20.04' }}
     timeout-minutes: 2880
     env:
       package_build_tool_path: 'source' # 存放本项目工具的目录名称
@@ -70,10 +68,11 @@ jobs:
       container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
     steps:
       - name: Clean source
+        if: ${{ inputs.useSelfHosted }}
         run: sudo rm -rf ${{ env.package_build_tool_path }}
 
       - name: Clean environment
-        if:  ${{ !inputs.useCache }} 
+        if:  ${{ !inputs.useCache || !inputs.useSelfHosted }} 
         run: sudo rm -rf ${{ env.compile_path }}
 
       - name: Checkout source
@@ -87,7 +86,7 @@ jobs:
         working-directory: ${{ env.package_build_tool_path }}
 
       - name: Build firmware
-        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/{{ env.compile_path }}
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/${{ env.compile_path }}
         working-directory: ${{ env.package_build_tool_path }}
 
       - name: Set artifact path
