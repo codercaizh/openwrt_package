@@ -12,7 +12,7 @@
 |configs|编译配置
 |configs/armv8.config|ARM盒子通用简配
 |configs/armv8_full.config|ARM盒子通用高配
-|armv8_simple.config|仅包含最最基本的能够让盒子启动和写入到emmc的编译配置，建议可以基于此配置文件去创建你的自定义配置文件
+|configs/armv8_simple.config|仅包含最最基本的能够让盒子启动和写入到emmc的编译配置，建议可以基于此配置文件去创建你的自定义配置文件
 |Dockerfile|docker镜像文件，用于本地构建一个编译环境镜像
 |run_build_use_docker.sh|本地编译的执行脚本
 
