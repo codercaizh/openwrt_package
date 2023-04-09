@@ -39,7 +39,12 @@ on:
         - r3g
         - r3p
         - rm2100
-        - simple
+        - armv8_simple
+      useLatestCode:
+        description: '使用最新源代码编译'
+        required: true
+        type: boolean
+        default: false
       useSelfHosted:
         description: '使用自建机器编译（需配置Runner）'
         required: true
@@ -50,12 +55,26 @@ on:
         required: true
         type: boolean
         default: false
-      useLatestCode:
-        description: '使用最新源代码编译'
+  workflow_call:
+    inputs:
+      target:
         required: true
+        type: string
+      config:
+        required: true
+        type: string
+      useSelfHosted:
+        required: false
         type: boolean
         default: false
-
+      useLatestCode:
+        required: false
+        type: boolean
+        default: true
+      useCache:
+        required: false
+        type: boolean
+        default: false
 jobs:
   build:
     name: Openwrt Build For ${{ inputs.target }}
@@ -84,7 +103,7 @@ jobs:
         run: sudo rm -rf ${{ env.package_build_tool_path }}
 
       - name: Clean environment
-        if:  ${{ !inputs.useCache || !inputs.useSelfHosted }} 
+        if:  ${{ inputs.useSelfHosted && !inputs.useCache  }} 
         run: sudo rm -rf ${{ env.compile_path }}
 
       - name: Checkout source

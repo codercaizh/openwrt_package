@@ -4,52 +4,13 @@ on:
   schedule:
     - cron: "0 16 * * *"
 jobs:
-  build:
-    name: Schedule Openwrt Build
-    runs-on: self-hosted
-    timeout-minutes: 2880
-    steps:
-      - name: Clean all
-        run: sudo rm -rf ./source && sudo rm -rf ./compile_dir
-
-      - name: Checkout source
-        uses: actions/checkout@v2.5.0
-        with:
-          path: source
-
-      - name: Set use latest
-        run: sudo echo '' > version.sh
-        working-directory: source
-
-      - name: Build vplus
-        run:  |
-          sudo ./run_build_use_docker.sh -c armv8 -d vplus -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
-        working-directory: source
-
-      - name: Build n1
-        run:  |
-          sudo ./run_build_use_docker.sh -c armv8_full -d s905d -n "GithubActionScheduleBuild_${{ github.run_number }}" -o ${{ github.workspace }}/compile_dir
-        working-directory: source
-
-      - name: Echo version
-        run: |
-          NOW=$(TZ=':Asia/Shanghai' date '+%y.%m.%d')
-          echo "OPENWRT_VER: R$NOW"
-          echo "NOW=$NOW" >> $GITHUB_ENV
-          cd openwrt
-          git config --global --add safe.directory $PWD
-          echo "OPENWRT_COMMIT_ID: $(git rev-parse HEAD)"
-          cd package/kenzo
-          git config --global --add safe.directory $PWD
-          echo "OPENWRT_PACKAGES_COMMIT_ID: $(git rev-parse HEAD)"
-          cd ../passwall
-          git config --global --add safe.directory $PWD
-          echo "PASSWALL_PACKAGE_COMMIT_ID: $(git rev-parse HEAD)"
-        working-directory: compile_dir
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3.1.1
-        with:
-          name: schedule_build_${{ env.NOW }}
-          path: compile_dir/artifact
-          retention-days: 3
+  build_vplus:
+    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
+    with:
+      target: 'vplus'
+      config: 'armv8'
+  build_n1:
+    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
+    with:
+      target: 's905d'
+      config: 'armv8_full'
