@@ -12,11 +12,10 @@ cd $PACKAGE_DIR/passwall && git checkout $PASSWALL_PACKAGE_COMMIT_ID
 # 添加自定义的部分源
 SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package
 SMALL_PACKAGE_TMP=/tmp/small-package
-rm -rf $PACKAGE_DIR/small-package && git clone https://github.com/kenzok8/small-package.git $SMALL_PACKAGE_DIR
-cd $SMALL_PACKAGE_DIRe && git checkout $SMALL_PACKAGE_COMMIT_ID
-mkdir -p $SMALL_PACKAGE_TMP
-mv luci-app-tencentddns $SMALL_PACKAGE_TMP/
-mv luci-app-netspeedtest $SMALL_PACKAGE_TMP/
-mv luci-app-wolplus $SMALL_PACKAGE_TMP/
-mv homebox $SMALL_PACKAGE_TMP/
-rm -rf $SMALL_PACKAGE_DIR/* && mv $SMALL_PACKAGE_TMP/* $SMALL_PACKAGE_DIR/ && rm -rf $SMALL_PACKAGE_TMP
+rm -rf $SMALL_PACKAGE_DIR && git clone https://github.com/kenzok8/small-package.git $SMALL_PACKAGE_TMP
+cd $SMALL_PACKAGE_TMP && git checkout $SMALL_PACKAGE_COMMIT_ID && mkdir -p $SMALL_PACKAGE_DIR
+mv $SMALL_PACKAGE_TMP/luci-app-tencentddns $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/luci-app-netspeedtest $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/luci-app-wolplus $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/homebox $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/.git $SMALL_PACKAGE_DIR/ && rm -rf $SMALL_PACKAGE_TMP
