@@ -81,18 +81,16 @@ if test -z "$SKIP_BUILD";then
     ./before_update_feeds.sh
     ./scripts/feeds update -a
     ./scripts/feeds install -a
-    ./after_update_feeds.sh
     echo 'feed更新完毕'
     cp $CONFIG_DIR/$CONFIG.config ./.config
     make defconfig
-
     cd $OPENWRT_DIR
-    ./before_compile.sh
     if [ "$DEVICE" == "0" ];then
         make menuconfig
         cp .config $CONFIG_DIR/$CONFIG.config
         exit 0
     fi
+    ./before_compile.sh
     echo '开始下载依赖'
     make download -j`nproc` || make download -j`nproc`
     echo '编译依赖下载完毕'
