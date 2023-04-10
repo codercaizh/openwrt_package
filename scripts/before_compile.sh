@@ -7,4 +7,5 @@ sed -i '/vlmcsd/d' .config
 sed -i '/ssr-plus/d' .config
 sed -i '/qbittorrent/d' .config
 sed -i '/wol=/d' .config
+sed -i '/wol-/d' .config
 sed -i '/accesscontrol/d' .config
