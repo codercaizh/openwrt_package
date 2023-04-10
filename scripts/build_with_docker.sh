@@ -56,6 +56,7 @@ else
     git reset --hard
     git fetch --all # 拉取最新代码
     git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
+    [ `echo "$OPENWRT_COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 当前为主干则更新一下代码
     rm -rf *.feeds.sh
 fi
 
