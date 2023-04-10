@@ -20,6 +20,7 @@ export OPENWRT_VER=${OPENWRT_VER:-"R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"}
 export OPENWRT_COMMIT_ID=${OPENWRT_COMMIT_ID:-master}
 export OPENWRT_PACKAGES_COMMIT_ID=${OPENWRT_PACKAGES_COMMIT_ID:-master}
 export PASSWALL_PACKAGE_COMMIT_ID=${PASSWALL_PACKAGE_COMMIT_ID:-packages}
+export SMALL_PACKAGE_COMMIT_ID=${SMALL_PACKAGE_COMMIT_ID:-main}
 echo '当前选择编译版本为：'$OPENWRT_VER
 
 check_complie_status() {

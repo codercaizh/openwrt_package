@@ -10,9 +10,13 @@ rm -rf $PACKAGE_DIR/passwall && git clone https://github.com/xiaorouji/openwrt-p
 cd $PACKAGE_DIR/passwall && git checkout $PASSWALL_PACKAGE_COMMIT_ID
 
 # 添加自定义的部分源
-rm -rf $PACKAGE_DIR/small-package && mkdir -p $PACKAGE_DIR/small-package && git clone https://github.com/kenzok8/small-package.git --depth=1 /tmp/small-package
-cp -r /tmp/small-package/luci-app-tencentddns $PACKAGE_DIR/small-package/
-cp -r /tmp/small-package/luci-app-netspeedtest $PACKAGE_DIR/small-package/
-cp -r /tmp/small-package/luci-app-wolplus $PACKAGE_DIR/small-package/
-cp -r /tmp/small-package/homebox $PACKAGE_DIR/small-package/
-rm -rf /tmp/small-package
+rm -rf $PACKAGE_DIR/small-package && git clone https://github.com/kenzok8/small-package.git $PACKAGE_DIR/small-package
+cd $PACKAGE_DIR/small-package && git checkout $SMALL_PACKAGE_COMMIT_ID
+SMALL_PACKAGE_TMP=/tmp/small-package
+mkdir -p $SMALL_PACKAGE_TMP
+cp -r luci-app-tencentddns $SMALL_PACKAGE_TMP/
+cp -r luci-app-netspeedtest $SMALL_PACKAGE_TMP/
+cp -r luci-app-wolplus $SMALL_PACKAGE_TMP/
+cp -r homebox $SMALL_PACKAGE_TMP/
+rm -rf ./* && mv $SMALL_PACKAGE_TMP/* ./
+rm -rf $SMALL_PACKAGE_TMP
