@@ -147,7 +147,7 @@ if [[ $CONFIG == *armv8* ]];then
 else
      if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin &> /dev/null; then
         echo '打包固件中'
-        7z a $OUTPUT_DIR/$DEVICE'.bin.7z' $OPENWRT_DIR/bin/targets/ramips/*/*.bin
+        7z a $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/ramips/*/*.bin
     else
         echo '路由固件打包失败'
         exit -1
