@@ -125,7 +125,7 @@ jobs:
 
       - name: Set artifact path
         run: |
-          ARTIFACT_PATH=$PWD/$(ls artifact/*/*.7z)
+          ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
         working-directory: ${{ env.compile_path }}
