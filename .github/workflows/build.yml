@@ -103,7 +103,9 @@ jobs:
 
       - name: Clean source
         if: ${{ inputs.useSelfHosted }}
-        run: sudo rm -rf ${{ env.package_build_tool_path }}
+        run: |
+          sudo rm -rf ${{ env.package_build_tool_path }}
+          sudo rm -rf ${{ env.compile_path }}/artifact/*
 
       - name: Clean environment
         if:  ${{ inputs.useSelfHosted && !inputs.useCache  }} 
@@ -125,6 +127,7 @@ jobs:
 
       - name: Set artifact path
         run: |
+          sudo chmod -R 777 artifact # 解决某些场景下打出来的包无法访问问题
           ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
