@@ -4,22 +4,22 @@ on:
   schedule:
     - cron: "0 16 * * *"
 jobs:
-  build_vplus:
+  vplus:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 'vplus'
       config: 'armv8'
-  build_n1:
+  n1:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 's905d'
       config: 'armv8_full'
-  build_r3g:
+  r3g:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 'r3g'
       config: 'r3g'
-  build_rm2100:
+  rm2100:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 'rm2100'
