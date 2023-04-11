@@ -112,7 +112,7 @@ jobs:
         run: sudo rm -rf ${{ env.compile_path }}
 
       - name: Checkout source
-        uses: actions/checkout@v2.5.0
+        uses: actions/checkout@v3
         with:
           path: ${{ env.package_build_tool_path }}
 
