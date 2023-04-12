@@ -48,7 +48,7 @@ fi
 CONTAINER_NAME=${NAME:=openwrt_build}
 [ "$1" = "menuconfig" ] && CONTAINER_NAME="$CONTAINER_NAME"_menuconfig
 BUILD_DIR=${OUTPUT_PATH:="$PWD/openwrt_build_tmp"}
-BUILD_IMAGE=codercai/openwrt_package:1.0
+BUILD_IMAGE=codercai/openwrt_package:1.1
 [ ! -f "./configs/$CONFIG.config" ] && echo '错误：configs目录中未找到'$CONFIG'.config配置文件' && exit -1
 [ `docker ps -a | grep $CONTAINER_NAME | wc -l` -eq 0 ] || docker rm -f $CONTAINER_NAME
 mkdir -p $BUILD_DIR
