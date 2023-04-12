@@ -9,6 +9,8 @@ sed -i 's/^PKG_HASH:.*/PKG_HASH:=skip/g' $N2N_DIR/Makefile
 ## 更换mt6721为linux5.15内核版本
 sed -i 's/5_4/5_15/g' .config
 sed -i 's/KERNEL_PATCHVER:=5.4/KERNEL_PATCHVER:=5.15/g' target/linux/ramips/Makefile
+sed -i 's/+1,5/+1,6/g' package/kernel/mt76/patches/010-bypass-werror.patch
+sed -i 's/+EXTRA_CFLAGS += -DCONFIG_MT76_LEDS/+EXTRA_CFLAGS += -DCONFIG_MT76_LEDS\n+KBUILD_CFLAGS += -Wno-implicit-int/g' package/kernel/mt76/patches/010-bypass-werror.patch
 
 ## 用于对mt6721平台超频
 # sed -i 's/110,89/110,93/g' target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch
