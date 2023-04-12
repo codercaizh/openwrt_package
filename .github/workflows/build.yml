@@ -5,9 +5,10 @@ on:
       target:
         description: '目标设备'
         required: true
-        default: 'vplus' 
+        default: 'x86' 
         type: choice
         options:
+        - x86
         - vplus
         - beikeyun
         - l1pro 
@@ -31,9 +32,10 @@ on:
       config:
         description: '插件配置'
         required: true
-        default: 'armv8'
+        default: 'x86'
         type: choice
         options:
+        - x86
         - armv8
         - armv8_full
         - r3g
