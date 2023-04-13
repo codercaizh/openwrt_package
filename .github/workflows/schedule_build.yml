@@ -7,8 +7,8 @@ jobs:
   x86:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
-      target: 'x86'
-      config: 'x86'
+      target: 'x86_x64'
+      config: 'x86_x64'
   vplus:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
