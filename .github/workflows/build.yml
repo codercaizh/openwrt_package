@@ -119,4 +119,4 @@ jobs:
           echo "OPENWRT_PACKAGES_COMMIT_ID=a5d2dbf6c97dedbf454dba7f267d917c05f5095e" >> $GITHUB_OUTPUT
           echo "PASSWALL_PACKAGE_COMMIT_ID=2c35b6f2cf898d9ffcf4f7876319a911da67b124" >> $GITHUB_OUTPUT
           echo "SMALL_PACKAGE_COMMIT_ID=894ef300c3c4e262f202c21ec688ed3ba65e9ab8" >> $GITHUB_OUTPUT
-        working-directory: ${{ env.compile_path }}
+   #     working-directory: ${{ env.compile_path }}
