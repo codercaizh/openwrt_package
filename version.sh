@@ -1,8 +1,8 @@
 # 此文件用于配置编译时使用的openwrt源码版本以及插件版本，若没有配置或文件不存着，在默认使用最新的代码编译
 # 问：为什么要有这个版本号机制而不是默认就使用最新版本编译
 # 答：由于OP和插件源码更新非常频繁，部分更新可能会导致编译失败，所以需要有一个Release的版本机制，记录百分百能够编出来的版本
-OPENWRT_VER=R23.04.13
+OPENWRT_VER=R23.04.14
 OPENWRT_COMMIT_ID=8f42e0d971265c055eb2ccda5a683143d3ca10cb
 OPENWRT_PACKAGES_COMMIT_ID=a5d2dbf6c97dedbf454dba7f267d917c05f5095e
 PASSWALL_PACKAGE_COMMIT_ID=2c35b6f2cf898d9ffcf4f7876319a911da67b124
-SMALL_PACKAGE_COMMIT_ID=894ef300c3c4e262f202c21ec688ed3ba65e9ab8
+SMALL_PACKAGE_COMMIT_ID=d3ef471289d4c327844b9219f3c87e1ae6414b65
