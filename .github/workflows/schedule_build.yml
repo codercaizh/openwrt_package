@@ -40,7 +40,7 @@ jobs:
       target: 'rm2100'
       config: 'rm2100'
 
-  upgrade:
+  upgrade_version_file:
     if: inputs.upgrade
     needs: [x86, vplus, n1, r3g, rm2100]
     runs-on: ubuntu-latest
@@ -60,7 +60,7 @@ jobs:
           git config user.name robot
           git config user.email 545347837@qq.com
           git add .
-          git commit -m "ypgrade version to ${{ needs.x86.outputs.OPENWRT_VER }}"
+          git commit -m "upgrade version to ${{ needs.x86.outputs.OPENWRT_VER }}"
           git push
 
 

@@ -110,13 +110,83 @@ jobs:
       compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
       container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
     steps:
+      - name: Print input
+        run:  echo "${{ toJSON(inputs) }}"
+
+      - name: Expand disk space
+        if: ${{ !inputs.useSelfHosted }}
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2560
+          swap-size-mb: 256
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Clean source
+        if: ${{ inputs.useSelfHosted }}
+        run: |
+          sudo rm -rf ${{ env.package_build_tool_path }}
+          sudo rm -rf ${{ env.compile_path }}/artifact/*
+
+      - name: Clean environment
+        if:  ${{ inputs.useSelfHosted && !inputs.useCache  }} 
+        run: sudo rm -rf ${{ env.compile_path }}
+
+      - name: Checkout source
+        uses: actions/checkout@v3
+        with:
+          path: ${{ env.package_build_tool_path }}
+
+      - name: Set use latest code
+        if:  ${{ inputs.useLatestCode }} 
+        run: sudo echo '' > version.sh
+        working-directory: ${{ env.package_build_tool_path }}
+
+      - name: Build firmware
+        run: sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/${{ env.compile_path }}
+        working-directory: ${{ env.package_build_tool_path }}
+
+      - name: Set artifact path
+        run: |
+          sudo chmod -R 777 artifact # 解决某些场景下打出来的包无法访问问题
+          ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
+          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
+          echo "ARTIFACT_FILE=$(basename $ARTIFACT_PATH)" >> $GITHUB_ENV
+        working-directory: ${{ env.compile_path }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: ${{ env.ARTIFACT_FILE }}
+          path: ${{ env.ARTIFACT_PATH }}
+          retention-days: 3
+
+      - name: Remove container
+        if: always()
+        run: sudo docker rm -f ${{ env.container_name }} && echo 'remove success' || echo 'unnecessary remove'
+
       - id: version
         name: Output version
         if: success()
         run: |
-          echo "OPENWRT_VER=R23.04.13" >> $GITHUB_OUTPUT
-          echo "OPENWRT_COMMIT_ID=8f42e0d971265c055eb2ccda5a683143d3ca10cb" >> $GITHUB_OUTPUT
-          echo "OPENWRT_PACKAGES_COMMIT_ID=a5d2dbf6c97dedbf454dba7f267d917c05f5095e" >> $GITHUB_OUTPUT
-          echo "PASSWALL_PACKAGE_COMMIT_ID=2c35b6f2cf898d9ffcf4f7876319a911da67b124" >> $GITHUB_OUTPUT
-          echo "SMALL_PACKAGE_COMMIT_ID=894ef300c3c4e262f202c21ec688ed3ba65e9ab8" >> $GITHUB_OUTPUT
-   #     working-directory: ${{ env.compile_path }}
+          echo "OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')" >> $GITHUB_OUTPUT
+          cd openwrt
+          git config --global --add safe.directory $PWD
+          echo "OPENWRT_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+          cd package/kenzo
+          git config --global --add safe.directory $PWD
+          echo "OPENWRT_PACKAGES_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+          cd ../passwall
+          git config --global --add safe.directory $PWD
+          echo "PASSWALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+          cd ../small-package
+          git config --global --add safe.directory $PWD
+          echo "SMALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        working-directory: ${{ env.compile_path }}
+
