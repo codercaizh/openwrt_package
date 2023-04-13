@@ -9,7 +9,9 @@ jobs:
         with:
           ref: dev
       - run: |
+          ls
           echo "#${date}" >> version.sh
+          cat version.sh
           git config user.name github-robot
           git config user.email 545347837@qq.com
           git add .
