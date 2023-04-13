@@ -3,7 +3,7 @@ on:
   workflow_dispatch: 
     inputs:
       upgrade: 
-          description: '运行完成后是否更新版本代码'
+          description: '完成后更新版本文件'
           required: true
           type: boolean
           default: true
@@ -41,7 +41,7 @@ jobs:
       config: 'rm2100'
 
   upgrade:
-    if: ${{ inputs.upgrade }}
+    if: inputs.upgrade
     needs: [x86, vplus, n1, r3g, rm2100]
     runs-on: ubuntu-latest
     steps:
