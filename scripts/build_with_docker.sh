@@ -125,7 +125,7 @@ else
 fi
 
 ####打包部分####
-COMPRESS_ARGS='-t7z -m0=LZMA2 -mx=9 -mfb=64 -md=32m -ms=on' 
+COMPRESS_ARGS='-mx=9' 
 if [[ $CONFIG == *armv8* ]];then
     # 拉取内核
     if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
