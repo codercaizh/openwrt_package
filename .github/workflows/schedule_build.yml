@@ -1,6 +1,12 @@
 name: Openwrt Build Schedule
 on:
   workflow_dispatch: 
+    inputs:
+      upgrade: 
+          description: '运行完成后是否更新版本代码'
+          required: true
+          type: boolean
+          default: true
   schedule:
     - cron: "0 16 * * *"
 jobs:
@@ -9,23 +15,50 @@ jobs:
     with:
       target: 'x86'
       config: 'x86_64'
+
   vplus:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 'vplus'
       config: 'armv8'
+
   n1:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 's905d'
       config: 'armv8_full'
+
   r3g:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 'r3g'
       config: 'r3g'
+
   rm2100:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: 'rm2100'
       config: 'rm2100'
+
+  upgrade:
+    if: ${{ inputs.upgrade }}
+    needs: [x86, vplus, n1, r3g, rm2100]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Upgrade version
+        run: |
+          sed '/OPENWRT_VER/${{ needs.x86.outputs.OPENWRT_VER }}' version.sh
+          sed '/OPENWRT_VER/${{ needs.x86.outputs.OPENWRT_COMMIT_ID }}' version.sh
+          sed '/OPENWRT_VER/${{ needs.x86.outputs.OPENWRT_PACKAGES_COMMIT_ID }}' version.sh
+          sed '/OPENWRT_VER/${{ needs.x86.outputs.PASSWALL_PACKAGE_COMMIT_ID }}' version.sh
+          sed '/OPENWRT_VER/${{ needs.x86.outputs.SMALL_PACKAGE_COMMIT_ID }}' version.sh
+          git config user.name robot
+          git config user.email 545347837@qq.com
+          git add .
+          git commit -m "upgrade version to ${{ needs.x86.outputs.OPENWRT_VER }}"
+          git push
+
+
