@@ -145,11 +145,20 @@ if [[ $CONFIG == *armv8* ]];then
         echo '盒子固件打包失败'
         exit -1
     fi
+elif [[ $DEVICE == 'x86_64' ]];then
+    if ls $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic* &> /dev/null; then
+        echo '打包x86_64固件中'
+        7z a $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic*
+    else 
+        echo 'x86_64固件打包失败'
+        exit -1
+    fi
 else
-     if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin &> /dev/null; then
-        echo '打包固件中'
-        7z a $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/ramips/*/*.bin
-    else
+    # 针对ramips
+    if ls $OPENWRT_DIR/bin/targets/*/*/*.bin &> /dev/null; then
+        echo '打包路由固件中'
+        7z a $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/*/*/*.bin
+    else 
         echo '路由固件打包失败'
         exit -1
     fi
