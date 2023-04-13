@@ -32,6 +32,13 @@ check_complie_status() {
         else
             IS_COMPLIE=0
         fi
+    elif [[ $DEVICE == 'x86_64' ]];then
+        if ls $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic* &> /dev/null; then
+            echo 'x86_固件已存在'
+            IS_COMPLIE=1
+        else 
+            IS_COMPLIE=0
+        fi
     else
         if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin &> /dev/null1; then
             echo "硬路由固件已存在"
