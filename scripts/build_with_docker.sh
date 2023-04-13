@@ -125,6 +125,7 @@ else
 fi
 
 ####打包部分####
+COMPRESS_ARGS='-t7z -m0=LZMA2 -mx=9 -mfb=64 -md=32m -ms=on' 
 if [[ $CONFIG == *armv8* ]];then
     # 拉取内核
     if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
@@ -147,7 +148,7 @@ if [[ $CONFIG == *armv8* ]];then
     rm -rf $OUTPUT_DIR && mkdir -p $OUTPUT_DIR
     if ls *.img &> /dev/null; then
         echo '正在压缩镜像中'
-        7z a $OUTPUT_DIR/`ls *.img | head -1`.7z ./*.img
+        7z a $COMPRESS_ARGS $OUTPUT_DIR/`ls *.img | head -1`.7z ./*.img
     else
         echo '盒子固件打包失败'
         exit -1
@@ -155,7 +156,7 @@ if [[ $CONFIG == *armv8* ]];then
 elif [[ $DEVICE == 'x86' ]];then
     if ls $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic* &> /dev/null; then
         echo '打包x86固件中'
-        7z a $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic*
+        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic-squashfs-combined*
     else 
         echo 'x86固件打包失败'
         exit -1
@@ -164,7 +165,7 @@ else
     # 针对ramips
     if ls $OPENWRT_DIR/bin/targets/*/*/*.bin &> /dev/null; then
         echo '打包路由固件中'
-        7z a $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/*/*/*.bin
+        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/*/*/*.bin
     else 
         echo '路由固件打包失败'
         exit -1
