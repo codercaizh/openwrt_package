@@ -50,11 +50,11 @@ jobs:
 
       - name: Upgrade version
         run: |
-          sed '/OPENWRT_VER/${{ needs.x86.outputs.OPENWRT_VER }}' version.sh
-          sed '/OPENWRT_VER/${{ needs.x86.outputs.OPENWRT_COMMIT_ID }}' version.sh
-          sed '/OPENWRT_VER/${{ needs.x86.outputs.OPENWRT_PACKAGES_COMMIT_ID }}' version.sh
-          sed '/OPENWRT_VER/${{ needs.x86.outputs.PASSWALL_PACKAGE_COMMIT_ID }}' version.sh
-          sed '/OPENWRT_VER/${{ needs.x86.outputs.SMALL_PACKAGE_COMMIT_ID }}' version.sh
+          sed '/OPENWRT_VER/'"${{ needs.x86.outputs.OPENWRT_VER }}"'/' version.sh
+          sed '/OPENWRT_VER/'"${{ needs.x86.outputs.OPENWRT_COMMIT_ID }}"'/' version.sh
+          sed '/OPENWRT_VER/'"${{ needs.x86.outputs.OPENWRT_PACKAGES_COMMIT_ID }}"'/' version.sh
+          sed '/OPENWRT_VER/'"${{ needs.x86.outputs.PASSWALL_PACKAGE_COMMIT_ID }}"'/' version.sh
+          sed '/OPENWRT_VER/'"${{ needs.x86.outputs.SMALL_PACKAGE_COMMIT_ID }}"'/' version.sh
           git config user.name robot
           git config user.email 545347837@qq.com
           git add .
