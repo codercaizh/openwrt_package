@@ -5,7 +5,9 @@ jobs:
   job1:
     uses: codercaizh/openwrt_package/.github/workflows/test_sub.yml@master
   job2:
-    needs: job1
+    uses: codercaizh/openwrt_package/.github/workflows/test_sub.yml@master
+  job3:
+    needs: [job1, job2]
     runs-on: ubuntu-latest
     steps:
-      - run: echo ${{ needs.job1.outputs.oo1 }} ${{ needs.job1.outputs.oo2 }}
+      - run: echo ${{ needs.job1.outputs.oo1 }} ${{ needs.job2.outputs.oo2 }}
