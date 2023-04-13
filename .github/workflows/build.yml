@@ -5,10 +5,10 @@ on:
       target:
         description: '目标设备'
         required: true
-        default: 'x86_64' 
+        default: 'x86' 
         type: choice
         options:
-        - x86_64
+        - x86
         - vplus
         - beikeyun
         - l1pro 
