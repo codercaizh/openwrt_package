@@ -11,6 +11,8 @@ jobs:
           - target: "r3g"
             config: "r3g"
     uses: codercaizh/openwrt_package/.github/workflows/test_sub.yml@master
+    with:
+      target: ${{ matrix.target }}
   show:
     needs: [example_matrix]
     runs-on: 'ubuntu-20.04'
