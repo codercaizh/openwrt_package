@@ -14,4 +14,4 @@ jobs:
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
       target: ${{ matrix.target }}
-      config: ${{ matrix.r3g }}
+      config: ${{ matrix.config }}
