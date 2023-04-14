@@ -41,9 +41,12 @@ jobs:
       config: 'rm2100'
 
   clean_workflow:
-    uses: Mattraks/delete-workflow-runs@v2.0.3
-    with:
-      retain_days: 2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean workflow
+        uses: Mattraks/delete-workflow-runs@v2.0.3
+        with:
+          retain_days: 2
        
   upgrade_version_file:
     if: inputs.upgrade
