@@ -10,35 +10,24 @@ on:
   schedule:
     - cron: "0 16 * * *"
 jobs:
-  x86:
+  parallel:
+    strategy:
+      matrix:
+        include:
+          - target: 'x86'
+            config: 'x86_64'
+          - target: 'vplus'
+            config: 'armv8'
+          - target: 's905d'
+            config: 'armv8_full'
+          - target: 'r3g'
+            config: 'r3g'
+          - target: 'rm2100'
+            config: 'rm2100'
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
     with:
-      target: 'x86'
-      config: 'x86_64'
-
-  vplus:
-    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
-    with:
-      target: 'vplus'
-      config: 'armv8'
-
-  n1:
-    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
-    with:
-      target: 's905d'
-      config: 'armv8_full'
-
-  r3g:
-    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
-    with:
-      target: 'r3g'
-      config: 'r3g'
-
-  rm2100:
-    uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
-    with:
-      target: 'rm2100'
-      config: 'rm2100'
+      target: ${{ matrix.target }}
+      config: ${{ matrix.config }}
 
   clean_workflow:
     runs-on: ubuntu-latest
@@ -50,7 +39,7 @@ jobs:
        
   upgrade_version_file:
     if: inputs.upgrade
-    needs: [x86, vplus, n1, r3g, rm2100]
+    needs: [parallel]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -62,11 +51,11 @@ jobs:
           git config user.email 545347837@qq.com
           git pull
           echo -e '# 此文件用于配置编译时使用的openwrt源码版本以及插件版本，若没有配置或文件不存着，在默认使用最新的代码编译\n# 问：为什么要有这个版本号机制而不是默认就使用最新版本编译\n# 答：由于OP和插件源码更新非常频繁，部分更新可能会导致编译失败，所以需要有一个Release的版本机制，记录百分百能够编出来的版本' > version.sh
-          echo 'OPENWRT_VER=${{ needs.x86.outputs.OPENWRT_VER }}' >> version.sh
-          echo 'OPENWRT_COMMIT_ID=${{ needs.x86.outputs.OPENWRT_COMMIT_ID }}' >> version.sh
-          echo 'OPENWRT_PACKAGES_COMMIT_ID=${{ needs.x86.outputs.OPENWRT_PACKAGES_COMMIT_ID }}' >> version.sh
-          echo 'PASSWALL_PACKAGE_COMMIT_ID=${{ needs.x86.outputs.PASSWALL_PACKAGE_COMMIT_ID }}' >> version.sh
-          echo 'SMALL_PACKAGE_COMMIT_ID=${{ needs.x86.outputs.SMALL_PACKAGE_COMMIT_ID }}' >> version.sh
+          echo 'OPENWRT_VER=${{ needs.parallel.outputs.OPENWRT_VER }}' >> version.sh
+          echo 'OPENWRT_COMMIT_ID=${{ needs.parallel.outputs.OPENWRT_COMMIT_ID }}' >> version.sh
+          echo 'OPENWRT_PACKAGES_COMMIT_ID=${{ needs.parallel.outputs.OPENWRT_PACKAGES_COMMIT_ID }}' >> version.sh
+          echo 'PASSWALL_PACKAGE_COMMIT_ID=${{ needs.parallel.outputs.PASSWALL_PACKAGE_COMMIT_ID }}' >> version.sh
+          echo 'SMALL_PACKAGE_COMMIT_ID=${{ needs.parallel.outputs.SMALL_PACKAGE_COMMIT_ID }}' >> version.sh
           cat version.sh
           diffInfo=`git diff` 
           if [ "$diffInfo" = "" ]; then
@@ -74,7 +63,7 @@ jobs:
             exit
           fi
           git add .
-          git commit -m "upgrade version to ${{ needs.x86.outputs.OPENWRT_VER }}"
+          git commit -m "upgrade version to ${{ needs.parallel.outputs.OPENWRT_VER }}"
           git push --force
 
 
