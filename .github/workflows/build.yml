@@ -164,10 +164,6 @@ jobs:
           path: ${{ env.ARTIFACT_PATH }}
           retention-days: 3
 
-      - name: Remove container
-        if: always()
-        run: sudo docker rm -f ${{ env.container_name }} && echo 'remove success' || echo 'unnecessary remove'
-
       - id: version
         name: Output version
         if: success()
@@ -189,4 +185,15 @@ jobs:
           git config --global --add safe.directory $PWD
           echo "SMALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
         working-directory: ${{ env.compile_path }}
+        
+      - name: Remove container
+        if: always()
+        run: sudo docker rm -f ${{ env.container_name }} && echo 'remove success' || echo 'unnecessary remove'
+        
+      - name: Clean workflow
+        uses: Mattraks/delete-workflow-runs@v2.0.3
+        with:
+          retain_days: 2
+
+      
 
