@@ -50,6 +50,9 @@ jobs:
 
       - name: Upgrade version
         run: |
+          git config user.name robot
+          git config user.email 545347837@qq.com
+          git pull
           echo -e '# 此文件用于配置编译时使用的openwrt源码版本以及插件版本，若没有配置或文件不存着，在默认使用最新的代码编译\n# 问：为什么要有这个版本号机制而不是默认就使用最新版本编译\n# 答：由于OP和插件源码更新非常频繁，部分更新可能会导致编译失败，所以需要有一个Release的版本机制，记录百分百能够编出来的版本' > version.sh
           echo 'OPENWRT_VER=${{ needs.x86.outputs.OPENWRT_VER }}' >> version.sh
           echo 'OPENWRT_COMMIT_ID=${{ needs.x86.outputs.OPENWRT_COMMIT_ID }}' >> version.sh
@@ -62,10 +65,8 @@ jobs:
             echo '当前已是最新版本'
             exit
           fi
-          git config user.name robot
-          git config user.email 545347837@qq.com
           git add .
           git commit -m "upgrade version to ${{ needs.x86.outputs.OPENWRT_VER }}"
-          git push
+          git push --force
 
 
