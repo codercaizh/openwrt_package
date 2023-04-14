@@ -3,7 +3,6 @@ on:
   workflow_dispatch: 
 jobs:
   example_matrix:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         version: ${{ github.event.client_payload.versions }}
