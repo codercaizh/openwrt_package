@@ -5,7 +5,6 @@ jobs:
   example_matrix:
     strategy:
       matrix:
-        version: ${{ github.event.client_payload.versions }}
         include:
           - target: 'x86'
             config: 'x86_64'
