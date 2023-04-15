@@ -15,13 +15,19 @@ jobs:
       matrix:
         include:
           - target: 'x86'
+            config: 'x86_64'
+          - target: 'x86'
             config: 'x86_64_cloud'
           - target: 'vplus'
             config: 'armv8'
+          - target: 'vplus'
+            config: 'armv8_simple'
           - target: 's905d'
             config: 'armv8_full'
           - target: 'r3g'
             config: 'r3g'
+          - target: 'r3p'
+            config: 'r3p'
           - target: 'rm2100'
             config: 'rm2100'
     uses: codercaizh/openwrt_package/.github/workflows/build.yml@master
