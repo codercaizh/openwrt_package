@@ -109,6 +109,7 @@ jobs:
     env:
       package_build_tool_path: 'source' # 存放本项目工具的目录名称
       compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
+      container_name_prefix: 'GithubActionBuild_' # 编译镜像名前缀
       container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
     steps:
       - name: Print input
@@ -189,7 +190,7 @@ jobs:
         
       - name: Remove container
         if: success()
-        run: sudo docker rm -f ${{ env.container_name }} && echo 'remove success' || echo 'unnecessary remove'
+        run: sudo docker container rm -f $(docker container ls -q --filter name=${{ env.container_name_prefix }}) && echo 'remove success' || echo 'unnecessary remove' # 一旦编译成功则把之前失败的容器也一把都删除掉
 
       
 

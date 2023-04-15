@@ -158,7 +158,7 @@ if [[ $CONFIG == *armv8* ]];then
 elif [[ $DEVICE == 'x86' ]];then
     if ls $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic* &> /dev/null; then
         echo '打包x86固件中'
-        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic-squashfs-combined*
+        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/*combined*.gz $OPENWRT_DIR/bin/targets/x86/*/*kernel.bin
     else 
         echo 'x86固件打包失败'
         exit -1
