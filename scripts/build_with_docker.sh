@@ -35,7 +35,7 @@ check_complie_status() {
             IS_COMPLIE=0
         fi
     elif [[ $DEVICE == 'x86' ]];then
-        if ls $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic* &> /dev/null; then
+        if ls $OPENWRT_DIR/bin/targets/x86/*/*.img.gz &> /dev/null; then
             echo 'x86固件已存在'
             IS_COMPLIE=1
         else 
@@ -156,9 +156,9 @@ if [[ $CONFIG == *armv8* ]];then
         exit -1
     fi
 elif [[ $DEVICE == 'x86' ]];then
-    if ls $OPENWRT_DIR/bin/targets/x86/*/openwrt-*-generic* &> /dev/null; then
+    if ls $OPENWRT_DIR/bin/targets/x86/*/*.img.gz &> /dev/null; then
         echo '打包x86固件中'
-        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/*combined*.gz $OPENWRT_DIR/bin/targets/x86/*/*kernel.bin
+        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/*ext4-combined*.img.gz $OPENWRT_DIR/bin/targets/x86/*/*squashfs-combined*.img.gz
     else 
         echo 'x86固件打包失败'
         exit -1
