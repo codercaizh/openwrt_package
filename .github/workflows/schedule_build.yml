@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - target: 'x86'
-            config: 'x86_64'
+            config: 'x86_64_cloud'
           - target: 'vplus'
             config: 'armv8'
           - target: 's905d'

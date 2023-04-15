@@ -36,6 +36,7 @@ on:
         type: choice
         options:
         - x86_64
+        - x86_64_cloud
         - armv8
         - armv8_full
         - r3g
