@@ -38,7 +38,7 @@ jobs:
           retain_days: 2
        
   upgrade_version_file:
-    if: !inputs.skip
+    if: ${{ !inputs.skip }}
     needs: [parallel]
     runs-on: ubuntu-latest
     steps:
