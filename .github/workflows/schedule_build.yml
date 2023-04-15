@@ -2,8 +2,8 @@ name: Openwrt Build Schedule
 on:
   workflow_dispatch: 
     inputs:
-      upgrade: 
-          description: '完成后更新版本文件'
+      skip: 
+          description: '跳过更新版本文件步骤'
           required: true
           type: boolean
           default: true
@@ -38,7 +38,7 @@ jobs:
           retain_days: 2
        
   upgrade_version_file:
-    if: inputs.upgrade
+    if: !inputs.skip
     needs: [parallel]
     runs-on: ubuntu-latest
     steps:
