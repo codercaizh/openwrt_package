@@ -1,9 +1,10 @@
 #!/bin/bash
 # 本脚本可用于将编译出来的OP固件安装到VPS中，支持腾讯云、阿里云的云服务器
 # 使用方法，将编译出来的openwrt-x86-64-generic-squashfs-combined.img.gz文件放到和本脚本相同路径下
-# 使用root执行 ./install_to_cloud.sh 坐等重启，重启完成后在控制台用VNC登录，执行以下步骤就能正常使用
+# 使用root执行 ./install_to_cloud.sh后在控制台用VNC登录，屏幕出现一堆加载信息后，按回车就能进去交互，执行以下步骤就能正常使用
 # vi /etc/ssh/sshd_config 把#PermitRootLogin XXX 改为PermitRootLogin yes，允许root登录
 # vi /etc/config/network 把lan口的proto改为dhcp，并把下面ipaddr和netmask选项删除
+# 编辑完成后执行reboot使其生效
 IMAGE=/boot/op.img.gz
 SOURCE_IMAGE=openwrt-x86-64-generic-squashfs-combined.img.gz
 GRUB_FILES="/boot/grub/grub.cfg /boot/grub2/grub.cfg /boot/boot/grub.cfg /boot/grub.cfg"
@@ -44,4 +45,6 @@ modify_grub() {
 }
 
 copy && create_install_script || exit 1
-modify_grub && reboot || sleep 10
+modify_grub && echo 'setup success, rebooting...'
+sleep 5
+reboot
