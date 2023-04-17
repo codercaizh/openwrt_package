@@ -21,6 +21,9 @@ sed -i 's/KERNEL_PATCHVER:=5.15/KERNEL_PATCHVER:=6.1/g' target/linux/x86/Makefil
 # 删除掉node依赖
 sed -i '/CONFIG_NODEJS/d' .config
 
+# 删除掉wireguard相关依赖
+sed -i '/wireguard/d' .config
+
 # 如果用户配置了Nginx作为LUCI WEB服务器，则删除掉LUCI相关模块，以及调整NGINX的访问权限
 if grep -q "CONFIG_PACKAGE_luci-nginx=y" .config ; then
     sed -i '/uhttpd/d' .config
