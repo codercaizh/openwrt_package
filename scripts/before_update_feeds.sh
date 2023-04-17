@@ -18,7 +18,6 @@ mv $SMALL_PACKAGE_TMP/luci-app-tencentddns $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-netspeedtest $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-wolplus $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/homebox $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-beardropper  $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-bandwidthd  $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-netdata  $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-nginx-manager $SMALL_PACKAGE_DIR/

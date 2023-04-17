@@ -190,7 +190,7 @@ jobs:
         working-directory: ${{ env.compile_path }}
         
       - name: Remove container
-        if: success()
+        if: ${{ success() || cancelled() }}
         run: sudo docker container rm -f $(docker container ls -aq --filter name=${{ env.container_name_prefix }}) && echo 'remove success' || echo 'unnecessary remove' # 一旦编译成功则把之前失败的容器也一把都删除掉
 
       
