@@ -21,12 +21,6 @@ sed -i 's/KERNEL_PATCHVER:=5.15/KERNEL_PATCHVER:=6.1/g' target/linux/x86/Makefil
 # 删除掉node依赖
 sed -i '/CONFIG_NODEJS/d' .config
 
-# 替换netdata为中文版
-if grep -q "CONFIG_PACKAGE_luci-app-netdata=y" .config ; then
-    rm -rf ./feeds/luci/applications/luci-app-netdata
-    git clone https://github.com/Jason6111/luci-app-netdata --depth=1 ./feeds/luci/applications/luci-app-netdata
-fi
-
 # 如果用户配置了Nginx作为LUCI WEB服务器，则删除掉LUCI相关模块，以及调整NGINX的访问权限
 if grep -q "CONFIG_PACKAGE_luci-nginx=y" .config ; then
     sed -i '/uhttpd/d' .config
