@@ -27,6 +27,7 @@ git clone https://github.com/Jason6111/luci-app-netdata --delth=1 ./feeds/luci/a
 
 # 如果用户配置了Nginx作为LUCI WEB服务器，则删除掉LUCI相关模块，以及调整NGINX的访问权限
 if grep -q "CONFIG_PACKAGE_luci-nginx=y" .config ; then
-    sed -i 's/+uhttpd +uhttpd-mod-ubus //g' ./feeds/luci/collections/luci/Makefile
+    #sed -i 's/+uhttpd +uhttpd-mod-ubus //g' ./feeds/luci/collections/luci/Makefile
+    sed -i '/uhttpd/d' .config
     sed -i '/deny/d' ./feeds/packages/net/nginx-util/files/restrict_locally
 fi
