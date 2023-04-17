@@ -20,3 +20,7 @@ sed -i 's/KERNEL_PATCHVER:=5.15/KERNEL_PATCHVER:=6.1/g' target/linux/x86/Makefil
 
 # 删除掉node依赖
 sed -i '/CONFIG_NODEJS/d' .config
+
+# 替换netdata为中文版
+rm -rf ./feeds/luci/applications/luci-app-netdata
+git clone https://github.com/Jason6111/luci-app-netdata --delth=1 ./feeds/luci/applications/luci-app-netdata
