@@ -24,3 +24,9 @@ sed -i '/CONFIG_NODEJS/d' .config
 # 替换netdata为中文版
 rm -rf ./feeds/luci/applications/luci-app-netdata
 git clone https://github.com/Jason6111/luci-app-netdata --delth=1 ./feeds/luci/applications/luci-app-netdata
+
+# 如果用户配置了Nginx作为LUCI WEB服务器，则删除掉LUCI相关模块，以及调整NGINX的访问权限
+if grep -q "CONFIG_PACKAGE_luci-nginx=y" .config ; then
+    sed -i 's/+uhttpd +uhttpd-mod-ubus //g' ./feeds/luci/collections/luci/Makefile
+    sed -i '/deny/d' ./feeds/packages/net/nginx-util/files/restrict_locally
+fi
