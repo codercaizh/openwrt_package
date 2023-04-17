@@ -157,7 +157,7 @@ jobs:
           ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
           FILE_NAME=$(basename $ARTIFACT_PATH)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
-          echo "ARTIFACT_FILE=$FILE_NAME""(${{ inputs.config }})" >> $GITHUB_ENV
+          echo "ARTIFACT_FILE=$FILE_NAME""_${{ inputs.config }}" >> $GITHUB_ENV
         working-directory: ${{ env.compile_path }}
 
       - name: Upload artifact
