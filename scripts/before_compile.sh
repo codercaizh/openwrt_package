@@ -24,8 +24,5 @@ sed -i '/CONFIG_NODEJS/d' .config
 # 删除掉wireguard相关依赖
 sed -i '/wireguard/d' .config
 
-# 如果用户配置了Nginx作为LUCI WEB服务器，则删除掉LUCI相关模块，以及调整NGINX的访问权限
-if grep -q "CONFIG_PACKAGE_luci-nginx=y" .config ; then
-    sed -i '/uhttpd/d' .config
-    sed -i '/deny/d' ./feeds/packages/net/nginx-util/files/restrict_locally
-fi
+# 调整NGINX的访问权限
+echo '' > ./feeds/packages/net/nginx-util/files/restrict_locally
