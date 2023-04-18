@@ -1,12 +1,6 @@
 name: Openwrt Build Schedule
 on:
   workflow_dispatch: 
-    inputs:
-      skip: 
-          description: '跳过更新版本文件步骤'
-          required: true
-          type: boolean
-          default: true
   schedule:
     - cron: "0 16 * * *"
 jobs:
@@ -44,7 +38,6 @@ jobs:
           retain_days: 2
        
   upgrade_version_file:
-    if: ${{ !inputs.skip }}
     needs: [parallel]
     runs-on: ubuntu-latest
     steps:
