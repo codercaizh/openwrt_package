@@ -21,8 +21,5 @@ sed -i 's/KERNEL_PATCHVER:=5.15/KERNEL_PATCHVER:=6.1/g' target/linux/x86/Makefil
 # 删除掉node依赖
 sed -i '/CONFIG_NODEJS/d' .config
 
-# 删除掉wireguard相关依赖
-sed -i '/wireguard/d' .config
-
 # 调整NGINX的访问权限
 echo '' > ./feeds/packages/net/nginx-util/files/restrict_locally
