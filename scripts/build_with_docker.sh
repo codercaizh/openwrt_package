@@ -26,32 +26,6 @@ export BUILD_DEVICE=$DEVICE
 export BUILD_CONFIG=$CONFIG
 echo '当前选择编译版本为：'$OPENWRT_VER
 
-check_complie_status() {
-    COMPLIE_CONFIG=$CONFIG
-    if [[ $COMPLIE_CONFIG == *armv8* ]];then
-        if ls $OPENWRT_DIR/bin/targets/armvirt/64/*-rootfs.tar.gz &> /dev/null; then
-            echo "ARM盒子固件已存在"
-            IS_COMPLIE=1
-        else
-            IS_COMPLIE=0
-        fi
-    elif [[ $DEVICE == 'x86' ]];then
-        if ls $OPENWRT_DIR/bin/targets/x86/*/*.img.gz &> /dev/null; then
-            echo 'x86固件已存在'
-            IS_COMPLIE=1
-        else 
-            IS_COMPLIE=0
-        fi
-    else
-        if ls $OPENWRT_DIR/bin/targets/ramips/*/*.bin &> /dev/null1; then
-            echo "硬路由固件已存在"
-            IS_COMPLIE=1
-        else
-            IS_COMPLIE=0
-        fi
-    fi
-}
-
 # 切换源码
 source $SCRIPT_DIR/package_firmware.sh
 if [ ! -d "$OPENWRT_DIR/.git" ]; then
@@ -108,23 +82,9 @@ if test -z "$SKIP_BUILD";then
     echo '编译依赖下载完毕'
     rm -rf $OPENWRT_DIR/bin
     echo '开始编译'
-    make -j`nproc`
+    make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';exit -1)
 else
     echo '跳过编译流程'
-fi
-
-# 检测编译是否成功
-check_complie_status
-if [ "$IS_COMPLIE" == "0" ]; then
-    echo '第一次编译失败，重试编译'
-    make V=s -j1
-    check_complie_status
-    if [ "$IS_COMPLIE" == "0" ]; then
-        echo '最终编译失败，请根据日志排查原因'
-        exit -1
-    fi
-else
-    echo '编译完毕'
 fi
 
 ####打包部分####
