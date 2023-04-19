@@ -43,22 +43,7 @@ else
     [ `echo "$OPENWRT_COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 当前为主干则更新一下代码
     rm -rf *.feeds.sh
 fi
-
-if test -z "$ONLY_PACKAGE";then
-    echo '仅打包选项未开启，进入编译流程'
-else
-    # 当开启ONLY_PACKAGE选项，并且底包确实已存在，则跳过编译，直接进入打包
-    echo '检测到开启仅打包选项'
-    check_complie_status
-    if [ "$IS_COMPLIE" == "1" ]; then
-        SKIP_BUILD=1
-        echo '当前编译产物目录已存在'
-    else
-        echo '当前编译产物目录不存在，仍然需要走编译流程'
-    fi
-fi
-
-if test -z "$SKIP_BUILD";then
+if [ -z "$ONLY_PACKAGE" ];then
     # 更新源与配置
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
@@ -84,7 +69,7 @@ if test -z "$SKIP_BUILD";then
     make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';exit -1)
     set -e
 else
-    echo '跳过编译流程'
+    echo '仅打包选项开启，跳过编译流程'
 fi
 
 ####打包部分####
