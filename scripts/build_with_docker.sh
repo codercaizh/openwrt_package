@@ -59,7 +59,6 @@ else
 fi
 
 if test -z "$SKIP_BUILD";then
-    set +e
     # 更新源与配置
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
@@ -77,12 +76,13 @@ if test -z "$SKIP_BUILD";then
         exit 0
     fi
     ./before_compile.sh
+    set +e
     echo '开始下载依赖'
     make download -j`nproc` || make download -j`nproc`
-    echo '编译依赖下载完毕'
-    rm -rf $OPENWRT_DIR/bin
     echo '开始编译'
+    rm -rf $OPENWRT_DIR/bin
     make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';exit -1)
+    set -e
 else
     echo '跳过编译流程'
 fi
