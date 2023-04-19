@@ -43,7 +43,8 @@ else
     [ `echo "$OPENWRT_COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 当前为主干则更新一下代码
     rm -rf *.feeds.sh
 fi
-if [ -z "$ONLY_PACKAGE" ];then
+
+function compile() {
     # 更新源与配置
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
@@ -68,9 +69,9 @@ if [ -z "$ONLY_PACKAGE" ];then
     rm -rf $OPENWRT_DIR/bin
     make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';exit -1)
     set -e
-else
-    echo '仅打包选项开启，跳过编译流程'
-fi
+}
+
+[ -z "$ONLY_PACKAGE" ] && compile || echo '仅打包选项开启，跳过编译流程'
 
 ####打包部分####
 COMPRESS_ARGS='-mx=9' 

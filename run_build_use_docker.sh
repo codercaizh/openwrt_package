@@ -70,9 +70,9 @@ mkdir -p $BUILD_DIR
 if test -z "$IS_MAKE_MENUCONFIG";then
     echo '当前选择编译的设备：'$DEVICE
     echo '当前选择编译的配置：'$CONFIG
-    BUILD_CMD="docker run -d $BUILD_ARGS $BUILD_IMAGE /opt/scripts/build_with_docker.sh $DEVICE $CONFIG 1"
-    echo -e "\ngenerate build cmd: $BUILD_CMD\n"
-    $BUILD_CMD
+    BUILD_CMD="docker run -d $BUILD_ARGS $BUILD_IMAGE /opt/scripts/build_with_docker.sh $DEVICE $CONFIG"
+    echo -e "\ngenerate build cmd: $BUILD_CMD $ONLY_PACKAGE\n"
+    $BUILD_CMD $ONLY_PACKAGE
     WAIT_COUNT=0
     MAX_WAIT_COUNT=3
     docker logs -f $CONTAINER_NAME | while read line
@@ -83,7 +83,7 @@ if test -z "$IS_MAKE_MENUCONFIG";then
         if [ $WAIT_COUNT -gt $MAX_WAIT_COUNT ];then
             echo 'wait for dev timeout,now retry'
             [ `docker ps -a | grep $CONTAINER_NAME | wc -l` -eq 0 ] || docker rm -f $CONTAINER_NAME
-            $BUILD_CMD
+            $BUILD_CMD 1
             docker logs -f $CONTAINER_NAME  | while read sub_line
             do
                 echo $sub_line
