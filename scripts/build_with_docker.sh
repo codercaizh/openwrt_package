@@ -9,11 +9,10 @@ ARTIFACT_DIR=/opt/artifact
 KERNEL_DIR=/opt/kernel
 OPENWRT_VERSION_FILE=/opt/version.sh
 #从外部传入的参数
-DEVICE=$1
-CONFIG=$2
-ONLY_PACKAGE=$3
+OP=$1
+DEVICE=$2
+CONFIG=$3
 OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
-IS_COMPLIE=0
 # 设置编译版本
 [ -f "$OPENWRT_VERSION_FILE" ] && source $OPENWRT_VERSION_FILE
 export FORCE_UNSAFE_CONFIGURE=1
@@ -25,26 +24,25 @@ export SMALL_PACKAGE_COMMIT_ID=${SMALL_PACKAGE_COMMIT_ID:-main}
 export BUILD_DEVICE=$DEVICE
 export BUILD_CONFIG=$CONFIG
 echo '当前选择编译版本为：'$OPENWRT_VER
-
-# 切换源码
 source $SCRIPT_DIR/package_firmware.sh
-if [ ! -d "$OPENWRT_DIR/.git" ]; then
-    echo '未找到openwrt源码，正在检出源码'
-    git clone https://github.com/coolsnowwolf/lede.git /opt/openwrt_tmp
-    echo 'openwrt源码更新完毕'
-    mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
-    cd $OPENWRT_DIR
-    git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
-else
-    cd $OPENWRT_DIR
-    git reset --hard
-    git fetch --all # 拉取最新代码
-    git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
-    [ `echo "$OPENWRT_COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 当前为主干则更新一下代码
-    rm -rf *.feeds.sh
+if [ $OP != "package" ];then
+    # 切换源码
+    if [ ! -d "$OPENWRT_DIR/.git" ]; then
+        echo '未找到openwrt源码，正在检出源码'
+        git clone https://github.com/coolsnowwolf/lede.git /opt/openwrt_tmp
+        echo 'openwrt源码更新完毕'
+        mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
+        cd $OPENWRT_DIR
+        git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
+    else
+        cd $OPENWRT_DIR
+        git reset --hard;git fetch --all;git checkout "$OPENWRT_COMMIT_ID"
+        # 切换到指定 commitId
+        [ `echo "$OPENWRT_COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 当前为主干则更新一下代码
+        rm -rf *.feeds.sh
+    fi
 fi
-
-function compile() {
+function install() {
     # 更新源与配置
     cd $OPENWRT_DIR
     chmod +x $SCRIPT_DIR/*.sh
@@ -55,12 +53,9 @@ function compile() {
     echo 'feed更新完毕'
     cp $CONFIG_DIR/$CONFIG.config ./.config
     make defconfig
+}
+function compile() {
     cd $OPENWRT_DIR
-    if [ "$DEVICE" == "0" ];then
-        make menuconfig
-        cp .config $CONFIG_DIR/$CONFIG.config
-        exit 0
-    fi
     ./before_compile.sh
     set +e
     echo '开始下载依赖'
@@ -71,11 +66,30 @@ function compile() {
     set -e
 }
 
-[ -z "$ONLY_PACKAGE" ] && compile || echo '仅打包选项开启，跳过编译流程'
+[ $OP == "package" ] && echo '仅打包选项开启，跳过编译流程' || install
+
+if [ $OP == "download" ];then
+    echo '依赖安装完毕，请执行以下命令进入容器完成后续操作'
+    echo 'docker exec -it openwrt_download /bin/bash -c "cd /opt/openwrt;/bin/bash"'
+    tail -f /dev/null
+    exit 0
+fi
+
+if [ $OP == "menuconfig" ];then
+    cd $OPENWRT_DIR
+    make menuconfig
+    cp .config $CONFIG_DIR/$CONFIG.config
+    exit 0
+fi
+
+if [ $OP == "compile" ];then
+    compile
+fi
 
 ####打包部分####
 COMPRESS_ARGS='-mx=9' 
 if [[ $CONFIG == *armv8* ]];then
+    ls $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
     # 拉取内核
     if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
         echo "内核目录不为空，跳过下载内核步骤"

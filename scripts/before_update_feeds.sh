@@ -1,19 +1,29 @@
 #!/bin/bash
 # 执行脚本的目录在openwrt
-cd package && PACKAGE_DIR=$PWD
+cd package;PACKAGE_DIR=$PWD
+
+function clondOrUpdateStore() {
+    GIT_URL=$1
+    STORE_NAME=$2
+    COMMIT_ID=$3
+    if [ -d $PACKAGE_DIR/$STORE_NAME/.git ];then
+        echo "$STORE_NAME 已存在，即将进行更新"
+        cd $PACKAGE_DIR/$STORE_NAME
+        git reset --hard
+        git fetch --all
+    fi
+    git checkout $COMMIT_ID
+    [ `echo "$COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 如果是master分支则拉一下最新代码
+}
 
 # 有新的feeds按照下面格式添加即可
-rm -rf $PACKAGE_DIR/kenzo && git clone https://github.com/kenzok8/openwrt-packages $PACKAGE_DIR/kenzo
-cd $PACKAGE_DIR/kenzo && git checkout $OPENWRT_PACKAGES_COMMIT_ID
-
-rm -rf $PACKAGE_DIR/passwall && git clone https://github.com/xiaorouji/openwrt-passwall.git $PACKAGE_DIR/passwall
-cd $PACKAGE_DIR/passwall && git checkout $PASSWALL_PACKAGE_COMMIT_ID
-
+clondOrUpdateStore "https://github.com/kenzok8/openwrt-packages" "kenzo" $OPENWRT_PACKAGES_COMMIT_ID
+clondOrUpdateStore "https://github.com/xiaorouji/openwrt-passwall" "passwall" $PASSWALL_PACKAGE_COMMIT_ID
+clondOrUpdateStore "https://github.com/kenzok8/small-package" "small-package" $SMALL_PACKAGE_COMMIT_ID
 # 添加自定义的部分源
-SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package
+SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package;
 SMALL_PACKAGE_TMP=/tmp/small-package
-rm -rf $SMALL_PACKAGE_DIR && git clone https://github.com/kenzok8/small-package.git $SMALL_PACKAGE_TMP
-cd $SMALL_PACKAGE_TMP && git checkout $SMALL_PACKAGE_COMMIT_ID && mkdir -p $SMALL_PACKAGE_DIR
+mv $SMALL_PACKAGE_DIR $SMALL_PACKAGE_TMP && mkdir $SMALL_PACKAGE_DIR
 mv $SMALL_PACKAGE_TMP/luci-app-tencentddns $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-netspeedtest $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-wolplus $SMALL_PACKAGE_DIR/
