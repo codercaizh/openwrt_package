@@ -153,7 +153,7 @@ jobs:
 
       - name: Set artifact path
         run: |
-          sudo chmod -R 777 artifact # 解决某些场景下打出来的包无法访问问题
+          sudo chmod -R 777 artifact
           ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
           FILE_NAME=$(basename $ARTIFACT_PATH)
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
@@ -191,7 +191,7 @@ jobs:
         
       - name: Remove container
         if: ${{ success() || cancelled() }}
-        run: sudo docker container rm -f $(docker container ls -aq --filter name=${{ env.container_name_prefix }}) && echo 'remove success' || echo 'unnecessary remove' # 一旦编译成功则把之前失败的容器也一把都删除掉
+        run: sudo docker container rm -f $(docker container ls -aq --filter name=${{ env.container_name_prefix }}) && echo 'remove success' || echo 'unnecessary remove'
 
       
 

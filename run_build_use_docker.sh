@@ -3,8 +3,8 @@ set -e
 BUILD_IMAGE=codercai/openwrt_package:2.0
 # 构建运行参数
 function assembleBuildArgs() {
-    BUILD_DIR_PATH=$1
-    BUILD_CONTAINER_NAME=$2
+    local BUILD_DIR_PATH=$1
+    local BUILD_CONTAINER_NAME=$2
     BUILD_ARGS="-v $BUILD_DIR_PATH/openwrt:/opt/openwrt "
     BUILD_ARGS+="-v $BUILD_DIR_PATH/packit:/opt/openwrt_packit "
     BUILD_ARGS+="-v $BUILD_DIR_PATH/kernel:/opt/kernel "
