@@ -14,6 +14,7 @@ function clondOrUpdateStore() {
     else
         git clone $GIT_URL $PACKAGE_DIR/$STORE_NAME
     fi
+    cd $PACKAGE_DIR/$STORE_NAME
     git checkout $COMMIT_ID
     [ `echo "$COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 如果是master分支则拉一下最新代码
 }
