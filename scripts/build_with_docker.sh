@@ -96,11 +96,9 @@ if [[ $CONFIG == *armv8* ]];then
     else
         [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
         LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
-        KERNEL_DOWNLOAD_DIR=$KERNEL_DIR/download
-        mkdir -p $KERNEL_DOWNLOAD_DIR
-        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q -P $KERNEL_DIR/
-        tar -vxf $KERNEL_DIR/$LATEST_KERNEL_VERSION -C $KERNEL_DOWNLOAD_DIR/
-        mv $KERNEL_DOWNLOAD_DIR/*/* $KERNEL_DIR/
+        cd $KERNEL_DIR
+        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q
+        tar -vxf $LATEST_KERNEL_VERSION && mv ${LATEST_KERNEL_VERSION%%.tar.gz}/* $KERNEL_DIR/
     fi
     KERNEL_VERSION=`ls -l $KERNEL_DIR | awk '{print $9}' | grep boot | head -1`
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
