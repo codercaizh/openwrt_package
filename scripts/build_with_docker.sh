@@ -89,18 +89,18 @@ fi
 ####打包部分####
 COMPRESS_ARGS='-mx=9' 
 if [[ $CONFIG == *armv8* ]];then
-    ls $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
-    # 拉取内核
-    if ls $KERNEL_DIR/*.tar.gz &> /dev/null; then
-        echo "内核目录不为空，跳过下载内核步骤"
-    else
-        [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
-        LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
-        cd $KERNEL_DIR
-        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q
-        tar -vxf $LATEST_KERNEL_VERSION && mv ${LATEST_KERNEL_VERSION%%.tar.gz}/* $KERNEL_DIR/
+  #  ls $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
+    [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
+    LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
+    echo '当前远程最新版本内核包：'$LATEST_KERNEL_VERSION
+    if [ ! -f "$KERNEL_DIR/$LATEST_KERNEL_VERSION" ]; then
+        echo '内核包存在更新，正在下载中'
+        rm -rf $KERNEL_DIR/*
+        wget "https://github.com/breakings/OpenWrt/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q -P $KERNEL_DIR/
     fi
-    KERNEL_VERSION=`ls -l $KERNEL_DIR | awk '{print $9}' | grep boot | head -1`
+    tar -vxf $KERNEL_DIR/$LATEST_KERNEL_VERSION -C $KERNEL_DIR/
+    mv $KERNEL_DIR/$(basename `ls -l $KERNEL_DIR | grep ^d | awk '{print $9}'`)/* $KERNEL_DIR/
+    KERNEL_VERSION=$(basename `ls -l $KERNEL_DIR/* | awk '{print $9}' | grep boot | head -1`)
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
     KERNEL_VERSION=${KERNEL_VERSION##boot-}
     export KERNEL_VERSION
