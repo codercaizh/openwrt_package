@@ -62,7 +62,7 @@ function compile() {
     make download -j`nproc` || make download -j`nproc`
     echo '开始编译'
     rm -rf $OPENWRT_DIR/bin
-    make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';set -e;exit -1)
+    make -j`nproc` || make V=s -j1 || echo '最终编译失败，请根据日志排查原因'
     set -e
 }
 
@@ -89,7 +89,7 @@ fi
 ####打包部分####
 COMPRESS_ARGS='-mx=9' 
 if [[ $CONFIG == *armv8* ]];then
-  #  ls $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
+    ls $OPENWRT_DIR/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
     [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
     LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
     echo '当前远程最新版本内核包：'$LATEST_KERNEL_VERSION
