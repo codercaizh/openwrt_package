@@ -62,7 +62,7 @@ function compile() {
     make download -j`nproc` || make download -j`nproc`
     echo '开始编译'
     rm -rf $OPENWRT_DIR/bin
-    make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';exit -1)
+    make -j`nproc` || make V=s -j1 || (echo '最终编译失败，请根据日志排查原因';set -e;exit -1)
     set -e
 }
 
