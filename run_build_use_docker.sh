@@ -21,7 +21,7 @@ function usage() {
   echo "Complier Usage: ${0} [-c|--configName] [-d|--device] [-p|--only_package] [-n|--name] [-o|--output_path]" 1>&2
   echo "Make menuconfig Usage: menuconfig [configPrefixName]" 1>&2
   echo "Only run container Usage: go [workdir]" 1>&2
-  echo "Only download openwrt Usage: download [workdir]" 1>&2
+  echo "Only download openwrt Usage: download [config] [workdir]" 1>&2
   exit 1 
 }
 if [ $# -eq 0 ];then

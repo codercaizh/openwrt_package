@@ -5,9 +5,11 @@ N2N_DIR=package/feeds/packages/n2n
 rm -rf $N2N_DIR/patches
 sed -i 's/PKG_VERSION:=3.0/PKG_VERSION:=3.1.1/g' $N2N_DIR/Makefile
 sed -i 's/^PKG_HASH:.*/PKG_HASH:=skip/g' $N2N_DIR/Makefile
-
+# 默认5.10内核
 sed -i '/CONFIG_LINUX_/d' .config
-[[ "$BUILD_DEVICE" == "x86" ]] && echo -e '\nCONFIG_LINUX_6_1=y' >> .config || echo -e '\nCONFIG_LINUX_5_10=y' >> .config
+echo -e '\nCONFIG_LINUX_5_10=y' >> .config
+[[ "$BUILD_CONFIG" == armv8* ]] && sed -i 's/CONFIG_LINUX_5_10/CONFIG_LINUX_6_1/g' .config
+[[ "$BUILD_DEVICE" == "x86" ]] && sed -i 's/CONFIG_LINUX_5_10/CONFIG_LINUX_6_1/g' .config
 
 # 路由固件更换为linux5.10内核版本并进行超频
 sed -i 's/KERNEL_PATCHVER:=5.4/KERNEL_PATCHVER:=5.10/g' target/linux/ramips/Makefile
