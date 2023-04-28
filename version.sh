@@ -2,7 +2,7 @@
 # 问：为什么要有这个版本号机制而不是默认就使用最新版本编译
 # 答：由于OP和插件源码更新非常频繁，部分更新可能会导致编译失败，所以需要有一个Release版本机制，记录百分百能够编出来的版本
 # 目前本文件由Workflow定时自动更新
-OPENWRT_VER=R23.04.28
+OPENWRT_VER=R23.04.29
 OPENWRT_COMMIT_ID=585c2ca50e172ba7f8fd879d04d838bb48ba9fd4
 OPENWRT_PACKAGES_COMMIT_ID=e28a809229c7384e8446d56fd3a73c7ae248a754
 PASSWALL_PACKAGE_COMMIT_ID=147085a18a7b19cac1d9d14879a391a5ebb3ff17
