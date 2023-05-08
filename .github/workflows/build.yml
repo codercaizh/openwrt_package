@@ -156,19 +156,20 @@ jobs:
           set +e
           RETRY_COUNT=${{ inputs.retryCount }}
           RETRY_COUNT=${RETRY_COUNT:-0}
-          local IS_COMPILE_SUCCEED=0
+          IS_COMPILE_SUCCEED=0
           for ((i=0; i<=$RETRY_COUNT; i++))
           do
               sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/${{ env.compile_path }}
               if [ $? -ne 0 ];then
-                  echo '最终失败'
+                  echo '失败'
               else
                   IS_COMPILE_SUCCEED=1
                   break;
               fi
           done
           set -e
-          [ $IS_COMPILE_SUCCEED -eq 0 ] || exit -1
+          # 编译失败则退出进程
+          [ $IS_COMPILE_SUCCEED -eq 0 ] && exit -1
         working-directory: ${{ env.package_build_tool_path }}
 
       - name: Set artifact path
