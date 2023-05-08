@@ -115,7 +115,7 @@ if [[ $CONFIG == *armv8* ]];then
         7z a $COMPRESS_ARGS $OUTPUT_DIR/`ls *.img | head -1`.7z ./*.img
     else
         echo '盒子固件打包失败'
-        exit -1
+        exit 1
     fi
 elif [[ $DEVICE == 'x86' ]];then
     if ls $OPENWRT_DIR/bin/targets/x86/*/*.img.gz &> /dev/null; then
@@ -123,7 +123,7 @@ elif [[ $DEVICE == 'x86' ]];then
         7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.7z' $OPENWRT_DIR/bin/targets/x86/*/*squashfs-combined*.img.gz
     else 
         echo 'x86固件打包失败'
-        exit -1
+        exit 1
     fi
 else
     # 针对ramips
@@ -132,7 +132,7 @@ else
         7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/*/*/*.bin
     else 
         echo '路由固件打包失败'
-        exit -1
+        exit 1
     fi
 fi
 echo '编译固件成功：'${DEVICE}

@@ -108,7 +108,8 @@ do
 done
 if ls $BUILD_DIR/artifact/$DEVICE/*.7z &> /dev/null; then
     echo '编译成功'
+    exit 0
 else
     echo '编译失败'
-    exit -1
+    exit 1
 fi
