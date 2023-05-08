@@ -28,6 +28,7 @@ jobs:
     with:
       target: ${{ matrix.target }}
       config: ${{ matrix.config }}
+      retryCount: 2
 
   clean_workflow:
     runs-on: ubuntu-latest
