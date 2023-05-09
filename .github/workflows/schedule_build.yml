@@ -35,8 +35,6 @@ jobs:
     steps:
       - name: Clean workflow
         uses: Mattraks/delete-workflow-runs@v2.0.3
-        with:
-          retain_days: 2
        
   upgrade_version_file:
     needs: [parallel]
