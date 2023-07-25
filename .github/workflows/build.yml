@@ -29,6 +29,7 @@ on:
         - r3g
         - r3p
         - rm2100
+        - ax6s
       config:
         description: '插件配置'
         required: true
@@ -42,6 +43,7 @@ on:
         - r3g
         - r3p
         - rm2100
+        - ax6s
         - armv8_simple
       useLatestCode:
         description: '使用最新源代码编译'
