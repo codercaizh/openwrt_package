@@ -17,7 +17,7 @@ OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 [ -f "$OPENWRT_VERSION_FILE" ] && source $OPENWRT_VERSION_FILE
 export FORCE_UNSAFE_CONFIGURE=1
 export OPENWRT_VER=${OPENWRT_VER:-"R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"}
-export OPENWRT_COMMIT_ID=${OPENWRT_COMMIT_ID:-master}
+export OPENWRT_COMMIT_ID=${OPENWRT_COMMIT_ID:-openwrt-21.02}
 export OPENWRT_PACKAGES_COMMIT_ID=${OPENWRT_PACKAGES_COMMIT_ID:-master}
 export PASSWALL_PACKAGE_COMMIT_ID=${PASSWALL_PACKAGE_COMMIT_ID:-packages}
 export SMALL_PACKAGE_COMMIT_ID=${SMALL_PACKAGE_COMMIT_ID:-main}
@@ -29,7 +29,7 @@ if [ $OP != "package" ];then
     # 切换源码
     if [ ! -d "$OPENWRT_DIR/.git" ]; then
         echo '未找到openwrt源码，正在检出源码'
-        git clone https://github.com/coolsnowwolf/lede.git /opt/openwrt_tmp
+        git clone https://github.com/hanwckf/immortalwrt-mt798x /opt/openwrt_tmp
         echo 'openwrt源码更新完毕'
         mv /opt/openwrt_tmp/* $OPENWRT_DIR/ && mv /opt/openwrt_tmp/.* $OPENWRT_DIR/
         cd $OPENWRT_DIR

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-BUILD_IMAGE=codercai/openwrt_package:2.0
+BUILD_IMAGE=codercai/immortalwrt_package:1.0
 # 构建运行参数
 function assembleBuildArgs() {
     local BUILD_DIR_PATH=$1

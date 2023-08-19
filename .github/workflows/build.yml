@@ -5,46 +5,17 @@ on:
       target:
         description: '目标设备'
         required: true
-        default: 'x86' 
+        default: '360T7' 
         type: choice
         options:
-        - x86
-        - vplus
-        - beikeyun
-        - l1pro 
-        - rock5b
-        - h88k
-        - r66s 
-        - r68s
-        - h68k
-        - e25 
-        - s905
-        - s905d
-        - s905x2 
-        - s905x3
-        - s912
-        - s922x 
-        - s922x-n2 
-        - qemu
-        - r3g
-        - r3p
-        - rm2100
-        - ax6s
+        - 360T7
       config:
         description: '插件配置'
         required: true
-        default: 'x86_64'
+        default: '360T7'
         type: choice
         options:
-        - x86_64
-        - x86_64_cloud
-        - armv8
-        - armv8_full
-        - r3g
-        - r3p
-        - rm2100
-        - ax6s
-        - armv8_simple
+        - 360T7
       useLatestCode:
         description: '使用最新源代码编译'
         required: true
