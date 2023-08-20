@@ -54,7 +54,7 @@ function install() {
     cp $CONFIG_DIR/$CONFIG.config ./.config
     # defconfig文件存在则拼接defconfig的配置
     DEFCONFIG=$OPENWRT_DIR/defconfig/$CONFIG.config
-    [ -f "$DEFCONFIG" ] && echo ./defconfig/$CONFIG.config >> ./.config && echo 'append defconfig succeed'
+    [ -f "$DEFCONFIG" ] && cat ./defconfig/$CONFIG.config >> ./.config && echo 'append defconfig succeed'
     make defconfig
 }
 function compile() {
