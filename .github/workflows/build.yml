@@ -5,7 +5,7 @@ on:
       target:
         description: '目标设备'
         required: true
-        default: '360T7' 
+        default: '360-t7-108M' 
         type: choice
         options:
         - cetron_ct3003
