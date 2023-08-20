@@ -8,14 +8,23 @@ on:
         default: '360T7' 
         type: choice
         options:
-        - 360T7
+        - cetron_ct3003
+        - cmcc_rax3000m
+        - h3c_nx30pro
+        - jcg_q30
+        - konka_komi-a31
+        - livinet_zr-3020
+        - 360-t7
+        - 360-t7-108M
+        - xiaomi_mi-router-wr30u-112m
+        - xiaomi_mi-router-wr30u-stock
       config:
         description: '插件配置'
         required: true
-        default: '360T7'
+        default: 'mt7981-ax3000'
         type: choice
         options:
-        - 360T7
+        - mt7981-ax3000
       useLatestCode:
         description: '使用最新源代码编译'
         required: true

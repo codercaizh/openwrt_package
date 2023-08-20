@@ -127,9 +127,9 @@ elif [[ $DEVICE == 'x86' ]];then
     fi
 else
     # 针对ramips
-    if ls $OPENWRT_DIR/bin/targets/*/*/*.bin &> /dev/null; then
+    if ls $OPENWRT_DIR/bin/targets/*/*/*$DEVICE*.bin &> /dev/null; then
         echo '打包路由固件中'
-        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/*/*/*.bin
+        7z a $COMPRESS_ARGS $OUTPUT_DIR/'openwrt_'$DEVICE'_'$OPENWRT_VER'.bin.7z' $OPENWRT_DIR/bin/targets/*/*/*$DEVICE*.bin
     else 
         echo '路由固件打包失败'
         exit 1
