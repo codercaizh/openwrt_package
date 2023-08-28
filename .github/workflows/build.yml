@@ -178,9 +178,9 @@ jobs:
           git config --global --add safe.directory $PWD
           echo "OPENWRT_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-          cd package/kenzo
-          git config --global --add safe.directory $PWD
-          echo "OPENWRT_PACKAGES_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          # cd package/kenzo
+          # git config --global --add safe.directory $PWD
+          # echo "OPENWRT_PACKAGES_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
           cd ../passwall
           git config --global --add safe.directory $PWD
