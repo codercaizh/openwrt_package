@@ -49,12 +49,13 @@ function install() {
     cp $SCRIPT_DIR/*.sh ./
     ./before_update_feeds.sh
     ./scripts/feeds update -a
-    ./scripts/feeds install -a
+    ./scripts/feeds install -a -f
     echo 'feed更新完毕'
-    cp $CONFIG_DIR/$CONFIG.config ./.config
+    echo '' > ./.config
     # defconfig文件存在则拼接defconfig的配置
     DEFCONFIG=$OPENWRT_DIR/defconfig/$CONFIG.config
     [ -f "$DEFCONFIG" ] && cat ./defconfig/$CONFIG.config >> ./.config && echo 'append defconfig succeed'
+    cat $CONFIG_DIR/$CONFIG.config >> ./.config
     make defconfig
 }
 function compile() {
