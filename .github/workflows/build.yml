@@ -173,20 +173,17 @@ jobs:
         name: Output version
         if: success()
         run: |
+          OPENWRT_DIR=$PWD/openwrt
           echo "OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')" >> $GITHUB_OUTPUT
-          cd openwrt
+          cd OPENWRT_DIR
           git config --global --add safe.directory $PWD
           echo "OPENWRT_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-          # cd package/kenzo
-          # git config --global --add safe.directory $PWD
-          # echo "OPENWRT_PACKAGES_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-          cd ../passwall
+          cd OPENWRT_DIR/package/passwall
           git config --global --add safe.directory $PWD
           echo "PASSWALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-          cd ../small-package
+          cd OPENWRT_DIR/package/small-package
           git config --global --add safe.directory $PWD
           echo "SMALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
         working-directory: ${{ env.compile_path }}
