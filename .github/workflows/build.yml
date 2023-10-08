@@ -100,6 +100,9 @@ on:
         SMALL_PACKAGE_COMMIT_ID:
           description: "使用的SMALL插件库源码提交点"
           value: ${{ jobs.build.outputs.SMALL_PACKAGE_COMMIT_ID }}
+        SMALL_COMMIT_ID:
+          description: "使用的SMALL库源码提交点"
+          value: ${{ jobs.build.outputs.SMALL_COMMIT_ID }}
 jobs:
   build:
     name: ${{ inputs.target }}_${{ inputs.config }}
@@ -112,6 +115,7 @@ jobs:
       OPENWRT_PACKAGES_COMMIT_ID: ${{ steps.version.outputs.OPENWRT_PACKAGES_COMMIT_ID }} 
       PASSWALL_PACKAGE_COMMIT_ID: ${{ steps.version.outputs.PASSWALL_PACKAGE_COMMIT_ID }} 
       SMALL_PACKAGE_COMMIT_ID: ${{ steps.version.outputs.SMALL_PACKAGE_COMMIT_ID }} 
+      SMALL_COMMIT_ID: ${{ steps.version.outputs.SMALL_COMMIT_ID }} 
     env:
       package_build_tool_path: 'source' # 存放本项目工具的目录名称
       compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
@@ -209,6 +213,10 @@ jobs:
           cd ../small-package
           git config --global --add safe.directory $PWD
           echo "SMALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+          cd ../small
+          git config --global --add safe.directory $PWD
+          echo "SMALL_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
         working-directory: ${{ env.compile_path }}
         
       - name: Remove container
