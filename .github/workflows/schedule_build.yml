@@ -54,6 +54,7 @@ jobs:
           echo 'OPENWRT_PACKAGES_COMMIT_ID=${{ needs.parallel.outputs.OPENWRT_PACKAGES_COMMIT_ID }}' >> version.sh
           echo 'PASSWALL_PACKAGE_COMMIT_ID=${{ needs.parallel.outputs.PASSWALL_PACKAGE_COMMIT_ID }}' >> version.sh
           echo 'SMALL_PACKAGE_COMMIT_ID=${{ needs.parallel.outputs.SMALL_PACKAGE_COMMIT_ID }}' >> version.sh
+          echo 'SMALL_COMMIT_ID=${{ needs.parallel.outputs.SMALL_COMMIT_ID }}' >> version.sh
           cat version.sh
           diffInfo=`git diff` 
           if [ "$diffInfo" = "" ]; then
