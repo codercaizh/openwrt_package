@@ -30,11 +30,6 @@ on:
         required: true
         type: boolean
         default: false
-      useSelfHosted:
-        description: '使用自建机器编译（需配置Runner）'
-        required: true
-        type: boolean
-        default: false
       useCache:
         description: '使用编译缓存进行加速（仅自建机器下生效）'
         required: true
@@ -48,10 +43,6 @@ on:
       config:
         required: true
         type: string
-      useSelfHosted:
-        required: false
-        type: boolean
-        default: false
       useLatestCode:
         required: false
         type: boolean
@@ -84,7 +75,7 @@ jobs:
   build:
     name: ${{ inputs.target }}_${{ inputs.config }}
     #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
-    runs-on: ${{ inputs.useSelfHosted && 'self-hosted' || 'ubuntu-20.04' }}
+    runs-on: ubuntu-22.04
     timeout-minutes: 2880
     outputs: 
       OPENWRT_VER: ${{ steps.version.outputs.OPENWRT_VER }} 
