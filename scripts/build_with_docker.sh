@@ -29,7 +29,8 @@ if [ $OP != "package" ];then
     # 切换源码
     if [ ! -d "$OPENWRT_DIR/.git" ]; then
         echo '未找到openwrt源码，正在检出源码'
-        git clone https://github.com/hanwckf/immortalwrt-mt798x /opt/openwrt_tmp
+        # git clone https://github.com/hanwckf/immortalwrt-mt798x /opt/openwrt_tmp
+        git clone https://github.com/padavanonly/immortalwrt-mt798x-6.6 /opt/openwrt_tmp
         echo 'openwrt源码更新完毕'
         cp -r /opt/openwrt_tmp/. $OPENWRT_DIR/
         cd $OPENWRT_DIR
