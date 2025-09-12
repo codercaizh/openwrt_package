@@ -5,7 +5,7 @@ on:
       target:
         description: '目标设备'
         required: true
-        default: '360-t7-108M' 
+        default: '360t7' 
         type: choice
         options:
         - cetron_ct3003
@@ -14,8 +14,7 @@ on:
         - jcg_q30
         - konka_komi-a31
         - livinet_zr-3020
-        - 360-t7
-        - 360-t7-108M
+        - 360t7
         - xiaomi_mi-router-wr30u-112m
         - xiaomi_mi-router-wr30u-stock
       config:
@@ -91,6 +90,18 @@ jobs:
     steps:
       - name: Print input
         run:  echo "${{ toJSON(inputs) }}"
+
+      - name: Expand disk space
+        if: ${{ !inputs.useSelfHosted }}
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 4096
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
 
       - name: Clean source
         if: ${{ inputs.useSelfHosted }}
