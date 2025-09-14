@@ -20,10 +20,10 @@ on:
       config:
         description: '插件配置'
         required: true
-        default: 'mt7981-ax3000'
+        default: '360t7'
         type: choice
         options:
-        - mt7981-ax3000
+        - 360t7
       useLatestCode:
         description: '使用最新源代码编译'
         required: true
