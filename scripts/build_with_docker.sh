@@ -95,8 +95,8 @@ fi
 ####打包部分####
 COMPRESS_ARGS='-mx=9' 
 if [[ $CONFIG == *armv8* ]];then
-    ARMV8_ROOTFS_FILE_NAME="openwrt-armvirt-64-generic-rootfs.tar.gz"
-    ls $OPENWRT_DIR/bin/targets/armvirt/64/$ARMV8_ROOTFS_FILE_NAME &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
+    ARMV8_ROOTFS_FILE_NAME="immortalwrt-armsr-armv8-generic-rootfs.tar.gz"
+    ls $OPENWRT_DIR/bin/targets/armsr/armv8/$ARMV8_ROOTFS_FILE_NAME &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
     [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
     LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
     echo '当前远程最新版本内核包：'$LATEST_KERNEL_VERSION
@@ -113,7 +113,7 @@ if [[ $CONFIG == *armv8* ]];then
     export KERNEL_VERSION
     echo '当前仓库最新内核版本：'$KERNEL_VERSION
     echo '开始进行打包'
-    package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armvirt/64/$ARMV8_ROOTFS_FILE_NAME $DEVICE $SCRIPT_DIR/whoami
+    package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armsr/armv8/$ARMV8_ROOTFS_FILE_NAME $DEVICE $SCRIPT_DIR/whoami
     cd $PACKIT_DIR/output/
     rm -rf $OUTPUT_DIR && mkdir -p $OUTPUT_DIR
     if ls *.img &> /dev/null; then
