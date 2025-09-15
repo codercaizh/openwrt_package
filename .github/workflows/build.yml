@@ -18,6 +18,7 @@ on:
         options:
         - 360t7
         - armv8_simple
+        - armv8
 
   workflow_call:
     inputs:
