@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-BUILD_IMAGE=codercai/immortalwrt_package:2.0
+BUILD_IMAGE=codercai/immortalwrt_package:2.1
 # 构建运行参数
 function assembleBuildArgs() {
     local BUILD_DIR_PATH=$1
