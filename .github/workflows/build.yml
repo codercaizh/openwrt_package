@@ -8,15 +8,8 @@ on:
         default: '360t7' 
         type: choice
         options:
-        - cetron_ct3003
-        - cmcc_rax3000m
-        - h3c_nx30pro
-        - jcg_q30
-        - konka_komi-a31
-        - livinet_zr-3020
+        - vplus
         - 360t7
-        - xiaomi_mi-router-wr30u-112m
-        - xiaomi_mi-router-wr30u-stock
       config:
         description: '插件配置'
         required: true
@@ -24,16 +17,8 @@ on:
         type: choice
         options:
         - 360t7
-      useLatestCode:
-        description: '使用最新源代码编译'
-        required: true
-        type: boolean
-        default: false
-      useCache:
-        description: '使用编译缓存进行加速（仅自建机器下生效）'
-        required: true
-        type: boolean
-        default: false
+        - armv8_simple
+
   workflow_call:
     inputs:
       target:
@@ -42,46 +27,16 @@ on:
       config:
         required: true
         type: string
-      useLatestCode:
-        required: false
-        type: boolean
-        default: true
-      useCache:
-        required: false
-        type: boolean
-        default: false
       retryCount:
         required: false
         type: string
         default: '0'
-    outputs:
-        OPENWRT_VER:
-          description: "使用的lede仓库源码版本"
-          value: ${{ jobs.build.outputs.OPENWRT_VER }}
-        OPENWRT_COMMIT_ID:
-          description: "使用的lede仓库源码提交点"
-          value: ${{ jobs.build.outputs.OPENWRT_COMMIT_ID }}
-        OPENWRT_PACKAGES_COMMIT_ID:
-          description: "使用的PACKAGES插件库源码提交点"
-          value: ${{ jobs.build.outputs.OPENWRT_PACKAGES_COMMIT_ID }}
-        PASSWALL_PACKAGE_COMMIT_ID:
-          description: "使用的PASSWALL插件库源码提交点"
-          value: ${{ jobs.build.outputs.PASSWALL_PACKAGE_COMMIT_ID }}
-        SMALL_PACKAGE_COMMIT_ID:
-          description: "使用的SMALL插件库源码提交点"
-          value: ${{ jobs.build.outputs.SMALL_PACKAGE_COMMIT_ID }}
 jobs:
   build:
     name: ${{ inputs.target }}_${{ inputs.config }}
     #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
     runs-on: ubuntu-22.04
     timeout-minutes: 2880
-    outputs: 
-      OPENWRT_VER: ${{ steps.version.outputs.OPENWRT_VER }} 
-      OPENWRT_COMMIT_ID: ${{ steps.version.outputs.OPENWRT_COMMIT_ID }}
-      OPENWRT_PACKAGES_COMMIT_ID: ${{ steps.version.outputs.OPENWRT_PACKAGES_COMMIT_ID }} 
-      PASSWALL_PACKAGE_COMMIT_ID: ${{ steps.version.outputs.PASSWALL_PACKAGE_COMMIT_ID }} 
-      SMALL_PACKAGE_COMMIT_ID: ${{ steps.version.outputs.SMALL_PACKAGE_COMMIT_ID }} 
     env:
       package_build_tool_path: 'source' # 存放本项目工具的目录名称
       compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
@@ -109,19 +64,10 @@ jobs:
           sudo rm -rf ${{ env.package_build_tool_path }}
           sudo rm -rf ${{ env.compile_path }}/artifact/*
 
-      - name: Clean environment
-        if:  ${{ inputs.useSelfHosted && !inputs.useCache  }} 
-        run: sudo rm -rf ${{ env.compile_path }}
-
       - name: Checkout source
         uses: actions/checkout@v3
         with:
           path: ${{ env.package_build_tool_path }}
-
-      - name: Set use latest code
-        if:  ${{ inputs.useLatestCode }} 
-        run: sudo echo '' > version.sh
-        working-directory: ${{ env.package_build_tool_path }}
 
       - name: Build firmware
         run: |
@@ -158,29 +104,6 @@ jobs:
           name: ${{ env.ARTIFACT_FILE }}
           path: ${{ env.ARTIFACT_PATH }}
           retention-days: 7
-
-      - id: version
-        name: Output version
-        if: success()
-        run: |
-          OPENWRT_DIR=$PWD/openwrt
-          echo "OPENWRT_VER=R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')" >> $GITHUB_OUTPUT
-          cd $OPENWRT_DIR
-          git config --global --add safe.directory $PWD
-          echo "OPENWRT_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-          cd $OPENWRT_DIR/package/passwall
-          git config --global --add safe.directory $PWD
-          echo "PASSWALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-          cd $OPENWRT_DIR/package/small-package
-          git config --global --add safe.directory $PWD
-          echo "SMALL_PACKAGE_COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-        working-directory: ${{ env.compile_path }}
-        
-      - name: Remove container
-        if: ${{ success() || cancelled() }}
-        run: sudo docker container rm -f $(docker container ls -aq --filter name=${{ env.container_name_prefix }}) && echo 'remove success' || echo 'unnecessary remove'
 
       
 
