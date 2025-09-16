@@ -16,7 +16,7 @@ on:
         default: '360t7'
         type: choice
         options:
-        - 360t7
+        - mt7981-ax3000
         - armv8_simple
 
   workflow_call:
