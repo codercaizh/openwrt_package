@@ -36,4 +36,8 @@ mv $SMALL_PACKAGE_TMP/luci-app-netdata  $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-nginx-manager $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-passwall $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/luci-app-pushbot $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/luci-app-tailscale $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/luci-app-nekobox $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/luci-app-quickstart $SMALL_PACKAGE_DIR/
+mv $SMALL_PACKAGE_TMP/luci-app-store $SMALL_PACKAGE_DIR/
 mv $SMALL_PACKAGE_TMP/.git $SMALL_PACKAGE_DIR/ && rm -rf $SMALL_PACKAGE_TMP
