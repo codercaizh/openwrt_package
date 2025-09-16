@@ -11,7 +11,6 @@ function assembleBuildArgs() {
     BUILD_ARGS+="-v $PWD/configs:/opt/configs "
     BUILD_ARGS+="-v $PWD/scripts:/opt/scripts "
     BUILD_ARGS+="-v $BUILD_DIR_PATH/artifact:/opt/artifact "
-    BUILD_ARGS+="-v $PWD/version.sh:/opt/version.sh "
     BUILD_ARGS+="--net=host "
     BUILD_ARGS+="--privileged "
     BUILD_ARGS+="--name $BUILD_CONTAINER_NAME "
