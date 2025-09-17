@@ -15,7 +15,7 @@ OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 # 设置编译版本
 [ -f "$OPENWRT_VERSION_FILE" ] && source $OPENWRT_VERSION_FILE
 export FORCE_UNSAFE_CONFIGURE=1
-export OPENWRT_VER=${OPENWRT_VER:-"R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"}
+export OPENWRT_VER="R24.10"
 export BUILD_DEVICE=$DEVICE
 export BUILD_CONFIG=$CONFIG
 echo '当前选择编译版本为：'$OPENWRT_VER
