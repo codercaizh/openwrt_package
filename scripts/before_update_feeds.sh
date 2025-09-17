@@ -24,15 +24,10 @@ clondOrUpdateStore "https://github.com/kenzok8/small-package" "small-package" $S
 SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package;
 SMALL_PACKAGE_TMP=/tmp/small-package
 mv $SMALL_PACKAGE_DIR $SMALL_PACKAGE_TMP && mkdir $SMALL_PACKAGE_DIR
-mv $SMALL_PACKAGE_TMP/luci-app-tencentddns $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-netspeedtest $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-wolplus $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/homebox $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-bandwidthd  $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-netdata  $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-nginx-manager $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-passwall $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-pushbot $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-tailscale $SMALL_PACKAGE_DIR/
-mv $SMALL_PACKAGE_TMP/luci-app-nekobox $SMALL_PACKAGE_DIR/
+grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$CONFIG.config" \
+  | sed -E 's/^CONFIG_PACKAGE_(luci-app-[^=]+)=y$/\1/' \
+  | while IFS= read -r app; do
+      source="$SMALL_PACKAGE_TMP/$app"
+      [ -d "$source" ] && mv $source $SMALL_PACKAGE_DIR/ && echo "${app} 已安装" || echo "${app} 第三方库不存在"
+    done
 mv $SMALL_PACKAGE_TMP/.git $SMALL_PACKAGE_DIR/ && rm -rf $SMALL_PACKAGE_TMP

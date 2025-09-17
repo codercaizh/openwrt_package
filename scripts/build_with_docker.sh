@@ -1,12 +1,12 @@
 #!/bin/bash
 #使用docker编译时使用脚本
 set -e
-SCRIPT_DIR=/opt/scripts
-CONFIG_DIR=/opt/configs
-OPENWRT_DIR=/opt/openwrt
-PACKIT_DIR=/opt/openwrt_packit
-ARTIFACT_DIR=/opt/artifact
-KERNEL_DIR=/opt/kernel
+export SCRIPT_DIR=/opt/scripts
+export CONFIG_DIR=/opt/configs
+export OPENWRT_DIR=/opt/openwrt
+export PACKIT_DIR=/opt/openwrt_packit
+export ARTIFACT_DIR=/opt/artifact
+export KERNEL_DIR=/opt/kernel
 #从外部传入的参数
 OP=$1
 DEVICE=$2
