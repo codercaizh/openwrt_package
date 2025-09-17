@@ -24,7 +24,7 @@ clondOrUpdateStore "https://github.com/kenzok8/small-package" "small-package" $S
 SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package;
 SMALL_PACKAGE_TMP=/tmp/small-package
 mv $SMALL_PACKAGE_DIR $SMALL_PACKAGE_TMP && mkdir $SMALL_PACKAGE_DIR
-grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$CONFIG.config" \
+grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$BUILD_CONFIG.config" \
   | sed -E 's/^CONFIG_PACKAGE_(luci-app-[^=]+)=y$/\1/' \
   | while IFS= read -r app; do
       source="$SMALL_PACKAGE_TMP/$app"
