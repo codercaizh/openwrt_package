@@ -101,7 +101,6 @@ if [[ $CONFIG == *armv8* ]];then
         wget "https://github.com/codercaizh/openwrt_package/releases/download/kernel_$KERNEL_TAG/$LATEST_KERNEL_VERSION" -q -P $KERNEL_DIR/
     fi
     7z x $KERNEL_DIR/$LATEST_KERNEL_VERSION -o$KERNEL_DIR/
-    rm -rf $KERNEL_DIR/$LATEST_KERNEL_VERSION
     KERNEL_VERSION=$(basename `ls -l $KERNEL_DIR/* | awk '{print $9}' | grep boot | head -1`)
     KERNEL_VERSION=${KERNEL_VERSION%%.tar.gz}
     KERNEL_VERSION=${KERNEL_VERSION##boot-}
