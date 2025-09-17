@@ -19,6 +19,7 @@ package_firmware(){
     rm -rf $packit_dir/*rootfs.tar.gz $packit_dir/output/* $packit_dir/tmp
     cp $rootfs_tar_path $whoami $packit_dir/
     cd $packit_dir
+    export OP_ROOT_TGZ=$(ls *rootfs.tar.gz)
     echo '打包源码与底包准备完毕'
     # Set the default packaging script
     SCRIPT_VPLUS_FILE="mk_h6_vplus.sh"

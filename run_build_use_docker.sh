@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-BUILD_IMAGE=codercai/immortalwrt_package:2.0
+BUILD_IMAGE=codercai/immortalwrt_package:2.1
 # 构建运行参数
 function assembleBuildArgs() {
     local BUILD_DIR_PATH=$1
@@ -11,7 +11,6 @@ function assembleBuildArgs() {
     BUILD_ARGS+="-v $PWD/configs:/opt/configs "
     BUILD_ARGS+="-v $PWD/scripts:/opt/scripts "
     BUILD_ARGS+="-v $BUILD_DIR_PATH/artifact:/opt/artifact "
-    BUILD_ARGS+="-v $PWD/version.sh:/opt/version.sh "
     BUILD_ARGS+="--net=host "
     BUILD_ARGS+="--privileged "
     BUILD_ARGS+="--name $BUILD_CONTAINER_NAME "

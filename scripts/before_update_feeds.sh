@@ -5,18 +5,15 @@ cd package;PACKAGE_DIR=$PWD
 function clondOrUpdateStore() {
     GIT_URL=$1
     STORE_NAME=$2
-    COMMIT_ID=$3
     if [ -d $PACKAGE_DIR/$STORE_NAME/.git ];then
         echo "$STORE_NAME 已存在，即将进行更新"
         cd $PACKAGE_DIR/$STORE_NAME
         git reset --hard
         git fetch --all
+        git pull
     else
         git clone $GIT_URL $PACKAGE_DIR/$STORE_NAME
     fi
-    cd $PACKAGE_DIR/$STORE_NAME
-    git checkout $COMMIT_ID
-    [ `echo "$COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 如果是master分支则拉一下最新代码
 }
 
 # 有新的feeds按照下面格式添加即可

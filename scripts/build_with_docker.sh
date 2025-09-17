@@ -7,7 +7,6 @@ OPENWRT_DIR=/opt/openwrt
 PACKIT_DIR=/opt/openwrt_packit
 ARTIFACT_DIR=/opt/artifact
 KERNEL_DIR=/opt/kernel
-OPENWRT_VERSION_FILE=/opt/version.sh
 #从外部传入的参数
 OP=$1
 DEVICE=$2
@@ -17,10 +16,6 @@ OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 [ -f "$OPENWRT_VERSION_FILE" ] && source $OPENWRT_VERSION_FILE
 export FORCE_UNSAFE_CONFIGURE=1
 export OPENWRT_VER=${OPENWRT_VER:-"R$(TZ=':Asia/Shanghai' date '+%y.%m.%d')"}
-export OPENWRT_COMMIT_ID=${OPENWRT_COMMIT_ID:-openwrt-21.02}
-export OPENWRT_PACKAGES_COMMIT_ID=${OPENWRT_PACKAGES_COMMIT_ID:-master}
-export PASSWALL_PACKAGE_COMMIT_ID=${PASSWALL_PACKAGE_COMMIT_ID:-packages}
-export SMALL_PACKAGE_COMMIT_ID=${SMALL_PACKAGE_COMMIT_ID:-main}
 export BUILD_DEVICE=$DEVICE
 export BUILD_CONFIG=$CONFIG
 echo '当前选择编译版本为：'$OPENWRT_VER
@@ -30,17 +25,14 @@ if [ $OP != "package" ];then
     if [ ! -d "$OPENWRT_DIR/.git" ]; then
         echo '未找到openwrt源码，正在检出源码'
         # git clone https://github.com/hanwckf/immortalwrt-mt798x /opt/openwrt_tmp
-        git clone -b openwrt-24.10-6.6 --single-branch --filter=blob:none https://github.com/padavanonly/immortalwrt-mt798x-24.10 /opt/openwrt_tmp
-        # git clone -b openwrt-24.10 --single-branch --filter=blob:none https://github.com/immortalwrt/immortalwrt.git /opt/openwrt_tmp
+        # git clone -b openwrt-24.10-6.6 --single-branch --filter=blob:none https://github.com/padavanonly/immortalwrt-mt798x-24.10 /opt/openwrt_tmp
+        git clone -b openwrt-24.10 --single-branch --filter=blob:none https://github.com/immortalwrt/immortalwrt.git /opt/openwrt_tmp
         echo 'openwrt源码更新完毕'
         cp -r /opt/openwrt_tmp/. $OPENWRT_DIR/
         cd $OPENWRT_DIR
-       #  git checkout "$OPENWRT_COMMIT_ID" # 切换到指定 commitId
     else
         cd $OPENWRT_DIR
-       # git reset --hard;git fetch --all;git checkout "$OPENWRT_COMMIT_ID"
-        # 切换到指定 commitId
-       # [ `echo "$OPENWRT_COMMIT_ID"|awk '{print length($0)}'` != '40' ] && git pull # 当前为主干则更新一下代码
+        git pull
         rm -rf *.feeds.sh
     fi
 fi
@@ -95,8 +87,8 @@ fi
 ####打包部分####
 COMPRESS_ARGS='-mx=9' 
 if [[ $CONFIG == *armv8* ]];then
-    ARMV8_ROOTFS_FILE_NAME="openwrt-armvirt-64-generic-rootfs.tar.gz"
-    ls $OPENWRT_DIR/bin/targets/armvirt/64/$ARMV8_ROOTFS_FILE_NAME &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
+    ARMV8_ROOTFS_FILE_NAME="immortalwrt-armsr-armv8-generic-rootfs.tar.gz"
+    ls $OPENWRT_DIR/bin/targets/armsr/armv8/$ARMV8_ROOTFS_FILE_NAME &> /dev/null || (echo '编译产物不存在，请先完成一次编译，才能进行打包';exit -1)
     [[ "${DEVICE}" == "rk3588" ]] && KERNEL_TAG="rk3588" || KERNEL_TAG="stable"
     LATEST_KERNEL_VERSION="$(curl -s -H "Accept: application/vnd.github+json" https://api.github.com/repos/breakings/OpenWrt/releases/tags/kernel_$KERNEL_TAG | jq -r '.assets[].name' | sort -rV | head -n 1)"
     echo '当前远程最新版本内核包：'$LATEST_KERNEL_VERSION
@@ -113,7 +105,7 @@ if [[ $CONFIG == *armv8* ]];then
     export KERNEL_VERSION
     echo '当前仓库最新内核版本：'$KERNEL_VERSION
     echo '开始进行打包'
-    package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armvirt/64/$ARMV8_ROOTFS_FILE_NAME $DEVICE $SCRIPT_DIR/whoami
+    package_firmware $PACKIT_DIR $OPENWRT_DIR/bin/targets/armsr/armv8/$ARMV8_ROOTFS_FILE_NAME $DEVICE $SCRIPT_DIR/whoami
     cd $PACKIT_DIR/output/
     rm -rf $OUTPUT_DIR && mkdir -p $OUTPUT_DIR
     if ls *.img &> /dev/null; then

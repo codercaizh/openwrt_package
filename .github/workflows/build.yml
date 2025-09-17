@@ -18,6 +18,7 @@ on:
         options:
         - mt7981-ax3000
         - armv8_simple
+        - armv8
 
   workflow_call:
     inputs:
