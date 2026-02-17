@@ -10,6 +10,7 @@ on:
         options:
         - vplus
         - 360t7
+        - s905d
       config:
         description: '插件配置'
         required: true
