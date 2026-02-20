@@ -15,7 +15,7 @@ OUTPUT_DIR=$ARTIFACT_DIR/$DEVICE
 # 设置编译版本
 [ -f "$OPENWRT_VERSION_FILE" ] && source $OPENWRT_VERSION_FILE
 export FORCE_UNSAFE_CONFIGURE=1
-export OPENWRT_VER="R24.10"
+export OPENWRT_VER="R25.12"
 export BUILD_DEVICE=$DEVICE
 export BUILD_CONFIG=$CONFIG
 echo '当前选择编译版本为：'$OPENWRT_VER
@@ -25,7 +25,7 @@ if [ $OP != "package" ];then
     if [ ! -d "$OPENWRT_DIR/.git" ]; then
         echo '未找到openwrt源码，正在检出源码'
         if [[ $CONFIG == *armv8* ]];then
-            git clone -b openwrt-24.10 --single-branch --filter=blob:none https://github.com/immortalwrt/immortalwrt.git /opt/openwrt_tmp
+            git clone -b openwrt-25.12 --single-branch --filter=blob:none https://github.com/immortalwrt/immortalwrt.git /opt/openwrt_tmp
             echo 'immortalwrt源码更新完毕'
         else
             git clone -b openwrt-24.10-6.6 --single-branch --filter=blob:none https://github.com/padavanonly/immortalwrt-mt798x-24.10 /opt/openwrt_tmp
