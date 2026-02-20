@@ -21,7 +21,6 @@ function clondOrUpdateStore() {
 
 # 有新的feeds按照下面格式添加即可
 clondOrUpdateStore "https://github.com/kenzok8/openwrt-packages" "kenzo" $OPENWRT_PACKAGES_COMMIT_ID
-clondOrUpdateStore "https://github.com/xiaorouji/openwrt-passwall" "passwall" $PASSWALL_PACKAGE_COMMIT_ID
 clondOrUpdateStore "https://github.com/kenzok8/small-package" "small-package" $SMALL_PACKAGE_COMMIT_ID
 clondOrUpdateStore "https://github.com/kenzok8/small" "small" $SMALL_COMMIT_ID
 
