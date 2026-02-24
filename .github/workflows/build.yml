@@ -11,15 +11,17 @@ on:
         - vplus
         - 360t7
         - s905d
+        - nx60
       config:
         description: '插件配置'
         required: true
         default: '360t7'
         type: choice
         options:
-        - mt7981-ax3000
+        - 360t7
         - armv8_simple
         - armv8
+        - nx60
 
   workflow_call:
     inputs:
