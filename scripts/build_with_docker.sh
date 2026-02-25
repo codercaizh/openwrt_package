@@ -50,8 +50,14 @@ function install() {
     echo 'feed更新完毕'
     echo '' > ./.config
     # defconfig文件存在则拼接defconfig的配置
-    DEFCONFIG=$OPENWRT_DIR/defconfig/$CONFIG.config
-    [ -f "$DEFCONFIG" ] && cat ./defconfig/$CONFIG.config >> ./.config && echo 'append defconfig succeed'
+    DEFCONFIG=$(awk -F'#CONFIG_APPEND=' '/#CONFIG_APPEND=/ {print $2}' "$CONFIG_DIR/$CONFIG.config")
+    if [ -n "$DEFCONFIG" ]; then
+        echo "找到的拼接配置项: $DEFCONFIG"
+        FULL_DEFCONFIG=$OPENWRT_DIR/defconfig/$DEFCONFIG.config
+        [ -f "$DEFCONFIG" ] && cat $DEFCONFIG >> ./.config && echo 'append defconfig succeed'
+    else
+        echo "未找到 CONFIG_APPEND 配置"
+    fi
     cat $CONFIG_DIR/$CONFIG.config >> ./.config
     make defconfig
 }
