@@ -11,7 +11,7 @@ on:
         - vplus
         - 360t7
         - s905d
-        - nx60
+        - netcore_n60-pro
       config:
         description: '插件配置'
         required: true
