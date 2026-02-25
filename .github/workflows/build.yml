@@ -21,7 +21,7 @@ on:
         - 360t7
         - armv8_simple
         - armv8
-        - nx60
+        - n60pro
 
   workflow_call:
     inputs:
