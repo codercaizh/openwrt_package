@@ -54,7 +54,7 @@ function install() {
     if [ -n "$DEFCONFIG" ]; then
         echo "找到的拼接配置项: $DEFCONFIG"
         FULL_DEFCONFIG=$OPENWRT_DIR/defconfig/$DEFCONFIG.config
-        [ -f "$DEFCONFIG" ] && cat $DEFCONFIG >> ./.config && echo 'append defconfig succeed'
+        [ -f "$FULL_DEFCONFIG" ] && cat $FULL_DEFCONFIG >> ./.config && echo 'append defconfig succeed'
     else
         echo "未找到 CONFIG_APPEND 配置"
     fi
