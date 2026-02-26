@@ -3,6 +3,8 @@
 # 执行打包脚本，失败时重试 &&
 invoke_script(){
     script_file=$1
+    # 把根目录调整为1G，节省空间
+    sed -i 's/ROOTFS_MB=2048/ROOTFS_MB=1024/g' $script_file
     ./${script_file} || ./${script_file} || ./${script_file}
 }
 
