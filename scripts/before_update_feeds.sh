@@ -22,13 +22,42 @@ clondOrUpdateStore "https://github.com/kenzok8/openwrt-packages" "kenzo"
 clondOrUpdateStore "https://github.com/kenzok8/small-package" "small-package" 
 clondOrUpdateStore "https://github.com/sirpdboy/luci-app-netspeedtest" "netspeedtest" 
 # 添加自定义的部分源
-# SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package;
-# SMALL_PACKAGE_TMP=/tmp/small-package
-# mv $SMALL_PACKAGE_DIR $SMALL_PACKAGE_TMP && mkdir $SMALL_PACKAGE_DIR
-# grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$BUILD_CONFIG.config" \
-#  | sed -E 's/^CONFIG_PACKAGE_(luci-app-[^=]+)=y$/\1/' \
-#  | while IFS= read -r app; do
-#      source="$SMALL_PACKAGE_TMP/$app"
-#      [ -d "$source" ] && mv $source $SMALL_PACKAGE_DIR/ && echo "${app} 已安装" || echo "${app} 第三方库不存在"
-#    done
-# mv $SMALL_PACKAGE_TMP/.git $SMALL_PACKAGE_DIR/ && rm -rf $SMALL_PACKAGE_TMP
+SMALL_PACKAGE_DIR=$PACKAGE_DIR/small-package;
+SMALL_PACKAGE_TMP=/tmp/small-package
+mv $SMALL_PACKAGE_DIR $SMALL_PACKAGE_TMP && mkdir $SMALL_PACKAGE_DIR
+
+grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$BUILD_CONFIG.config" \
+ | sed -E 's/^CONFIG_PACKAGE_(luci-app-[^=]+)=y$/\1/' \
+ | while IFS= read -r app; do
+     # 从 luci-app-xxx 中提取 xxx 部分
+     keyword=$(echo "$app" | sed -E 's/^luci-app-(.+)$/\1/')
+     
+     # 在临时目录中查找所有包含关键字的文件夹
+     found_dirs=$(find "$SMALL_PACKAGE_TMP" -maxdepth 1 -type d -name "*${keyword}*")
+     
+     if [ -n "$found_dirs" ]; then
+         moved_count=0
+         # 使用 while 循环处理 find 的结果，避免因路径包含空格或特殊字符而出错
+         echo "$found_dirs" | while IFS= read -r found_dir; do
+             if [ -n "$found_dir" ] && [ -d "$found_dir" ]; then
+                 dir_name=$(basename "$found_dir")
+                 mv "$found_dir" "$SMALL_PACKAGE_DIR/" 2>/dev/null
+                 if [ $? -eq 0 ]; then
+                     echo "${app} (对应目录: ${dir_name}) 已移动"
+                     moved_count=$((moved_count + 1))
+                 fi
+             fi
+         done
+         if [ $moved_count -eq 0 ]; then
+             echo "${app} (关键字: ${keyword}) 对应目录移动失败"
+         fi
+     else
+         echo "${app} (关键字: ${keyword}) 对应目录不存在"
+     fi
+   done
+
+# 移动 .git 目录并清理临时目录
+if [ -d "$SMALL_PACKAGE_TMP/.git" ]; then
+    mv "$SMALL_PACKAGE_TMP/.git" "$SMALL_PACKAGE_DIR/"
+fi
+rm -rf $SMALL_PACKAGE_TMP
