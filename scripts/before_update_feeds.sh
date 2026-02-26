@@ -37,8 +37,8 @@ grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$BUILD_CONFIG.config" \
      
      if [ -n "$found_dirs" ]; then
          moved_count=0
-         # 使用 while 循环处理 find 的结果，避免因路径包含空格或特殊字符而出错
-         echo "$found_dirs" | while IFS= read -r found_dir; do
+         # 直接遍历找到的目录，避免使用管道创建子shell
+         for found_dir in $found_dirs; do
              if [ -n "$found_dir" ] && [ -d "$found_dir" ]; then
                  dir_name=$(basename "$found_dir")
                  mv "$found_dir" "$SMALL_PACKAGE_DIR/" 2>/dev/null
@@ -48,6 +48,7 @@ grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$BUILD_CONFIG.config" \
                  fi
              fi
          done
+         # 现在 moved_count 的修改会在循环中保留
          if [ $moved_count -eq 0 ]; then
              echo "${app} (关键字: ${keyword}) 对应目录移动失败"
          fi
@@ -55,9 +56,3 @@ grep -E '^CONFIG_PACKAGE_luci-app-[^_]*=y$' "$CONFIG_DIR/$BUILD_CONFIG.config" \
          echo "${app} (关键字: ${keyword}) 对应目录不存在"
      fi
    done
-
-# 移动 .git 目录并清理临时目录
-if [ -d "$SMALL_PACKAGE_TMP/.git" ]; then
-    mv "$SMALL_PACKAGE_TMP/.git" "$SMALL_PACKAGE_DIR/"
-fi
-rm -rf $SMALL_PACKAGE_TMP
