@@ -13,3 +13,6 @@ git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/
 rm -rf feeds/luci/applications/luci-app-passwall
 git clone https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall-luci
 
+# 升级Go版本
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
