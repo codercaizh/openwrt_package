@@ -21,5 +21,5 @@ clondOrUpdateStore "https://github.com/kenzok8/openwrt-packages" "kenzo"
 
 # 组播工具
 clondOrUpdateStore "https://github.com/stackia/rtp2httpd" "rtp2httpd_git"
-mv -r $PACKAGE_DIR/rtp2httpd_git/openwrt-support $PACKAGE_DIR/rtp2httpd
+mv $PACKAGE_DIR/rtp2httpd_git/openwrt-support $PACKAGE_DIR/rtp2httpd
 rm -rf $PACKAGE_DIR/rtp2httpd_git
