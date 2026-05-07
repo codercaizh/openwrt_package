@@ -22,7 +22,7 @@ clondOrUpdateStore "https://github.com/kenzok8/openwrt-packages" "kenzo"
 # 组播工具
 clondOrUpdateStore "https://github.com/stackia/rtp2httpd" "rtp2httpd"
 
-# cloudflarespeedtest
-clondOrUpdateStore "https://github.com/stevenjoezhang/luci-app-cloudflarespeedtest" "luci-app-cloudflarespeedtest"
+# small-package
+clondOrUpdateStore "https://github.com/kenzok8/small-package" "small-package"
 
 
