@@ -1,101 +1,106 @@
-name: Openwrt Build
-on:
-  workflow_dispatch: 
-    inputs:
-      target:
-        description: '目标设备'
-        required: true
-        default: '360t7' 
-        type: choice
-        options:
-        - vplus
-        - 360t7
-        - s905d
-        - netcore_n60-pro
-      config:
-        description: '插件配置'
-        required: true
-        default: '360t7'
-        type: choice
-        options:
-        - 360t7
-        - armv8_simple
-        - armv8
-        - n60pro
+name: Build OpenWrt / ImmortalWrt Firmware
 
-  workflow_call:
+on:
+  workflow_dispatch:
     inputs:
       target:
+        description: "编译目标平台"
+        required: true
+        default: "immortalwrt"
+        type: choice
+        options:
+          - openwrt
+          - immortalwrt
+      device:
+        description: "设备名（如: r66s, x86, 360t7, n60pro）"
         required: true
         type: string
       config:
+        description: "配置文件名（不含 .config 后缀，如: armv8, 360t7）"
         required: true
         type: string
-      retryCount:
+      only_package:
+        description: "仅打包（跳过编译）"
         required: false
-        type: string
-        default: '0'
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
 jobs:
   build:
-    name: ${{ inputs.target }}_${{ inputs.config }}
-    #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
-    runs-on: ubuntu-22.04
-    timeout-minutes: 2880
-    env:
-      package_build_tool_path: 'source' # 存放本项目工具的目录名称
-      compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
-      container_name_prefix: 'GithubActionBuild_' # 编译镜像名前缀
-      container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Print input
-        run:  echo "${{ toJSON(inputs) }}"
-
-      - name: Clean source
-        if: ${{ inputs.useSelfHosted }}
-        run: |
-          sudo rm -rf ${{ env.package_build_tool_path }}
-          sudo rm -rf ${{ env.compile_path }}/artifact/*
-
-      - name: Checkout source
-        uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          path: ${{ env.package_build_tool_path }}
+          fetch-depth: 1
 
-      - name: Build firmware
+      - name: Set Build Image
+        id: image
         run: |
-          set +e
-          RETRY_COUNT=${{ inputs.retryCount }}
-          RETRY_COUNT=${RETRY_COUNT:-0}
-          IS_COMPILE_SUCCEED=1
-          for ((i=0; i<=$RETRY_COUNT; i++))
-          do
-              sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/${{ env.compile_path }}
-              if [ $? -ne 0 ];then
-                  echo '失败'
-              else
-                  IS_COMPILE_SUCCEED=0
-                  break;
-              fi
-          done
-          echo "result: "$IS_COMPILE_SUCCEED
-          exit $IS_COMPILE_SUCCEED
-        working-directory: ${{ env.package_build_tool_path }}
+          if [ "${{ github.event.inputs.target }}" = "openwrt" ]; then
+            echo "image=codercai/openwrt_package:2.0" >> $GITHUB_OUTPUT
+          else
+            echo "image=codercai/immortalwrt_package:2.1" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Set artifact path
+      - name: Prepare Build Directories
         run: |
-          sudo chmod -R 777 artifact
-          ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
-          FILE_NAME=$(basename $ARTIFACT_PATH)
-          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
-          echo "ARTIFACT_FILE=$FILE_NAME"".${{ inputs.config }}" >> $GITHUB_ENV
-        working-directory: ${{ env.compile_path }}
+          mkdir -p openwrt_build_tmp/{openwrt,packit,kernel,artifact}
+          echo "BUILD_DIR=$PWD/openwrt_build_tmp" >> $GITHUB_ENV
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4.6.2
+      - name: Run Build in Docker
+        run: |
+          BUILD_IMAGE="${{ steps.image.outputs.image }}"
+          TARGET="${{ github.event.inputs.target }}"
+          DEVICE="${{ github.event.inputs.device }}"
+          CONFIG="${{ github.event.inputs.config }}"
+          ONLY_PACKAGE="${{ github.event.inputs.only_package }}"
+
+          DOCKER_ARGS=(
+            -v $BUILD_DIR/openwrt:/opt/openwrt
+            -v $BUILD_DIR/packit:/opt/openwrt_packit
+            -v $BUILD_DIR/kernel:/opt/kernel
+            -v $PWD/configs:/opt/configs
+            -v $PWD/scripts:/opt/scripts
+            -v $BUILD_DIR/artifact:/opt/artifact
+            --net=host
+            --privileged
+            --name openwrt_ci_build
+          )
+
+          docker rm -f openwrt_ci_build 2>/dev/null || true
+
+          if [ "$ONLY_PACKAGE" = "true" ]; then
+            OP="package"
+          else
+            OP="compile"
+          fi
+
+          echo "=========================================="
+          echo "  平台: $TARGET"
+          echo "  设备: $DEVICE"
+          echo "  配置: $CONFIG"
+          echo "  操作: $OP"
+          echo "  镜像: $BUILD_IMAGE"
+          echo "=========================================="
+
+          docker run -d "${DOCKER_ARGS[@]}" "$BUILD_IMAGE" \
+            /opt/scripts/build.py "$OP" "$DEVICE" "$CONFIG" "$TARGET"
+
+          docker logs -f openwrt_ci_build
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_FILE }}
-          path: ${{ env.ARTIFACT_PATH }}
-          retention-days: 7
+          name: firmware-${{ github.event.inputs.device }}-${{ github.event.inputs.target }}
+          path: openwrt_build_tmp/artifact/${{ github.event.inputs.device }}/*.7z
+          if-no-files-found: warn
 
-      
-
+      - name: Cleanup Container
+        if: always()
+        run: docker rm -f openwrt_ci_build 2>/dev/null || true
