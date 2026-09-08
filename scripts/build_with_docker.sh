@@ -47,6 +47,7 @@ function install() {
     ./before_update_feeds.sh
     ./scripts/feeds update -a
     ./scripts/feeds install -a -f
+    ./before_compile.sh
     echo 'feed更新完毕'
     echo '' > ./.config
     # defconfig文件存在则拼接defconfig的配置
@@ -63,7 +64,6 @@ function install() {
 }
 function compile() {
     cd $OPENWRT_DIR
-    ./before_compile.sh
     set +e
     echo '开始下载依赖'
     make download -j`nproc` || make download -j`nproc`
