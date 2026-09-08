@@ -15,7 +15,7 @@ button { border:1px solid transparent; border-radius:10px; padding:9px 13px; col
 .primary { background:var(--accent); color:#082118; font-weight:750; } .ghost { background:transparent; border-color:var(--line); } .danger { background:transparent; border-color:#704149; color:var(--danger); }
 .error { color:var(--danger); min-height:1.5em; margin:12px 0 0; } .message { color:var(--accent2); min-height:1.5em; margin:12px 0 0; }
 .topbar,.section-heading,.form-actions,.top-actions { display:flex; align-items:center; justify-content:space-between; gap:14px; } .topbar { margin:0 0 20px; } .top-actions { align-items:center; }
-.badge { display:inline-flex; align-items:center; min-height:27px; padding:3px 9px; border-radius:999px; background:#203149; color:var(--accent2); font-size:12px; white-space:nowrap; } .badge.ready,.badge.succeeded { color:#0a271b; background:var(--accent); } .badge.failed,.badge.interrupted,.badge.canceled { color:#2d1116; background:var(--danger); }
+.badge { display:inline-flex; align-items:center; min-height:27px; padding:3px 9px; border-radius:999px; background:#203149; color:var(--accent2); font-size:12px; white-space:nowrap; } .badge.ready,.badge.succeeded { color:#0a271b; background:var(--accent); } .badge.canceling { color:#15253a; background:var(--accent2); } .badge.failed,.badge.interrupted,.badge.canceled { color:#2d1116; background:var(--danger); }
 .layout { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(350px,.88fr); gap:20px; align-items:start; } .builder-panel,.jobs-panel { padding:22px; }
 .builder-panel > label { margin:20px 0 10px; }
 .build-controls { display:grid; grid-template-columns:minmax(150px, .75fr) minmax(210px, 1.25fr); gap:12px; margin:0 0 17px; }

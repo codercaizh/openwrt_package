@@ -341,7 +341,12 @@ class Storage:
                 return None
             status = str(row["status"])
             if status == "queued":
-                db.execute("UPDATE jobs SET status='canceled',cancel_requested=1,finished_at=? WHERE id=?", (utc_now(), job_id))
+                error = "管理员取消任务"
+                result = {"status": "canceled", "success": False, "ok": False, "error": error}
+                db.execute(
+                    "UPDATE jobs SET status='canceled',cancel_requested=1,finished_at=?,error=?,result_json=? WHERE id=?",
+                    (utc_now(), error, _json(result), job_id),
+                )
                 return "canceled"
             if status == "running":
                 db.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (job_id,))
@@ -353,13 +358,24 @@ class Storage:
             row = db.execute("SELECT cancel_requested FROM jobs WHERE id=?", (job_id,)).fetchone()
             return bool(row and row[0])
 
-    def finish_job(self, job_id: str, status: str, error: str | None = None, result: Any = None) -> None:
+    def finish_job(self, job_id: str, status: str, error: str | None = None, result: Any = None) -> str:
         with self.connect() as db:
+            row = db.execute("SELECT cancel_requested FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is not None and bool(row["cancel_requested"]) and status != "canceled":
+                # A cancellation request wins over a late worker result.  The
+                # request and this final write share the same SQLite lock, so
+                # a result can only win when cancellation arrived afterward.
+                status = "canceled"
+                error = error or "管理员取消任务"
+                if isinstance(result, dict):
+                    result = dict(result)
+                    result.update({"status": "canceled", "success": False, "ok": False, "error": error})
             db.execute(
                 "UPDATE jobs SET status=?,finished_at=?,error=?,result_json=? WHERE id=?",
                 (status, utc_now(), error, _json(result) if result is not None else None, job_id),
             )
         self._flush_log_state(job_id)
+        return status
 
     def mark_interrupted(self, job_id: str, reason: str = "Web 进程重启时未检测到仍在运行的构建容器") -> None:
         self.finish_job(job_id, "interrupted", reason)

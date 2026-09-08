@@ -43,6 +43,18 @@ def test_arm_worker_uses_privilege_without_host_uid_or_host_network(tmp_path: Pa
     assert "--user" not in command
 
 
+def test_cancel_removes_deterministic_worker_container(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        commands.append(list(command))
+
+    monkeypatch.setattr("owrt_builder.build.subprocess.run", run)
+    BuildEngine.cancel(BuildEngine.__new__(BuildEngine), "cancel-container")
+
+    assert commands == [["docker", "rm", "-f", "owrt-build-cancel-container"]]
+
+
 def test_sysupgrade_metadata_can_be_nested_under_profile_directory(tmp_path: Path) -> None:
     image = tmp_path / "sysupgrade.bin"
     metadata = b"supported_devices=netcore,n60-pro\n"

@@ -377,6 +377,12 @@ class QueueWorker:
             return cancel_event.is_set() or self.storage.is_cancel_requested(job["id"])
 
         try:
+            if is_cancelled():
+                canceled = _canceled_result(None, job)
+                self.storage.finish_job(job["id"], "canceled", "管理员取消任务", canceled)
+                log("任务已取消")
+                self.notifier.send_async(job, "canceled", "管理员取消任务")
+                return
             log(
                 f"开始构建：设备 {job['device']}，源码快照 {job['source_snapshot'].get('snapshot_id', '')}，"
                 f"并行核心 {job.get('parallel_jobs', 1)}，复用缓存 {'开启' if job.get('reuse_cache', True) else '关闭'}"
@@ -395,7 +401,7 @@ class QueueWorker:
             )
             result = self.runtime.build.build(request, on_log=log, cancel_event=cancel_event)
             if is_cancelled():
-                self.storage.finish_job(job["id"], "canceled", "管理员取消任务", _result_with_controls(result, job))
+                self.storage.finish_job(job["id"], "canceled", "管理员取消任务", _canceled_result(result, job))
                 log("任务已取消")
                 self.notifier.send_async(job, "canceled", "管理员取消任务")
                 return
@@ -403,34 +409,52 @@ class QueueWorker:
             self._register_artifacts(job, result_dict)
             result_status = str(result_dict.get("status", ""))
             if result_status in {"cancelled", "canceled"}:
-                self.storage.finish_job(job["id"], "canceled", result_dict.get("error") or "构建已取消", result_dict)
+                error = result_dict.get("error") or "构建已取消"
+                self.storage.finish_job(job["id"], "canceled", error, _canceled_result(result_dict, job, error))
                 log("任务已取消")
-                self.notifier.send_async(job, "canceled", result_dict.get("error") or "构建已取消")
+                self.notifier.send_async(job, "canceled", error)
                 return
             success = bool(result_dict.get("success", result_dict.get("ok", result_status in {"success", "succeeded"})))
             if success:
-                self.storage.finish_job(job["id"], "succeeded", None, result_dict)
-                log("编译完成")
-                self.notifier.send_async(job, "succeeded")
+                final_status = self.storage.finish_job(job["id"], "succeeded", None, result_dict)
+                if final_status == "canceled":
+                    log("任务已取消")
+                    self.notifier.send_async(job, "canceled", "管理员取消任务")
+                else:
+                    log("编译完成")
+                    self.notifier.send_async(job, "succeeded")
             else:
                 error = _safe_error(result_dict.get("error") or result_dict.get("message") or "构建失败")
-                self.storage.finish_job(job["id"], "failed", error, result_dict)
-                log(f"构建失败：{error}")
-                self.notifier.send_async(job, "failed", error)
+                final_status = self.storage.finish_job(job["id"], "failed", error, result_dict)
+                if final_status == "canceled":
+                    log("任务已取消")
+                    self.notifier.send_async(job, "canceled", "管理员取消任务")
+                else:
+                    log(f"构建失败：{error}")
+                    self.notifier.send_async(job, "failed", error)
         except Exception as exc:
             error = _safe_error(exc)
             status_name = "canceled" if is_cancelled() else "failed"
-            self.storage.finish_job(
+            result = {
+                "status": status_name,
+                "success": False,
+                "ok": False,
+                "error": error,
+                "parallel_jobs": int(job.get("parallel_jobs", 1) or 1),
+                "reuse_cache": bool(job.get("reuse_cache", True)),
+            }
+            final_status = self.storage.finish_job(
                 job["id"],
                 status_name,
                 error,
-                {
-                    "parallel_jobs": int(job.get("parallel_jobs", 1) or 1),
-                    "reuse_cache": bool(job.get("reuse_cache", True)),
-                },
+                result,
             )
-            log(f"任务{('已取消' if status_name == 'canceled' else '失败')}：{error}")
-            self.notifier.send_async(job, status_name, error)
+            if final_status == "canceled":
+                log("任务已取消：管理员取消任务")
+                self.notifier.send_async(job, "canceled", "管理员取消任务")
+            else:
+                log(f"任务失败：{error}")
+                self.notifier.send_async(job, "failed", error)
         finally:
             with self._running_lock:
                 self._running.pop(job["id"], None)
@@ -486,10 +510,15 @@ class QueueWorker:
                 event = self._running.get(job_id)
                 if event:
                     event.set()
-            # Core cancellation is best effort; the callback remains the
-            # authoritative state and prevents a success from being recorded.
-            # BuildEngine observes cancel_event during every subprocess.  A
-            # separate cancel method is deliberately not guessed here.
+            # Set the local predicate and stop the named Docker container
+            # independently.  The latter is required when the request races
+            # with a worker thread, or when this process lost its in-memory
+            # event during a restart.
+            try:
+                self.runtime.build.cancel(job_id)
+            except Exception as exc:
+                LOGGER.warning("unable to stop canceled build %s: %s", job_id, _safe_error(exc))
+            self.storage.append_log(job_id, "已收到取消请求，正在停止构建容器")
         return result
 
     def reconcile(self) -> None:
@@ -497,26 +526,43 @@ class QueueWorker:
 
         The worker cannot safely attach to an arbitrary Docker process and
         reconstruct its callback stream.  A surviving builder container is
-        therefore stopped and the persisted job is marked ``interrupted``;
-        queued jobs can then proceed once, with their original snapshot kept
-        in the database for diagnosis.
+        therefore stopped.  An explicit cancellation request remains
+        ``canceled`` across a Web restart; an unrequested orphan is marked
+        ``interrupted`` and is never started again.
         """
         for job in self.storage.running_jobs():
             controls = {
                 "parallel_jobs": int(job.get("parallel_jobs", 1) or 1),
                 "reuse_cache": bool(job.get("reuse_cache", True)),
             }
+            cancel_requested = bool(job.get("cancel_requested"))
             state = _inspect_build_runtime(self.runtime, job["id"])
             if state in {"running", "created", "restarting"}:
                 try:
                     self.runtime.build.cancel(job["id"])
                 except Exception as exc:
                     LOGGER.warning("unable to stop orphaned build %s: %s", job["id"], _safe_error(exc))
+                if cancel_requested:
+                    self.storage.finish_job(
+                        job["id"],
+                        "canceled",
+                        "管理员取消任务",
+                        _canceled_result(None, job),
+                    )
+                else:
+                    self.storage.finish_job(
+                        job["id"],
+                        "interrupted",
+                        "Web 进程重启时检测到遗留构建容器，任务已中断且不会重复启动",
+                        controls,
+                    )
+                continue
+            if cancel_requested:
                 self.storage.finish_job(
                     job["id"],
-                    "interrupted",
-                    "Web 进程重启时检测到遗留构建容器，任务已中断且不会重复启动",
-                    controls,
+                    "canceled",
+                    "管理员取消任务",
+                    _canceled_result(None, job),
                 )
                 continue
             if state in {"succeeded", "failed", "canceled"}:
@@ -864,6 +910,12 @@ def _result_with_controls(result: Any, job: Mapping[str, Any]) -> dict[str, Any]
     value = _result_dict(result)
     value.setdefault("parallel_jobs", int(job.get("parallel_jobs", 1) or 1))
     value.setdefault("reuse_cache", bool(job.get("reuse_cache", True)))
+    return value
+
+
+def _canceled_result(result: Any, job: Mapping[str, Any], error: str = "管理员取消任务") -> dict[str, Any]:
+    value = _result_with_controls(result, job)
+    value.update({"status": "canceled", "success": False, "ok": False, "error": error})
     return value
 
 
@@ -1463,7 +1515,8 @@ def _inspect_build_runtime(runtime: Runtime, job_id: str) -> str:
     preferred.  The current Docker runner uses a deterministic container name,
     so the CLI inspection fallback still checks Docker's real state and never
     starts a second container.  A missing/unknown container becomes
-    ``unknown`` and is marked interrupted by the caller.
+    ``unknown`` is marked interrupted by the caller unless the persisted job
+    already carries an explicit cancellation request.
     """
     try:
         state = str(runtime.build.inspect(job_id)).strip().lower()

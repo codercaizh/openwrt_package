@@ -12,6 +12,8 @@
     expanded: new Set(),
     activeJob: null,
     eventSource: null,
+    cancelingJobs: new Set(),
+    cancelPolls: new Map(),
     lastSeq: 0,
     sourcePoll: null,
     runtime: { logical_cpus: 1, max_parallel_jobs: 1, default_parallel_jobs: 1 },
@@ -23,6 +25,7 @@
     failed: "失败",
     canceled: "已取消",
     interrupted: "中断",
+    canceling: "取消中",
   };
 
   function csrfToken() {
@@ -434,6 +437,23 @@
     }
   }
 
+  function isTerminalJob(job) {
+    return ["succeeded", "failed", "canceled", "interrupted"].includes(job.status);
+  }
+
+  function isCancelingJob(job) {
+    if (isTerminalJob(job)) {
+      state.cancelingJobs.delete(job.id);
+      return false;
+    }
+    if (job.cancel_requested) state.cancelingJobs.add(job.id);
+    return state.cancelingJobs.has(job.id);
+  }
+
+  function displayedJobStatus(job) {
+    return isCancelingJob(job) ? "canceling" : job.status;
+  }
+
   async function loadJobs() {
     try {
       const result = await api("/api/jobs?limit=80");
@@ -454,8 +474,9 @@
         const title = document.createElement("strong");
         title.textContent = `${job.device} · ${job.id.slice(0, 10)}`;
         const badge = document.createElement("span");
-        badge.className = `badge ${job.status}`;
-        badge.textContent = statusLabel[job.status] || job.status;
+        const displayStatus = displayedJobStatus(job);
+        badge.className = `badge ${displayStatus}`;
+        badge.textContent = statusLabel[displayStatus] || displayStatus;
         top.append(title, badge);
         const meta = document.createElement("span");
         meta.className = "job-meta";
@@ -473,6 +494,7 @@
     state.activeJob = id;
     $("job-detail").hidden = false;
     stopEvents();
+    stopCancelPolling(id);
     state.lastSeq = 0;
     try {
       const result = await api(`/api/jobs/${id}`);
@@ -481,6 +503,7 @@
       $("job-log").textContent = "";
       renderArtifacts(job.artifacts || []);
       startEvents(id);
+      if (isCancelingJob(job)) startCancelPolling(id);
     } catch (error) {
       show($("builder-message"), error.message, "error");
     }
@@ -488,11 +511,58 @@
 
   function updateJobHeader(job) {
     const id = String(job.id || state.activeJob || "");
+    const displayStatus = displayedJobStatus(job);
     $("job-title").textContent = `${job.device} · ${id.slice(0, 12)}`;
-    $("job-status").textContent = statusLabel[job.status] || job.status;
-    $("job-status").className = `badge ${job.status}`;
-    $("cancel-job").hidden = !["queued", "running"].includes(job.status);
+    $("job-status").textContent = statusLabel[displayStatus] || displayStatus;
+    $("job-status").className = `badge ${displayStatus}`;
+    const canceling = displayStatus === "canceling";
+    $("cancel-job").hidden = canceling || !["queued", "running"].includes(job.status);
+    $("cancel-job").disabled = canceling;
     $("save-default").hidden = job.status !== "succeeded";
+  }
+
+  function stopCancelPolling(id) {
+    if (id !== undefined) {
+      const timer = state.cancelPolls.get(id);
+      if (timer !== undefined) window.clearTimeout(timer);
+      state.cancelPolls.delete(id);
+      return;
+    }
+    for (const timer of state.cancelPolls.values()) window.clearTimeout(timer);
+    state.cancelPolls.clear();
+  }
+
+  function startCancelPolling(id) {
+    stopCancelPolling(id);
+    const poll = async () => {
+      if (!state.cancelingJobs.has(id)) {
+        stopCancelPolling(id);
+        return;
+      }
+      try {
+        const result = await api(`/api/jobs/${id}`);
+        const job = result.job;
+        if (isTerminalJob(job)) {
+          state.cancelingJobs.delete(id);
+          if (state.activeJob === id) {
+            stopEvents();
+            updateJobHeader(job);
+            renderArtifacts(job.artifacts || []);
+          }
+          stopCancelPolling(id);
+          await loadJobs();
+          return;
+        }
+        state.cancelingJobs.add(id);
+        if (state.activeJob === id) updateJobHeader(job);
+        await loadJobs();
+      } catch (_) {
+        // Keep polling so a transient request failure cannot leave the UI
+        // permanently stuck in the local "取消中" state.
+      }
+      if (state.cancelingJobs.has(id)) state.cancelPolls.set(id, window.setTimeout(poll, 1000));
+    };
+    poll();
   }
 
   function appendLog(row) {
@@ -517,11 +587,11 @@
       // the sequence and create a terminal-job reconnect loop.
       stopEvents();
       try {
-        const payload = JSON.parse(event.data || "{}");
         const result = await api(`/api/jobs/${id}`);
         updateJobHeader(result.job);
         renderArtifacts(result.job.artifacts || []);
-        if (payload.status) $("job-status").textContent = statusLabel[payload.status] || payload.status;
+        // The follow-up job response is authoritative for both the status
+        // badge and the cancel button; the event only wakes the refresh.
       } catch (_) {
         // The history list has already been refreshed; a later click can
         // reopen the detail if the session expires during this refresh.
@@ -562,11 +632,37 @@
   }
 
   async function cancelJob() {
+    const id = state.activeJob;
+    if (!id || state.cancelingJobs.has(id)) return;
+    state.cancelingJobs.add(id);
+    $("job-status").textContent = statusLabel.canceling;
+    $("job-status").className = "badge canceling";
+    $("cancel-job").hidden = true;
+    $("cancel-job").disabled = true;
+    show($("builder-message"), "取消请求已提交，正在停止构建容器…", "message");
+    startCancelPolling(id);
     try {
-      await api(`/api/jobs/${state.activeJob}/cancel`, { method: "POST", body: {} });
+      await api(`/api/jobs/${id}/cancel`, { method: "POST", body: {} });
       await loadJobs();
-      await openJob(state.activeJob);
+      const result = await api(`/api/jobs/${id}`);
+      updateJobHeader(result.job);
+      if (isTerminalJob(result.job)) {
+        state.cancelingJobs.delete(id);
+        stopCancelPolling(id);
+        renderArtifacts(result.job.artifacts || []);
+      } else {
+        startCancelPolling(id);
+      }
     } catch (error) {
+      state.cancelingJobs.delete(id);
+      stopCancelPolling(id);
+      try {
+        const result = await api(`/api/jobs/${id}`);
+        updateJobHeader(result.job);
+        if (isCancelingJob(result.job)) startCancelPolling(id);
+      } catch (_) {
+        // Keep the original cancellation error visible if the refresh also fails.
+      }
       show($("builder-message"), error.message, "error");
     }
   }
