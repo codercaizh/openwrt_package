@@ -17,5 +17,5 @@ git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/
 # 移除 openwrt feeds 过时的luci版本
 rm -rf feeds/luci/applications/luci-app-passwall
 git clone https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall-luci
-cd package/passwall-luci
-git reset --hard ffea67c
+# cd package/passwall-luci
+# git reset --hard ffea67c
