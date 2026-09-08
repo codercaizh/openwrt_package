@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+cd "$ROOT_DIR"
+
+# The host only needs Docker and Compose.  This fast path keeps the normal
+# launcher pleasant on development hosts that already have Python 3; the
+# fallback runs the dependency-free CLI in the complete builder image.  It is
+# a direct build inside that one container; the worker marker is reserved for
+# request-file invocations started by a host-side BuildEngine.
+if [[ "${1:-}" == "web" ]]; then
+    export OWRT_REPO_HOST_PATH="${OWRT_REPO_HOST_PATH:-$ROOT_DIR}"
+    export OWRT_DATA_HOST_PATH="${OWRT_DATA_HOST_PATH:-$ROOT_DIR/.owrt-web}"
+    exec docker compose up --build "${@:2}"
+fi
+
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+    exec python3 -m owrt_builder.cli "$@"
+fi
+
+command -v docker >/dev/null 2>&1 || {
+    echo "错误：需要 Docker（宿主机无需安装 Python）" >&2
+    exit 127
+}
+
+IMAGE="${OWRT_BUILDER_IMAGE:-owrt-builder:local}"
+BUILDER_CONTEXT_LABEL="org.openwrt.builder.context"
+builder_context_fingerprint() {
+    (
+        cd "$ROOT_DIR"
+        export LC_ALL=C
+        {
+            printf '%s\0' requirements.txt pyproject.toml
+            find docker owrt_builder configs scripts -type f \
+                ! -path '*/__pycache__/*' ! -name '*.pyc' ! -name '*.pyo' -print0
+        } | sort -z \
+          | while IFS= read -r -d '' file; do sha256sum "$file"; done \
+          | sha256sum | awk '{print $1}'
+    )
+}
+CONTEXT_FINGERPRINT="$(builder_context_fingerprint)"
+IMAGE_FINGERPRINT="$(docker image inspect --format="{{index .Config.Labels \"$BUILDER_CONTEXT_LABEL\"}}" "$IMAGE" 2>/dev/null || true)"
+if [[ "$IMAGE_FINGERPRINT" != "$CONTEXT_FINGERPRINT" ]]; then
+    docker build --file "$ROOT_DIR/docker/Dockerfile" \
+        --label "$BUILDER_CONTEXT_LABEL=$CONTEXT_FINGERPRINT" \
+        --tag "$IMAGE" "$ROOT_DIR"
+fi
+
+mkdir -p "$ROOT_DIR/.owrt"
+DOCKER_EXTRA_ARGS=()
+DOCKER_USER_ARGS=(--user "$(id -u):$(id -g)")
+ARM_PACKAGING=0
+
+# Ubuntu 22.04's system Python is commonly 3.10, so the dependency-free
+# launcher runs the CLI inside the worker image.  The image deliberately does
+# not contain a Docker daemon/client; pass the host-side doctor probe through
+# the container boundary instead of requiring a nested Docker installation.
+if [[ "${1:-}" == "doctor" ]]; then
+    docker_server_version=""
+    docker_server_available=0
+    if docker_server_version="$(docker version --format='{{.Server.Version}}' 2>/dev/null)" \
+        && [[ -n "$docker_server_version" ]]; then
+        docker_server_available=1
+    fi
+    docker_image_context="$(docker image inspect --format="{{index .Config.Labels \"$BUILDER_CONTEXT_LABEL\"}}" "$IMAGE" 2>/dev/null || true)"
+    DOCKER_EXTRA_ARGS+=(
+        --env "OWRT_DOCKER_SERVER_AVAILABLE=$docker_server_available"
+        --env "OWRT_DOCKER_SERVER_VERSION=$docker_server_version"
+        --env "OWRT_DOCKER_IMAGE_CONTEXT=$docker_image_context"
+    )
+    # Docker socket permissions are irrelevant to this host-side probe.  Run
+    # the small doctor process as root only so older fallback environments do
+    # not fail while trying to inspect a socket from an unmatched group.
+    DOCKER_USER_ARGS=()
+fi
+for argument in "${@:2}"; do
+    case "$argument" in
+        s905d|n1|vplus|h6-vplus)
+            # The private ARM image packager may use loop/mount operations.
+            DOCKER_EXTRA_ARGS+=(--privileged)
+            DOCKER_USER_ARGS=()
+            ARM_PACKAGING=1
+            break
+            ;;
+    esac
+done
+DOCKER_RUN=(docker run --rm --init "${DOCKER_EXTRA_ARGS[@]}" "${DOCKER_USER_ARGS[@]}" \
+    --env OWRT_CLI_CONTAINER=1 \
+    --env OWRT_WORKSPACE=/workspace/work \
+    --volume "$ROOT_DIR:/workspace/repo:ro" \
+    --volume "$ROOT_DIR/.owrt:/workspace/work:rw" \
+    --workdir /workspace/repo \
+    "$IMAGE" python3 -m owrt_builder.cli "$@"
+)
+
+if [[ "$ARM_PACKAGING" == 1 ]]; then
+    # The ARM worker runs as root because packit mounts image partitions.  A
+    # second, ordinary helper container restores ownership of the mounted
+    # workspace before this dependency-free fallback exits.
+    "${DOCKER_RUN[@]}"
+    status=$?
+    if [[ "$(id -u)" != "0" ]]; then
+        if ! docker run --rm --init --user 0:0 \
+            --volume "$ROOT_DIR/.owrt:/workspace/work:rw" \
+            "$IMAGE" sh -ec 'uid="$1"; gid="$2"; for path in /workspace/work/tasks /workspace/work/artifacts; do [ -e "$path" ] && chown -R "$uid:$gid" "$path"; done' \
+            sh "$(id -u)" "$(id -g)"; then
+            status=1
+        fi
+    fi
+    exit "$status"
+fi
+exec "${DOCKER_RUN[@]}"

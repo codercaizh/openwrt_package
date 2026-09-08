@@ -1,0 +1,51 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: web
+    restart: unless-stopped
+    environment:
+      OWRT_REPO_ROOT: ${OWRT_REPO_HOST_PATH:?set OWRT_REPO_HOST_PATH to the absolute repository path}
+      OWRT_WORKSPACE: ${OWRT_DATA_HOST_PATH:?set OWRT_DATA_HOST_PATH to an absolute persistent data path}/workspace
+      OWRT_DATA_DIR: ${OWRT_DATA_HOST_PATH}/state
+      OWRT_BIND_HOST: 0.0.0.0
+      OWRT_BIND_PORT: 8000
+      OWRT_PUBLIC_ORIGIN: ${OWRT_PUBLIC_ORIGIN:-https://localhost}
+      OWRT_ALLOWED_ORIGINS: ${OWRT_ALLOWED_ORIGINS:-}
+      OWRT_SECURE_COOKIE: ${OWRT_SECURE_COOKIE:-1}
+      OWRT_TRUST_PROXY: ${OWRT_TRUST_PROXY:-1}
+      PUSHPLUS_TOKEN: ${PUSHPLUS_TOKEN:-}
+      PUSHPLUS_ENDPOINT: ${PUSHPLUS_ENDPOINT:-https://www.pushplus.plus/send}
+    volumes:
+      # The same host-visible absolute paths are mounted into the container.
+      # BuildEngine passes them to the host Docker daemon for build mounts.
+      - ${OWRT_REPO_HOST_PATH}:${OWRT_REPO_HOST_PATH}:ro
+      - ${OWRT_REPO_HOST_PATH}:/opt/owrt-builder:ro
+      - ${OWRT_DATA_HOST_PATH}:${OWRT_DATA_HOST_PATH}:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: ${OWRT_REPO_HOST_PATH}
+    ports:
+      # Keep the direct Web port loopback-only by default.  Set
+      # OWRT_WEB_BIND_ADDRESS=0.0.0.0 for an explicitly exposed direct mode;
+      # the Caddy service remains the normal public HTTPS entry point.
+      - "${OWRT_WEB_BIND_ADDRESS:-127.0.0.1}:8000:8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      OWRT_DOMAIN: ${OWRT_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,61 @@
+version = 1
+# ARM builds intentionally use the reviewed general-purpose configuration.
+default_config = "armv8.config"
+
+[[sources]]
+id = "armv8"
+url = "https://github.com/immortalwrt/immortalwrt.git"
+branch = "openwrt-25.12"
+# The worker resolves and records the branch HEAD once per build.
+platform = "arm"
+
+[[sources]]
+id = "immortalwrt-mt798x"
+url = "https://github.com/padavanonly/immortalwrt-mt798x-24.10.git"
+branch = "openwrt-24.10-6.6"
+# Both profiles are verified in this branch at prepare time.
+platform = "mediatek"
+
+[[devices]]
+key = "360t7"
+aliases = ["360-t7", "qihoo_360t7"]
+platform = "mediatek"
+source = "immortalwrt-mt798x"
+profile = "qihoo_360t7"
+config = "360t7.config"
+packager = "mediatek"
+target = "mediatek/filogic"
+description = "Qihoo 360T7"
+
+[[devices]]
+key = "netcore_n60-pro"
+aliases = ["n60pro", "n60-pro", "netcore-n60-pro", "netcore_n60_pro"]
+platform = "mediatek"
+source = "immortalwrt-mt798x"
+profile = "netcore_n60-pro"
+config = "n60pro.config"
+packager = "mediatek"
+target = "mediatek/filogic"
+description = "Netcore N60 Pro"
+
+[[devices]]
+key = "s905d"
+aliases = ["n1"]
+platform = "arm"
+source = "armv8"
+profile = "generic"
+config = "armv8.config"
+packager = "arm"
+target = "armsr/armv8"
+description = "Amlogic S905D / N1"
+
+[[devices]]
+key = "vplus"
+aliases = ["h6-vplus"]
+platform = "arm"
+source = "armv8"
+profile = "generic"
+config = "armv8.config"
+packager = "arm"
+target = "armsr/armv8"
+description = "H6 V-Plus"

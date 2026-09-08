@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>OpenWrt Builder</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="login-panel" class="panel login-panel">
+      <div class="eyebrow">LOCAL BUILD CONTROL</div>
+      <h1>OpenWrt 固件构建</h1>
+      <p class="muted">管理员登录后选择设备、插件和子选项。</p>
+      <form id="login-form" autocomplete="on">
+        <label>用户名<input id="username" name="username" autocomplete="username" required></label>
+        <label>密码<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary" type="submit">登录</button>
+      </form>
+      <p id="login-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="app-panel" hidden>
+      <header class="topbar">
+        <div><div class="eyebrow">OPENWRT BUILDER</div><h1>构建控制台</h1></div>
+        <div class="top-actions"><span id="source-badge" class="badge">源码准备中</span><button id="logout" class="ghost">退出</button></div>
+      </header>
+
+      <div class="layout">
+        <section class="panel builder-panel">
+          <div class="section-heading"><div><h2>新建构建</h2><p class="muted">目录来自当前源码快照，提交时会锁定快照。</p></div><button id="refresh-sources" class="ghost">更新源</button></div>
+          <label>设备<select id="device-select"></select></label>
+          <div class="build-controls" aria-label="构建资源设置">
+            <label>
+              并行核心数
+              <input id="parallel-jobs" type="number" min="1" step="1" inputmode="numeric" required>
+              <span id="parallel-jobs-hint" class="muted small">读取系统逻辑核心数…</span>
+            </label>
+            <label class="checkbox-control">
+              <span>复用该设备编译缓存</span>
+              <input id="reuse-cache" type="checkbox" checked>
+              <small class="muted">开启可减少重复下载和编译时间。</small>
+            </label>
+          </div>
+
+          <div class="catalog-heading"><h3>选择插件</h3><p class="muted small">内置默认插件会自动勾选；单击插件信息可展开或收起其子选项。</p></div>
+          <div class="catalog-toolbar">
+            <div class="tabs" role="tablist"><button class="tab active" data-category="luci-app">LuCI 应用</button><button class="tab" data-category="luci-theme">主题</button><button class="tab" data-category="other">默认工具</button><button class="tab" data-category="all">全部可选</button></div>
+            <input id="catalog-search" type="search" placeholder="搜索插件或描述" aria-label="搜索插件">
+          </div>
+          <div id="catalog-state" class="muted small">等待源码目录…</div>
+          <div id="catalog-list" class="catalog-list"></div>
+
+          <div id="dependency-feedback" class="feedback"></div>
+          <div class="form-actions"><button id="validate" class="ghost">校验配置</button><button id="submit-job" class="primary">提交构建</button></div>
+          <p id="builder-message" class="message" role="status"></p>
+        </section>
+
+        <section class="panel jobs-panel">
+          <div class="section-heading"><div><h2>任务队列</h2><p class="muted">任务按提交顺序串行执行。</p></div><button id="reload-jobs" class="ghost">刷新</button></div>
+          <div id="jobs-list" class="jobs-list"><p class="muted">暂无任务。</p></div>
+          <div id="job-detail" class="job-detail" hidden>
+            <div class="section-heading"><div><h3 id="job-title">任务详情</h3><span id="job-status" class="badge"></span></div><button id="close-job" class="ghost">收起</button></div>
+            <pre id="job-log" class="log" aria-live="polite"></pre>
+            <div id="artifacts" class="artifacts"></div>
+            <button id="save-default" class="ghost">将此成功配置保存为设备默认</button>
+            <button id="cancel-job" class="danger">取消任务</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

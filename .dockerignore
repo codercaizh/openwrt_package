@@ -1,2 +1,11 @@
 *tmp*
+.git
+.owrt
+.owrt-web
+data
+.venv
+*.egg-info
+__pycache__
+*.pyc
 *.git*
+.env

@@ -1,101 +1,69 @@
-name: Openwrt Build
-on:
-  workflow_dispatch: 
-    inputs:
-      target:
-        description: '目标设备'
-        required: true
-        default: '360t7' 
-        type: choice
-        options:
-        - vplus
-        - 360t7
-        - s905d
-        - netcore_n60-pro
-      config:
-        description: '插件配置'
-        required: true
-        default: '360t7'
-        type: choice
-        options:
-        - 360t7
-        - armv8_simple
-        - armv8
-        - n60pro
+name: OpenWrt Build
 
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Supported device key or alias
+        required: true
+        type: choice
+        options:
+          - 360t7
+          - n60pro
+          - s905d
+          - vplus
+        default: n60pro
   workflow_call:
     inputs:
-      target:
+      device:
+        description: Supported device key or alias
         required: true
         type: string
-      config:
-        required: true
-        type: string
-      retryCount:
-        required: false
-        type: string
-        default: '0'
+
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: ${{ inputs.target }}_${{ inputs.config }}
-    #runs-on: ubuntu-20.04 github action免费的机器配置有限，容易导致编译失败，建议自己配个runner，配置要求硬盘空闲容量有50G以上，并装好docker，支持访问外网即可，建议使用ubuntu-20.04系统
+    name: build-${{ inputs.device || github.event.inputs.device }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 2880
-    env:
-      package_build_tool_path: 'source' # 存放本项目工具的目录名称
-      compile_path: 'compile_dir' # 存放编译过程产物及产出物的目录名称
-      container_name_prefix: 'GithubActionBuild_' # 编译镜像名前缀
-      container_name: 'GithubActionBuild_${{ github.run_number }}' # 编译时使用的容器名
+    # GitHub-hosted runners cap a job at six hours.  Use a self-hosted runner
+    # for a larger feed/plugin set that needs more time.
+    timeout-minutes: 360
     steps:
-      - name: Print input
-        run:  echo "${{ toJSON(inputs) }}"
+      - name: Check out builder
+        uses: actions/checkout@v4
 
-      - name: Clean source
-        if: ${{ inputs.useSelfHosted }}
+      - name: Check Docker and builder catalog
         run: |
-          sudo rm -rf ${{ env.package_build_tool_path }}
-          sudo rm -rf ${{ env.compile_path }}/artifact/*
-
-      - name: Checkout source
-        uses: actions/checkout@v3
-        with:
-          path: ${{ env.package_build_tool_path }}
+          docker version
+          ./owrt doctor --json
 
       - name: Build firmware
+        env:
+          OWRT_DEVICE: ${{ inputs.device || github.event.inputs.device }}
         run: |
-          set +e
-          RETRY_COUNT=${{ inputs.retryCount }}
-          RETRY_COUNT=${RETRY_COUNT:-0}
-          IS_COMPILE_SUCCEED=1
-          for ((i=0; i<=$RETRY_COUNT; i++))
-          do
-              sudo ./run_build_use_docker.sh -c ${{ inputs.config }} -d ${{ inputs.target }} -n ${{ env.container_name }} -o ${{ github.workspace }}/${{ env.compile_path }}
-              if [ $? -ne 0 ];then
-                  echo '失败'
-              else
-                  IS_COMPILE_SUCCEED=0
-                  break;
-              fi
-          done
-          echo "result: "$IS_COMPILE_SUCCEED
-          exit $IS_COMPILE_SUCCEED
-        working-directory: ${{ env.package_build_tool_path }}
+          set -o pipefail
+          ./owrt build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
 
-      - name: Set artifact path
-        run: |
-          sudo chmod -R 777 artifact
-          ARTIFACT_PATH=$PWD/$(ls artifact/${{ inputs.target }}/*.7z)
-          FILE_NAME=$(basename $ARTIFACT_PATH)
-          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
-          echo "ARTIFACT_FILE=$FILE_NAME"".${{ inputs.config }}" >> $GITHUB_ENV
-        working-directory: ${{ env.compile_path }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4.6.2
+      - name: Upload firmware
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_FILE }}
-          path: ${{ env.ARTIFACT_PATH }}
+          name: openwrt-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          # BuildEngine stores artifacts under the canonical device key, so
+          # aliases such as n60pro must not narrow this glob.
+          path: .owrt/artifacts/**/*
+          if-no-files-found: error
           retention-days: 7
 
-      
-
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-evidence-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          path: |
+            .owrt/tasks/**/result.json
+            owrt-${{ inputs.device || github.event.inputs.device }}.log
+          if-no-files-found: warn
+          retention-days: 7
