@@ -85,7 +85,7 @@ def test_source_refresh_keeps_catalogs_distinct_for_shared_source_devices(tmp_pa
 
 
 def test_source_refresh_does_not_expose_stale_schema_snapshot_after_restart(tmp_path: Path) -> None:
-    """A persisted ready flag is cleared when v5 rejects its snapshot."""
+    """A persisted ready flag is cleared when v6 rejects its snapshot."""
 
     class SourceStub:
         def get_snapshot(self, _snapshot_id: str):
@@ -367,9 +367,26 @@ def test_web_registers_manifest_alongside_firmware_artifact(tmp_path: Path) -> N
 def _ready_job_app(tmp_path: Path):
     """Build a deterministic app with one ready catalog for submit tests."""
 
+    source_root = tmp_path / "source-snapshot"
+    source_root.mkdir(parents=True)
+    catalog_path = tmp_path / "source-catalog.json"
+    Catalog(root=source_root, packages=[], authoritative=True).write(catalog_path)
+    prepared = PreparedSource(
+        source_id="immortalwrt-mt798x",
+        snapshot_id="web-controls-snapshot",
+        path=source_root,
+        catalog_path=catalog_path,
+        source_commit="test-source",
+    )
+
+    class SourceStub:
+        def get_snapshot(self, snapshot_id: str) -> PreparedSource:
+            assert snapshot_id == prepared.snapshot_id
+            return prepared
+
     runtime = Runtime(
         devices=load_catalog(),
-        sources=SimpleNamespace(),
+        sources=SourceStub(),
         build=SimpleNamespace(),
     )
     app = create_app(runtime=runtime, settings=Settings(data_dir=tmp_path))
@@ -392,6 +409,170 @@ def _ready_job_app(tmp_path: Path):
     )
     storage.save_catalog("web-controls-catalog", snapshot["snapshot_id"], "netcore_n60-pro", [], {})
     return app
+
+
+def _snapshot_tree(root: Path) -> tuple[str, ...]:
+    """Capture names, file contents and link targets for isolation tests."""
+
+    entries: list[str] = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            entries.append(f"L:{relative}->{os.readlink(path)}")
+        elif path.is_dir():
+            entries.append(f"D:{relative}")
+        else:
+            entries.append(f"F:{relative}:{path.read_bytes()!r}")
+    return tuple(entries)
+
+
+def test_web_static_validation_is_read_only_and_skips_native_make(tmp_path: Path) -> None:
+    """Catalog checks never copy the snapshot or invoke native make."""
+
+    source_root = tmp_path / "immutable-source"
+    (source_root / "feeds" / "packages").mkdir(parents=True)
+    (source_root / "Makefile").write_text("include rules.mk\n", encoding="utf-8")
+    (source_root / "feeds" / "packages" / "Makefile").write_text("all:\n", encoding="utf-8")
+    catalog_path = tmp_path / "catalog.json"
+    Catalog(
+        root=source_root,
+        packages=[PackageMetadata(name="luci-app-demo", title="Demo")],
+        authoritative=True,
+    ).write(catalog_path)
+    prepared = PreparedSource(
+        source_id="immortalwrt-mt798x",
+        snapshot_id="isolated-validation-snapshot",
+        path=source_root,
+        catalog_path=catalog_path,
+        source_commit="source-sha",
+    )
+    before = _snapshot_tree(source_root)
+    source_reads: list[str] = []
+    compose_calls: list[str] = []
+
+    class SourceStub:
+        def get_snapshot(self, snapshot_id: str) -> PreparedSource:
+            assert snapshot_id == prepared.snapshot_id
+            source_reads.append(snapshot_id)
+            return prepared
+
+    class BuildStub:
+        def compose_config(self, *_args, **_kwargs):
+            compose_calls.append("called")
+            raise AssertionError("static Web validation must not compose a build config")
+
+    runtime = Runtime(
+        devices=load_catalog(),
+        sources=SourceStub(),
+        build=BuildStub(),
+    )
+    settings = web_module.Settings(data_dir=tmp_path / "web")
+    app = create_app(runtime=runtime, settings=settings)
+    app.state.storage.create_admin("admin", hash_password("a-strong-test-password"))
+    snapshot = prepared.to_dict()
+    app.state.storage.set_state(
+        "source",
+        {
+            "status": "ready",
+            "ready": True,
+            "snapshot": snapshot,
+            "snapshot_id": prepared.snapshot_id,
+            "snapshots": {"netcore_n60-pro": snapshot},
+        },
+    )
+    app.state.storage.save_catalog("isolated-catalog", prepared.snapshot_id, "netcore_n60-pro", [
+        {"name": "luci-app-demo", "symbol": "CONFIG_PACKAGE_luci-app-demo", "title": "Demo", "options": []},
+    ], {})
+
+    async def request() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            login = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "a-strong-test-password"},
+                headers={"Origin": "http://testserver"},
+            )
+            headers = {"Origin": "http://testserver", "X-CSRF-Token": login.json()["csrf"]}
+            first = await client.post(
+                "/api/configuration/validate",
+                json={"device": "n60pro", "packages": ["luci-app-missing"], "options": {}},
+                headers=headers,
+            )
+            assert first.status_code == 200, first.text
+            first_payload = first.json()
+            assert first_payload["authoritative"] is False
+            assert first_payload["validation_mode"] == "catalog_static"
+            assert first_payload["catalog_authoritative"] is True
+            assert first_payload["native_defconfig"] is False
+            assert first_payload["issues"][0]["kind"] == "unknown_package"
+            second = await client.post(
+                "/api/configuration/validate",
+                json={"device": "n60pro", "packages": [], "options": {}},
+                headers=headers,
+            )
+            assert second.status_code == 200, second.text
+            assert second.json()["authoritative"] is False
+            assert second.json()["validation_mode"] == "catalog_static"
+
+    asyncio.run(request())
+    assert source_reads == [prepared.snapshot_id, prepared.snapshot_id]
+    assert compose_calls == []
+    assert _snapshot_tree(source_root) == before
+
+
+def test_job_submission_rejects_invalid_snapshot_before_enqueue(tmp_path: Path) -> None:
+    """A contaminated snapshot returns a refreshable 503 and no queue row."""
+
+    class InvalidSource:
+        def get_snapshot(self, _snapshot_id: str) -> PreparedSource:
+            raise SourceError("source snapshot contains preparation-runtime directories: staging_dir")
+
+    runtime = Runtime(
+        devices=load_catalog(),
+        sources=InvalidSource(),
+        build=SimpleNamespace(),
+    )
+    app = create_app(runtime=runtime, settings=web_module.Settings(data_dir=tmp_path))
+    storage = app.state.storage
+    storage.create_admin("admin", hash_password("a-strong-test-password"))
+    snapshot = {
+        "source_id": "immortalwrt-mt798x",
+        "snapshot_id": "contaminated-snapshot",
+        "source_commit": "source-sha",
+    }
+    storage.set_state(
+        "source",
+        {
+            "status": "ready",
+            "ready": True,
+            "snapshot": snapshot,
+            "snapshot_id": snapshot["snapshot_id"],
+            "snapshots": {"netcore_n60-pro": snapshot},
+        },
+    )
+    storage.save_catalog("contaminated-catalog", snapshot["snapshot_id"], "netcore_n60-pro", [], {})
+
+    async def request() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            login = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "a-strong-test-password"},
+                headers={"Origin": "http://testserver"},
+            )
+            headers = {"Origin": "http://testserver", "X-CSRF-Token": login.json()["csrf"]}
+            response = await client.post(
+                "/api/jobs",
+                json={"device": "n60pro", "packages": [], "options": {}},
+                headers=headers,
+            )
+            assert response.status_code == 503, response.text
+            detail = response.json()["detail"]
+            assert detail["code"] == "source_snapshot_invalid"
+            assert "staging_dir" in detail["message"]
+
+    asyncio.run(request())
+    assert storage.list_jobs(20, 0) == []
 
 
 def test_web_build_controls_are_strict_bounded_and_persisted(tmp_path: Path) -> None:

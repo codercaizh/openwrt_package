@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator
 from .auth import AuthManager, settings_from_env
 from .build import BuildEngine, BuildRequest, logical_cpu_count
 from .catalog import Catalog, scan_catalog
-from .configuration import ConfigDocument, ConfigEntry, parse_config, validate_with_defconfig
+from .configuration import parse_config
 from .devices import DeviceCatalog, DeviceSpec, load_catalog
 from .notifications import PushPlusNotifier
 from .sources import PreparedSource, SourceError, SourceManager
@@ -57,6 +57,14 @@ class RuntimeNotReady(RuntimeError):
     """The typed core modules are unavailable or have no prepared source."""
 
 
+class SourceSnapshotUnavailable(RuntimeError):
+    """A persisted source snapshot cannot be consumed by a build worker."""
+
+    def __init__(self, kind: str, message: str):
+        self.kind = kind
+        super().__init__(message)
+
+
 @dataclass
 class Runtime:
     """Typed integration points used by the web worker.
@@ -71,7 +79,6 @@ class Runtime:
     sources: SourceManager
     build: BuildEngine
     scan_catalog: Callable[[str | Path], Catalog] = scan_catalog
-    validate_with_defconfig: Callable[..., Any] = validate_with_defconfig
     request_type: type[BuildRequest] = BuildRequest
 
 
@@ -89,7 +96,6 @@ def load_runtime(settings: Settings | None = None) -> Runtime:
         sources=SourceManager(workspace / "sources", source_specs=device_catalog.sources),
         build=BuildEngine(repo_root, workspace, catalog=device_catalog),
         scan_catalog=scan_catalog,
-        validate_with_defconfig=validate_with_defconfig,
         request_type=BuildRequest,
     )
 
@@ -290,7 +296,7 @@ class SourceService:
             self.storage.set_state("source", failed)
 
     def _previous_state_usable(self, state: Mapping[str, Any]) -> bool:
-        """Only expose a persisted catalog whose v5 snapshot is still readable.
+        """Only expose a persisted catalog whose v6 snapshot is still readable.
 
         A preparation schema bump deliberately invalidates old snapshots.  If
         a process restarts while the first refresh is offline, blindly
@@ -1321,44 +1327,57 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
         source = _source_snapshot(storage, source_service, canonical)
         if source is None:
             raise HTTPException(status_code=503, detail="源码快照尚未准备完成")
-        # The core validator is authoritative and may run make defconfig in an
-        # isolated work directory.  Its structured issues are appended to the
-        # fast static feedback rather than replacing it.
+
+        # Web validation is intentionally fast and read-only.  The prepared
+        # catalog already contains the authoritative .packageinfo and
+        # .config-package.in scan, so package/option/type/ownership checks can
+        # run without copying a 500MB+ source tree or invoking make.  Native
+        # defconfig remains part of the actual BuildEngine task.
         try:
-            snapshot_id = str(source.get("snapshot_id") or "")
-            prepared = rt.sources.get_snapshot(snapshot_id)
-            if prepared.source_id != (_device_source_id(rt, canonical) or prepared.source_id):
-                raise RuntimeNotReady("源码快照与设备 source_id 不匹配")
-            core_catalog = Catalog.read(prepared.catalog_path)
-            validation_dir = settings.data_dir / "validation" / uuid.uuid4().hex
-            request = rt.request_type(
-                **_request_kwargs(
-                    rt.request_type,
-                    task_id=f"validate-{uuid.uuid4().hex}",
-                    device=canonical,
-                    snapshot_id=snapshot_id,
-                    packages=packages,
-                    options=body.options,
-                    parallel_jobs=parallel_jobs,
-                    reuse_cache=reuse_cache,
-                )
-            )
-            # BuildEngine owns device target/config/CONFIG_APPEND composition;
-            # reuse that public seam so Web validation and compilation consume
-            # exactly the same generated fragment.
-            fragment = rt.build.compose_config(request, prepared, validation_dir / "request")
-            result = rt.validate_with_defconfig(
-                prepared.path,
-                fragment,
-                catalog=core_catalog,
-                build_dir=validation_dir / "defconfig",
-            )
-            core = _json_safe(result.to_dict())
-        except Exception as exc:
-            core = {"authoritative": False, "issues": [{"kind": "validation_error", "message": _safe_error(exc)}]}
+            prepared = _validated_snapshot(rt, source, canonical)
+        except SourceSnapshotUnavailable as exc:
+            refresh_requested = False
+            if source_service is not None:
+                refresh_requested = source_service.request(True, f"validation-{exc.kind}-snapshot")
+            core = {
+                "authoritative": False,
+                "validation_mode": "catalog_static",
+                "catalog_authoritative": False,
+                "native_defconfig": False,
+                "issues": [{
+                    "kind": "source_snapshot_unavailable",
+                    "code": f"source_snapshot_{exc.kind}",
+                    "message": f"静态目录校验已完成，但当前源码快照不可用于构建：{exc}",
+                    "refresh_requested": refresh_requested,
+                }],
+            }
+        else:
+            try:
+                catalog_authoritative = bool(Catalog.read(prepared.catalog_path).authoritative)
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                catalog_authoritative = False
+                issues.append({
+                    "kind": "catalog_unavailable",
+                    "code": "catalog_read_failed",
+                    "message": f"无法读取权威插件目录：{_safe_error(exc)}",
+                })
+            core = {
+                "authoritative": False,
+                "validation_mode": "catalog_static",
+                "catalog_authoritative": catalog_authoritative,
+                "native_defconfig": False,
+                "issues": [],
+            }
         if isinstance(core, Mapping):
             issues.extend(core.get("issues") or [])
-        return {"authoritative": bool(isinstance(core, Mapping) and core.get("authoritative")), "issues": issues, "core": core}
+        return {
+            "authoritative": False,
+            "validation_mode": "catalog_static",
+            "catalog_authoritative": bool(core.get("catalog_authoritative")) if isinstance(core, Mapping) else False,
+            "native_defconfig": False,
+            "issues": issues,
+            "core": core,
+        }
 
     @app.post("/api/jobs", status_code=202)
     async def submit_job(body: JobBody, request: Request, _session: dict[str, Any] = Depends(get_mutation_auth), rt: Runtime = Depends(require_runtime)):
@@ -1379,6 +1398,24 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
         actual_source_id = source.get("source_id")
         if expected_source_id and actual_source_id and str(expected_source_id) != str(actual_source_id):
             raise HTTPException(status_code=409, detail="所选设备与源码快照不匹配，请刷新源码目录")
+        try:
+            # Validate the persisted id against the same SourceManager used by
+            # the worker before creating a queue row.  This prevents a
+            # contaminated snapshot from becoming a guaranteed instant
+            # failure after the worker starts.
+            _validated_snapshot(rt, source, canonical)
+        except SourceSnapshotUnavailable as exc:
+            refresh_requested = False
+            if source_service is not None:
+                refresh_requested = source_service.request(True, f"queue-{exc.kind}-snapshot")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": f"source_snapshot_{exc.kind}",
+                    "message": str(exc),
+                    "refresh_requested": refresh_requested,
+                },
+            ) from exc
         job_id = uuid.uuid4().hex
         artifact_root = settings.artifact_dir.resolve()
         device_output = artifact_root / canonical
@@ -1535,6 +1572,48 @@ def _source_snapshot(storage: Storage, source_service: SourceService | None, dev
         return snapshots[device]
     snapshot = state.get("snapshot")
     return snapshot if isinstance(snapshot, Mapping) else None
+
+
+def _validated_snapshot(runtime: Runtime, source: Mapping[str, Any], device: str) -> PreparedSource:
+    """Resolve and validate the exact snapshot a worker would consume.
+
+    The Web state is persisted separately from the source cache.  Looking up
+    the id again here closes that gap: a stale, missing, or contaminated
+    snapshot is rejected before a job can be written to the queue.
+    """
+
+    snapshot_id = str(source.get("snapshot_id") or source.get("id") or "")
+    if not snapshot_id:
+        raise SourceSnapshotUnavailable("missing", "当前源码快照记录缺少 snapshot_id，请先更新源码/feeds")
+    try:
+        prepared = runtime.sources.get_snapshot(snapshot_id)
+    except KeyError as exc:
+        raise SourceSnapshotUnavailable(
+            "missing",
+            f"源码快照 {snapshot_id!r} 不存在，请先更新源码/feeds",
+        ) from exc
+    except SourceError as exc:
+        raise SourceSnapshotUnavailable(
+            "invalid",
+            f"源码快照 {snapshot_id!r} 不可用：{exc}；请先更新源码/feeds",
+        ) from exc
+    except OSError as exc:
+        raise SourceSnapshotUnavailable(
+            "invalid",
+            f"读取源码快照 {snapshot_id!r} 失败：{exc}；请先更新源码/feeds",
+        ) from exc
+    except AttributeError as exc:
+        raise SourceSnapshotUnavailable(
+            "invalid",
+            "当前 Web 运行时无法验证源码快照，请先更新源码/feeds",
+        ) from exc
+    expected_source_id = _device_source_id(runtime, device)
+    if expected_source_id and prepared.source_id != expected_source_id:
+        raise SourceSnapshotUnavailable(
+            "invalid",
+            f"源码快照 {snapshot_id!r} 属于 {prepared.source_id!r}，而设备需要 {expected_source_id!r}；请更新源码目录",
+        )
+    return prepared
 
 
 def _catalog_for(storage: Storage, source_service: SourceService | None, device: str | None) -> list[dict[str, Any]] | None:

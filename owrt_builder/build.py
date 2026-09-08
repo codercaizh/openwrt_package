@@ -1079,8 +1079,14 @@ class BuildEngine:
         if requested_snapshot:
             try:
                 prepared = manager.get_snapshot(requested_snapshot)
-            except (KeyError, SourceError) as exc:
-                raise BuildError(f"unknown source snapshot {requested_snapshot!r}") from exc
+            except KeyError as exc:
+                raise BuildError(
+                    f"source snapshot missing: {requested_snapshot!r}; refresh sources and retry"
+                ) from exc
+            except SourceError as exc:
+                raise BuildError(
+                    f"source snapshot invalid: {requested_snapshot!r}: {exc}"
+                ) from exc
             if prepared.source_id != spec.source_id:
                 raise BuildError(
                     f"snapshot {requested_snapshot!r} belongs to {prepared.source_id!r}, "

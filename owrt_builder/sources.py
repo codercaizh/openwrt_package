@@ -34,7 +34,10 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # ``dl``/``tmp`` trees; version 4 invalidated catalogues made before
 # ``menuconfig PACKAGE_*`` block boundaries were recognized; version 5 also
 # removes feed indexes and preparation-container symlinks from the payload.
-PREPARATION_VERSION = 5
+# Version 6 invalidates snapshots created while Web native defconfig
+# validation could write into the published tree.  Such snapshots may contain
+# ``staging_dir``/``tmp`` and must never be handed to a worker again.
+PREPARATION_VERSION = 6
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 

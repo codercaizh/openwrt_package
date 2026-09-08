@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from owrt_builder.build import BuildEngine, BuildRequest
+import pytest
+
+from owrt_builder.build import BuildEngine, BuildError, BuildRequest
+from owrt_builder.sources import PREPARATION_VERSION
 
 
 def _capture_worker_command(tmp_path: Path, device: str) -> list[str]:
@@ -103,3 +107,32 @@ def test_pipeline_applies_jobs_only_to_final_compile(tmp_path: Path) -> None:
     )
 
     assert commands == [["make", "defconfig"], ["make", "download"], ["make", "-j3"]]
+
+
+def test_requested_snapshot_errors_preserve_missing_vs_contaminated_reason(tmp_path: Path) -> None:
+    """Worker diagnostics identify a missing snapshot separately from pollution."""
+
+    workspace = tmp_path / "workspace"
+    source_id = "immortalwrt-mt798x"
+    snapshot_id = "contaminated-snapshot"
+    snapshot = workspace / "sources" / source_id / "snapshots" / snapshot_id
+    source = snapshot / "source"
+    source.mkdir(parents=True)
+    (source / "staging_dir").mkdir()
+    (snapshot / "catalog.json").write_text("{}\n", encoding="utf-8")
+    (snapshot / "manifest.json").write_text(
+        json.dumps({
+            "preparation_version": PREPARATION_VERSION,
+            "source_id": source_id,
+            "snapshot_id": snapshot_id,
+            "source_commit": "source-sha",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=workspace, use_docker=False)
+    spec = engine.catalog.resolve("n60pro")
+
+    with pytest.raises(BuildError, match=r"source snapshot invalid: .*staging_dir"):
+        engine._prepare_snapshot(spec, snapshot_id, workspace, lambda _line: None, None)
+    with pytest.raises(BuildError, match=r"source snapshot missing:"):
+        engine._prepare_snapshot(spec, "missing-snapshot", workspace, lambda _line: None, None)
