@@ -21,3 +21,24 @@ def test_mobile_catalog_has_all_category_contracts() -> None:
     assert 'parallel_jobs: parallelJobs' in script
     assert 'reuse_cache: $("reuse-cache").checked' in script
     assert "@media (max-width:560px)" in style
+
+
+def test_catalog_selection_order_is_stable_until_the_next_catalog_refresh() -> None:
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+
+    # Keep the server's order as the source of truth.  The selected-first
+    # partition is applied when a catalog/search/device/category refresh
+    # happens, so changing a checkbox does not move the card under the user's
+    # finger while they are editing it.
+    assert "catalogBase: []" in script
+    assert "state.catalogBase = (result.items || []).slice();" in script
+    assert "const selected = [];" in script
+    assert "const unselected = [];" in script
+    assert "state.selected.has(catalogItemName(item)) ? selected : unselected" in script
+    assert "state.catalog = selected.concat(unselected);" in script
+    assert "orderCatalogSelectedFirst();\n    renderCatalog();" in script
+    assert "state.category = tab.dataset.category;\n    orderCatalogSelectedFirst();\n    renderCatalog();" in script
+
+    checkbox_start = script.index('checkbox.addEventListener("change"')
+    checkbox_end = script.index("\n\n      const body", checkbox_start)
+    assert "orderCatalogSelectedFirst();" not in script[checkbox_start:checkbox_end]

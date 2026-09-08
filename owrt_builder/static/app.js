@@ -5,6 +5,7 @@
   const state = {
     devices: [],
     catalog: [],
+    catalogBase: [],
     category: "luci-app",
     selected: new Set(),
     options: {},
@@ -187,7 +188,8 @@
     $("catalog-state").textContent = "读取真实插件目录…";
     try {
       const result = await api(`/api/catalog?category=all&q=${query}&device=${device}`);
-      state.catalog = result.items || [];
+      state.catalogBase = (result.items || []).slice();
+      orderCatalogSelectedFirst();
       renderCatalog();
       $("catalog-state").textContent = `${state.catalog.length} 个目录项 · ${result.source_snapshot_id ? `快照 ${result.source_snapshot_id.slice(0, 12)}` : "等待快照"}`;
     } catch (error) {
@@ -196,10 +198,24 @@
     }
   }
 
+  function catalogItemName(item) {
+    return item.name || item.symbol || "";
+  }
+
+  function orderCatalogSelectedFirst() {
+    const selected = [];
+    const unselected = [];
+    state.catalogBase.forEach((item) => {
+      const bucket = state.selected.has(catalogItemName(item)) ? selected : unselected;
+      bucket.push(item);
+    });
+    state.catalog = selected.concat(unselected);
+  }
+
   function visibleCatalog() {
     return state.catalog.filter((item) => {
       if (state.category === "all") return true;
-      const name = item.name || item.symbol || "";
+      const name = catalogItemName(item);
       const category = item.category || (
         name.startsWith("luci-app-") ? "luci-app" :
           name.startsWith("luci-theme-") ? "luci-theme" : "other"
@@ -212,7 +228,7 @@
     const list = $("catalog-list");
     list.replaceChildren();
     visibleCatalog().forEach((item, index) => {
-      const name = item.name || item.symbol;
+      const name = catalogItemName(item);
       const options = item.options || [];
       const selected = state.selected.has(name);
       const expanded = options.length > 0 && state.expanded.has(name);
@@ -585,6 +601,7 @@
     document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
     tab.classList.add("active");
     state.category = tab.dataset.category;
+    orderCatalogSelectedFirst();
     renderCatalog();
   }));
   $("validate").addEventListener("click", validateConfiguration);
