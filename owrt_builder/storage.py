@@ -366,7 +366,7 @@ class Storage:
                 # request and this final write share the same SQLite lock, so
                 # a result can only win when cancellation arrived afterward.
                 status = "canceled"
-                error = error or "管理员取消任务"
+                error = "管理员取消任务"
                 if isinstance(result, dict):
                     result = dict(result)
                     result.update({"status": "canceled", "success": False, "ok": False, "error": error})
