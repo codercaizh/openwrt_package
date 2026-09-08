@@ -35,6 +35,12 @@ CMD ["python3", "-m", "owrt_builder.cli", "--help"]
 # as a stage avoids a second, drifting apt dependency list.
 FROM owrt-base AS web
 WORKDIR /opt/owrt-builder
+# The Web process asks the host Docker daemon to start isolated build workers
+# through the Compose-mounted socket.  Keep the client in this stage only;
+# the standalone worker image stays focused on the OpenWrt toolchain.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends docker.io \
+ && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt pyproject.toml ./
 RUN python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 COPY owrt_builder ./owrt_builder
