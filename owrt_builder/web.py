@@ -46,11 +46,29 @@ from .storage import Storage, utc_now
 LOGGER = logging.getLogger("owrt_builder.web")
 JOB_STATUSES = {"queued", "running", "succeeded", "failed", "canceled", "interrupted"}
 OPTION_TYPES = {"bool", "boolean", "tristate", "choice", "enum", "string", "int", "integer", "hex"}
+STATIC_ASSETS = ("style.css", "app.js")
 
 
 def system_logical_cpus() -> int:
     """Return the logical CPU ceiling used by both UI and API validation."""
     return logical_cpu_count()
+
+
+def _static_asset_version(static_dir: Path) -> str:
+    """Return a content fingerprint used to bust browser asset caches."""
+
+    digest = hashlib.sha256()
+    for name in STATIC_ASSETS:
+        path = static_dir / name
+        digest.update(name.encode("utf-8"))
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            # StaticFiles will report the missing asset itself.  Keep the
+            # index route available so a deployment can expose that error
+            # instead of failing app construction while computing a version.
+            digest.update(b"<missing>")
+    return digest.hexdigest()[:16]
 
 
 class RuntimeNotReady(RuntimeError):
@@ -1190,6 +1208,7 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
         app.state.runtime_error = runtime_error
 
     static_dir = Path(__file__).parent / "static"
+    static_version = _static_asset_version(static_dir)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.middleware("http")
@@ -1214,7 +1233,19 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
-        return HTMLResponse((static_dir / "index.html").read_text(encoding="utf-8"))
+        document = (static_dir / "index.html").read_text(encoding="utf-8")
+        for asset in STATIC_ASSETS:
+            document = document.replace(
+                f"/static/{asset}",
+                f"/static/{asset}?v={static_version}",
+            )
+        return HTMLResponse(
+            document,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
 
     @app.post("/api/auth/login")
     async def login(body: LoginBody, request: Request, response: Response):

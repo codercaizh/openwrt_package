@@ -1,4 +1,10 @@
+import asyncio
 from pathlib import Path
+import re
+
+import httpx
+
+from owrt_builder.web import Settings, create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,10 +38,36 @@ def test_build_form_submits_directly_without_frontend_validation_button() -> Non
     assert "validateConfiguration" not in script
     assert "/api/configuration/validate" not in script
     assert 'id="submit-job"' in html
-    assert '$("submit-job").addEventListener("click", submitJob);' in script
+    assert 'bindEvent("submit-job", "click", submitJob);' in script
     assert 'api("/api/jobs", { method: "POST", body: configurationBody() })' in script
     # Server-side validation feedback returned by submission remains visible.
     assert "renderIssues(result.issues || []);" in script
+
+
+def test_index_versions_assets_and_disables_document_caching(tmp_path: Path) -> None:
+    app = create_app(settings=Settings(data_dir=tmp_path))
+
+    async def request() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.get("/")
+
+    response = asyncio.run(request())
+    assert response.status_code == 200
+    versions = re.findall(r'/static/(?:style\.css|app\.js)\?v=([0-9a-f]{16})', response.text)
+    assert len(versions) == 2
+    assert len(set(versions)) == 1
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
+    assert response.headers["pragma"] == "no-cache"
+
+
+def test_top_level_event_bindings_tolerate_missing_optional_nodes() -> None:
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+
+    assert "function bindEvent(id, eventName, listener)" in script
+    assert "if (node) node.addEventListener(eventName, listener);" in script
+    assert not re.search(r'\$\("[^"]+"\)\.addEventListener', script)
+    assert 'bindEvent("submit-job", "click", submitJob);' in script
 
 
 def test_catalog_selection_order_is_stable_until_the_next_catalog_refresh() -> None:

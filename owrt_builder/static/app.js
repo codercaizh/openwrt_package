@@ -70,6 +70,11 @@
     node.className = className;
   }
 
+  function bindEvent(id, eventName, listener) {
+    const node = $(id);
+    if (node) node.addEventListener(eventName, listener);
+  }
+
   function activeDevice() {
     return state.devices.find((item) => item.key === $("device-select").value);
   }
@@ -676,12 +681,12 @@
     }
   }
 
-  $("login-form").addEventListener("submit", login);
-  $("logout").addEventListener("click", async () => {
+  bindEvent("login-form", "submit", login);
+  bindEvent("logout", "click", async () => {
     try { await api("/api/auth/logout", { method: "POST", body: {} }); } finally { window.location.reload(); }
   });
-  $("device-select").addEventListener("change", async () => { applyDeviceDefaults(); await loadCatalog(); });
-  $("catalog-search").addEventListener("input", loadCatalog);
+  bindEvent("device-select", "change", async () => { applyDeviceDefaults(); await loadCatalog(); });
+  bindEvent("catalog-search", "input", loadCatalog);
   document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
     tab.classList.add("active");
@@ -689,11 +694,11 @@
     orderCatalogSelectedFirst();
     renderCatalog();
   }));
-  $("submit-job").addEventListener("click", submitJob);
-  $("reload-jobs").addEventListener("click", loadJobs);
-  $("refresh-sources").addEventListener("click", refreshSources);
-  $("cancel-job").addEventListener("click", cancelJob);
-  $("save-default").addEventListener("click", saveDefault);
-  $("close-job").addEventListener("click", () => { stopEvents(); $("job-detail").hidden = true; });
+  bindEvent("submit-job", "click", submitJob);
+  bindEvent("reload-jobs", "click", loadJobs);
+  bindEvent("refresh-sources", "click", refreshSources);
+  bindEvent("cancel-job", "click", cancelJob);
+  bindEvent("save-default", "click", saveDefault);
+  bindEvent("close-job", "click", () => { stopEvents(); $("job-detail").hidden = true; });
   boot();
 })();
