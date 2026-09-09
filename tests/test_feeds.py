@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from owrt_builder.feeds import (
     CUSTOM_PACKAGE_OVERRIDES,
     FEED_SPECS,
+    FeedSpec,
     FeedError,
-    TAILSCALE_COMMUNITY_COMMIT,
-    TAILSCALE_COMMUNITY_SECURITY_FIX,
-    TAILSCALE_COMMIT,
-    TAILSCALE_SOURCE_HASH,
-    TAILSCALE_VERSION,
+    _clone_feed,
+    _ensure_synced_feed_links,
     _remove_custom_conflicts,
+    prepare_feeds_sync,
     validate_go_compatibility,
 )
 
@@ -50,24 +50,27 @@ def test_golang_feed_tracks_27_x() -> None:
     assert golang.branch == "27.x"
 
 
-def test_tailscale_packages_are_pinned_to_reviewed_sources() -> None:
-    community = next(
-        feed for feed in FEED_SPECS if feed.name == "luci-app-tailscale-community"
+def test_tailscale_feeds_follow_upstream_default_branches() -> None:
+    tailscale = next(
+        feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/packages.git"
     )
-    assert community.commit == TAILSCALE_COMMUNITY_COMMIT
-    assert len(community.commit or "") == 40
-    assert len(TAILSCALE_COMMUNITY_SECURITY_FIX) == 40
-    assert TAILSCALE_VERSION == "1.102.3"
-    assert len(TAILSCALE_COMMIT) == 40
-    assert len(TAILSCALE_SOURCE_HASH) == 64
+    community = next(
+        feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/luci.git"
+    )
 
-    recipe = Path(__file__).parents[1] / "owrt_builder/package_overlays/tailscale/Makefile"
-    text = recipe.read_text(encoding="utf-8")
-    assert f"PKG_VERSION:={TAILSCALE_VERSION}" in text
-    assert f"PKG_HASH:={TAILSCALE_SOURCE_HASH}" in text
-    assert TAILSCALE_COMMIT in text
-    assert "codeload.github.com/tailscale/tailscale" in text
-    assert "GO_PKG:=tailscale.com/cmd/tailscaled" in text
+    assert tailscale.url == "https://github.com/openwrt/packages.git"
+    assert tailscale.destination == "feeds/packages/net/tailscale"
+    assert tailscale.depth == 1
+    assert tailscale.branch == "master"
+    assert tailscale.source_subdir == "net/tailscale"
+    assert tailscale.clone_destination == "staging/upstream/openwrt-packages"
+    assert community.url == "https://github.com/openwrt/luci.git"
+    assert community.destination == "feeds/luci/applications/luci-app-tailscale-community"
+    assert community.depth == 1
+    assert community.branch == "master"
+    assert community.source_subdir == "applications/luci-app-tailscale-community"
+    assert community.clone_destination == "staging/upstream/openwrt-luci"
+    assert "commit" not in FeedSpec.__dataclass_fields__
 
 
 def test_tailscale_override_removes_legacy_feed_links(tmp_path: Path) -> None:
@@ -76,30 +79,108 @@ def test_tailscale_override_removes_legacy_feed_links(tmp_path: Path) -> None:
     luci = feed_root / "luci"
     packages.mkdir(parents=True)
     luci.mkdir(parents=True)
-    custom = tmp_path / "package/owrt-builder/tailscale"
-    custom.mkdir(parents=True)
-    (custom / "Makefile").write_text("official recipe\n", encoding="utf-8")
-    for feed_dir, name in (
-        (packages, "tailscale"),
-        (luci, "luci-app-tailscale"),
-        (luci, "luci-app-tailscale-community"),
+    official_tailscale = tmp_path / "feeds/packages/net/tailscale"
+    official_tailscale.mkdir(parents=True)
+    (official_tailscale / "Makefile").write_text("official recipe\n", encoding="utf-8")
+    official_community = tmp_path / "feeds/luci/applications/luci-app-tailscale-community"
+    official_community.mkdir(parents=True)
+    (official_community / "Makefile").write_text("official luci recipe\n", encoding="utf-8")
+    legacy_target = tmp_path / "feed-targets/luci-app-tailscale"
+    legacy_target.mkdir(parents=True)
+    for feed_dir, name, target in (
+        (packages, "tailscale", official_tailscale),
+        (luci, "luci-app-tailscale", legacy_target),
+        (luci, "luci-app-tailscale-community", official_community),
     ):
-        target = tmp_path / "feed-targets" / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.mkdir()
         (feed_dir / name).symlink_to(target)
 
     _remove_custom_conflicts(tmp_path, None)
 
-    assert custom.is_dir()
-    for feed_dir, name in (
-        (packages, "tailscale"),
-        (luci, "luci-app-tailscale"),
-        (luci, "luci-app-tailscale-community"),
-    ):
-        assert not (feed_dir / name).exists()
-        assert not (feed_dir / name).is_symlink()
-    assert "tailscale-official" in CUSTOM_PACKAGE_OVERRIDES
+    # Simulate a stale feed index that did not create the two newly synced
+    # official package links; the post-install safety net must recreate them.
+    (packages / "tailscale").unlink()
+    (luci / "luci-app-tailscale-community").unlink()
+    _ensure_synced_feed_links(
+        tmp_path,
+        [
+            next(feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/packages.git"),
+            next(feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/luci.git"),
+        ],
+    )
+
+    assert (packages / "tailscale").is_symlink()
+    assert (packages / "tailscale").resolve() == official_tailscale
+    assert (luci / "luci-app-tailscale-community").is_symlink()
+    assert (luci / "luci-app-tailscale-community").resolve() == official_community
+    assert not (luci / "luci-app-tailscale").exists()
+    assert not (luci / "luci-app-tailscale").is_symlink()
+    assert CUSTOM_PACKAGE_OVERRIDES["tailscale"] == ("luci-app-tailscale",)
+
+
+def test_sparse_feed_sync_copies_only_source_subdir_and_returns_repo_head(tmp_path: Path) -> None:
+    source = tmp_path / "upstream"
+    source.mkdir()
+    (source / "net/tailscale/files").mkdir(parents=True)
+    (source / "net/tailscale/Makefile").write_text("official\n", encoding="utf-8")
+    (source / "net/tailscale/files/tailscaled.init").write_text("init\n", encoding="utf-8")
+    (source / "other-package/Makefile").parent.mkdir(parents=True)
+    (source / "other-package/Makefile").write_text("not selected\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet", "-b", "master"], cwd=source, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=source, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=source, check=True)
+    subprocess.run(["git", "add", "."], cwd=source, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "upstream"], cwd=source, check=True)
+    expected = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=source, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+    target = tmp_path / "source/feeds/packages/net/tailscale"
+    spec = FeedSpec(
+        "official-tailscale",
+        str(source),
+        "feeds/packages/net/tailscale",
+        branch="master",
+        depth=1,
+        source_subdir="net/tailscale",
+        clone_destination="staging/upstream/packages",
+    )
+    git_calls: list[list[str]] = []
+
+    def recording_runner(args: list[str], *, cwd: Path | None = None):
+        git_calls.append(args)
+        return subprocess.run(
+            args,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    actual = _clone_feed(tmp_path / "source", spec, runner=recording_runner)
+
+    assert actual == expected
+    clone_args = next(args for args in git_calls if args[:2] == ["git", "clone"])
+    assert "--depth" in clone_args
+    assert "--filter=blob:none" in clone_args
+    assert "--sparse" in clone_args
+    assert ["git", "sparse-checkout", "set", "--no-cone", "net/tailscale"] in git_calls
+    assert (target / "Makefile").read_text(encoding="utf-8") == "official\n"
+    assert (target / "files/tailscaled.init").read_text(encoding="utf-8") == "init\n"
+    assert not (target / "other-package").exists()
+    assert not (tmp_path / "source/staging/upstream/packages/other-package").exists()
+
+    prepared_root = tmp_path / "prepared"
+    prepared_root.mkdir()
+    prepared_commits = prepare_feeds_sync(
+        prepared_root,
+        feed_specs=[spec],
+        require_native=False,
+        require_metadata=False,
+    )
+    assert prepared_commits == {"official-tailscale": expected}
+    assert (prepared_root / "feeds/packages/net/tailscale/Makefile").is_file()
+    assert not (prepared_root / "staging/upstream/packages").exists()
 
 
 def test_go_compatibility_checks_reviewed_modules_only(tmp_path: Path) -> None:

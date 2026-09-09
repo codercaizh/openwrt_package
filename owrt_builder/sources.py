@@ -42,9 +42,10 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # OpenWrt repository under ``dl``.  Earlier snapshots deleted those archives
 # while cleaning preparation-container state.  Version 8 adds the feed
 # toolchain compatibility gate for prepared Go package modules.
-# Version 9 publishes the project-owned official Tailscale recipe and pinned
-# security-reviewed community LuCI package in the source fingerprint.
-PREPARATION_VERSION = 9
+# Version 10 replaced the local/pinned Tailscale implementation with the
+# latest contents of third-party default branches.  Version 11 now sources
+# the package directories from OpenWrt's official master branches.
+PREPARATION_VERSION = 11
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 

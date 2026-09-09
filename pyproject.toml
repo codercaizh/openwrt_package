@@ -31,8 +31,6 @@ owrt_builder = [
   "static/*.html",
   "static/*.css",
   "static/*.js",
-  "package_overlays/tailscale/Makefile",
-  "package_overlays/tailscale/files/*",
 ]
 
 [tool.pytest.ini_options]

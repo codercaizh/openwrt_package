@@ -8,7 +8,6 @@ without sharing an event loop with git or make.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import os
 from pathlib import Path
 import re
@@ -30,7 +29,8 @@ class FeedSpec:
     destination: str
     branch: str | None = None
     depth: int | None = 1
-    commit: str | None = None
+    source_subdir: str | None = None
+    clone_destination: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,21 +76,11 @@ _GO_SCAN_EXCLUDED_DIRS = frozenset(
 )
 
 
-# These are the repositories used by the source snapshot preparer.  Passwall
-# intentionally has no fixed commit; the Tailscale community LuCI package is
-# pinned because it is part of the reviewed package set and carries the
-# command-injection fix.
-TAILSCALE_VERSION = "1.102.3"
-TAILSCALE_COMMIT = "53a0d659afa51835dd7a9283873cca44261454f8"
-TAILSCALE_SOURCE_HASH = "0e94d961c31ce7d33e8b7ce4ac6fdbec83ee5658784eed69eb7fce300729d717"
-TAILSCALE_REPOSITORY = "https://github.com/tailscale/tailscale.git"
-TAILSCALE_COMMUNITY_REPOSITORY = (
-    "https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community.git"
-)
-TAILSCALE_COMMUNITY_COMMIT = "99d7dea5d83d175ec95e777b606086cf415c369d"
-TAILSCALE_COMMUNITY_SECURITY_FIX = "f6fbeb749a989b6e7aa6fc33fddc6e3f6faaf392"
-TAILSCALE_COMMUNITY_PACKAGE_ROOT = "package/tailscale-community/luci-app-tailscale-community"
-
+# These are the repositories used by the source snapshot preparer.  A feed
+# without an explicit branch follows the repository's default branch; the
+# resulting HEAD is recorded when the source snapshot is published.  The two
+# OpenWrt package feeds use ``source_subdir`` so only the selected official
+# package directory is installed into the source tree.
 FEED_SPECS: tuple[FeedSpec, ...] = (
     FeedSpec("kenzo", "https://github.com/kenzok8/openwrt-packages.git", "package/kenzo"),
     FeedSpec("rtp2httpd", "https://github.com/stackia/rtp2httpd.git", "package/rtp2httpd"),
@@ -116,11 +106,22 @@ FEED_SPECS: tuple[FeedSpec, ...] = (
         branch="27.x",
     ),
     FeedSpec(
-        "luci-app-tailscale-community",
-        TAILSCALE_COMMUNITY_REPOSITORY,
-        "package/tailscale-community",
+        "openwrt-packages-tailscale",
+        "https://github.com/openwrt/packages.git",
+        "feeds/packages/net/tailscale",
+        branch="master",
         depth=1,
-        commit=TAILSCALE_COMMUNITY_COMMIT,
+        source_subdir="net/tailscale",
+        clone_destination="staging/upstream/openwrt-packages",
+    ),
+    FeedSpec(
+        "openwrt-luci-tailscale-community",
+        "https://github.com/openwrt/luci.git",
+        "feeds/luci/applications/luci-app-tailscale-community",
+        branch="master",
+        depth=1,
+        source_subdir="applications/luci-app-tailscale-community",
+        clone_destination="staging/upstream/openwrt-luci",
     ),
 )
 
@@ -149,23 +150,18 @@ PASSWALL_CORE_PACKAGES: tuple[str, ...] = (
 )
 
 # These custom repositories are checked out below ``package/`` so that their
-# package trees are visible to OpenWrt's package scanner.  The branch used by
-# this project also contains older copies of some of these packages in the
-# standard feeds.  ``scripts/feeds install`` creates symlinks for those copies;
-# leaving the links in place makes package discovery order dependent and can
-# silently select the upstream implementation instead of the requested
-# replacement.
+# package trees are visible to OpenWrt's package scanner.  Standard feeds can
+# also expose older copies of some of these packages.  ``scripts/feeds install``
+# creates symlinks for those copies; leaving the links in place makes package
+# discovery order dependent and can silently select the standard implementation
+# instead of the requested checkout.  The official Tailscale package links are
+# intentionally not listed: they are the selected source and must remain.
 CUSTOM_PACKAGE_OVERRIDES: Mapping[str, tuple[str, ...]] = {
     "passwall-luci": ("luci-app-passwall",),
     "rtp2httpd": ("rtp2httpd", "luci-app-rtp2httpd"),
-    # The official packages feed contains both an older Tailscale package and
-    # the legacy LuCI app.  They must not remain as package/feeds links next
-    # to the project recipe and the pinned community app.
-    "tailscale-official": (
-        "tailscale",
-        "luci-app-tailscale",
-        "luci-app-tailscale-community",
-    ),
+    # Keep the official ``tailscale`` and ``luci-app-tailscale-community``
+    # links.  Only the legacy LuCI app can shadow the current official app.
+    "tailscale": ("luci-app-tailscale",),
 }
 
 
@@ -214,146 +210,6 @@ def _run_command(
     return (result.stdout or "").strip()
 
 
-PROJECT_PACKAGE_OVERLAY_ROOT = Path(__file__).resolve().parent / "package_overlays"
-TAILSCALE_OVERLAY_DESTINATION = "package/owrt-builder/tailscale"
-
-
-def _copy_project_package_overlay(source_root: Path, *, status: StatusCallback | None) -> None:
-    """Copy the reviewed project-owned package recipe into a source tree.
-
-    The overlay lives beside the builder code rather than in an OpenWrt feed,
-    so an old package from ``feeds/packages`` cannot silently win by feed
-    ordering.  The caller removes old ``package/feeds`` links before metadata
-    generation.
-    """
-
-    overlay = PROJECT_PACKAGE_OVERLAY_ROOT / "tailscale"
-    if not overlay.is_dir() or not (overlay / "Makefile").is_file():
-        raise FeedError(f"project Tailscale package overlay is missing: {overlay}")
-    destination = _safe_destination(source_root, TAILSCALE_OVERLAY_DESTINATION)
-    if destination.exists() or destination.is_symlink():
-        if destination.is_symlink() or destination.is_file():
-            destination.unlink()
-        else:
-            shutil.rmtree(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(overlay, destination, symlinks=True)
-    _emit(
-        status,
-        "feed",
-        f"installed project Tailscale recipe {TAILSCALE_VERSION}",
-        package="tailscale",
-        source=TAILSCALE_REPOSITORY,
-        source_commit=TAILSCALE_COMMIT,
-    )
-
-
-def _project_recipe_hash() -> str:
-    """Hash the complete project-owned Tailscale recipe for snapshot identity."""
-
-    overlay = PROJECT_PACKAGE_OVERLAY_ROOT / "tailscale"
-    digest = hashlib.sha256()
-    for path in sorted(item for item in overlay.rglob("*") if item.is_file()):
-        relative = path.relative_to(overlay).as_posix().encode("utf-8")
-        digest.update(len(relative).to_bytes(4, "big"))
-        digest.update(relative)
-        content = path.read_bytes()
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
-    return digest.hexdigest()
-
-
-def _validate_tailscale_packages(
-    source_root: Path,
-    *,
-    status: StatusCallback | None,
-    runner: Callable[..., subprocess.CompletedProcess[str]] | None,
-) -> None:
-    """Reject a source tree that silently reverted to old Tailscale packages."""
-
-    recipe = source_root / TAILSCALE_OVERLAY_DESTINATION
-    makefile = recipe / "Makefile"
-    try:
-        makefile_text = makefile.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        raise FeedError(f"unable to read project Tailscale recipe: {makefile}: {exc}") from exc
-    required_recipe_values = {
-        "PKG_VERSION": TAILSCALE_VERSION,
-        "PKG_SOURCE_URL": "https://codeload.github.com/tailscale/tailscale/tar.gz/v$(PKG_VERSION)?",
-        "PKG_HASH": TAILSCALE_SOURCE_HASH,
-        "GO_PKG": "tailscale.com/cmd/tailscaled",
-    }
-    for key, value in required_recipe_values.items():
-        if f"{key}:={value}" not in makefile_text:
-            raise FeedError(
-                f"project Tailscale recipe does not pin {key}={value!r}: {makefile}"
-            )
-    if "github.com/tailscale/tailscale" not in makefile_text:
-        raise FeedError(f"project Tailscale recipe has no upstream source marker: {makefile}")
-    if TAILSCALE_COMMIT not in makefile_text:
-        raise FeedError(f"project Tailscale recipe has no pinned upstream commit: {makefile}")
-
-    community = source_root / TAILSCALE_COMMUNITY_PACKAGE_ROOT
-    community_makefile = community / "Makefile"
-    community_ucode = community / "root/usr/share/rpcd/ucode/tailscale.uc"
-    for path in (community_makefile, community_ucode):
-        if not path.is_file() or path.is_symlink():
-            raise FeedError(f"pinned community LuCI package is incomplete: {path}")
-    community_text = community_makefile.read_text(encoding="utf-8", errors="replace")
-    if "+tailscale" not in community_text or "LUCI_PKGARCH:=all" not in community_text:
-        raise FeedError(f"pinned community LuCI package has unexpected dependencies: {community_makefile}")
-    ucode_text = community_ucode.read_text(encoding="utf-8", errors="replace")
-    if "popen('/bin/sh -c ' + shell_quote(login_cmd + ' &'), 'r')" not in ucode_text:
-        raise FeedError(
-            "pinned community LuCI package is missing the login command-injection fix"
-        )
-    if (community / "root/etc/init.d/tailscale").exists() or (community / "root/etc/config/tailscale").exists():
-        raise FeedError(
-            "community LuCI package must not install /etc/init.d/tailscale or /etc/config/tailscale"
-        )
-    try:
-        community_commit = _run_git(["rev-parse", "HEAD"], cwd=community, runner=runner)
-    except FeedError as exc:
-        raise FeedError(
-            f"unable to read pinned community LuCI commit; required security fix is "
-            f"{TAILSCALE_COMMUNITY_SECURITY_FIX}"
-        ) from exc
-    if community_commit.lower() != TAILSCALE_COMMUNITY_COMMIT.lower():
-        raise FeedError(
-            f"community LuCI package resolved {community_commit}, expected pinned commit "
-            f"{TAILSCALE_COMMUNITY_COMMIT} (security fix {TAILSCALE_COMMUNITY_SECURITY_FIX})"
-        )
-    _emit(
-        status,
-        "feed",
-        f"validated Tailscale {TAILSCALE_VERSION} and community LuCI {community_commit[:12]}",
-        tailscale_version=TAILSCALE_VERSION,
-        tailscale_commit=TAILSCALE_COMMIT,
-        luci_commit=community_commit,
-    )
-
-
-def _project_package_provenance(
-    source_root: Path,
-    feed_specs: Sequence[FeedSpec],
-    *,
-    runner: Callable[..., subprocess.CompletedProcess[str]] | None,
-) -> dict[str, str]:
-    """Return immutable project package provenance for snapshot fingerprints."""
-
-    result = {
-        "project:tailscale": TAILSCALE_COMMIT,
-        "project:tailscale-recipe": _project_recipe_hash(),
-    }
-    for feed in feed_specs:
-        if feed.name != "luci-app-tailscale-community":
-            continue
-        path = _safe_destination(source_root, feed.destination)
-        commit = _run_git(["rev-parse", "HEAD"], cwd=path, runner=runner)
-        result["project:luci-app-tailscale-community"] = commit
-    return result
-
-
 def _safe_destination(root: Path, relative: str) -> Path:
     destination = (root / relative).resolve()
     root_resolved = root.resolve()
@@ -362,44 +218,80 @@ def _safe_destination(root: Path, relative: str) -> Path:
     return destination
 
 
+def _feed_source_path(clone_root: Path, relative: str) -> Path:
+    """Resolve a checked-out source subdirectory without allowing traversal."""
+
+    source_relative = Path(relative)
+    if (
+        source_relative.is_absolute()
+        or not source_relative.parts
+        or any(part in {"", ".", ".."} for part in source_relative.parts)
+    ):
+        raise FeedError(f"feed source subdirectory is invalid: {relative!r}")
+    return _safe_destination(clone_root, relative)
+
+
 def _clone_feed(
     source_root: Path,
     feed: FeedSpec,
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
+    clone_destination = _safe_destination(
+        source_root, feed.clone_destination or feed.destination
+    )
     destination = _safe_destination(source_root, feed.destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() or destination.is_symlink():
-        if destination.is_symlink() or destination.is_file():
-            destination.unlink()
+    if feed.source_subdir and (
+        clone_destination == destination
+        or clone_destination in destination.parents
+        or destination in clone_destination.parents
+    ):
+        raise FeedError(
+            f"feed {feed.name} clone and install destinations must not overlap"
+        )
+    if feed.source_subdir:
+        # Validate the relative path before creating or removing any clone.
+        _feed_source_path(clone_destination, feed.source_subdir)
+    clone_destination.parent.mkdir(parents=True, exist_ok=True)
+    if clone_destination.exists() or clone_destination.is_symlink():
+        if clone_destination.is_symlink() or clone_destination.is_file():
+            clone_destination.unlink()
         else:
-            shutil.rmtree(destination)
+            shutil.rmtree(clone_destination)
     args = ["clone", "--single-branch"]
     depth = feed.depth
     if depth:
         args.extend(["--depth", str(depth)])
     if feed.branch:
         args.extend(["--branch", feed.branch])
-    if feed.commit:
-        if not re.fullmatch(r"[0-9a-fA-F]{40}", feed.commit):
-            raise FeedError(f"feed {feed.name} has invalid pinned commit: {feed.commit!r}")
-        # A detached commit may be older than the branch tip.  Clone without
-        # checking out the moving tip, fetch exactly the requested object, and
-        # detach to it before recording the revision in the snapshot manifest.
-        args.append("--no-checkout")
-    args.extend([feed.url, str(destination)])
+    if feed.source_subdir:
+        # Sparse checkout limits the working tree; blob filtering also keeps
+        # unrelated package contents out of the shallow clone's object store.
+        args.extend(["--filter=blob:none", "--sparse"])
+    args.extend([feed.url, str(clone_destination)])
     _run_git(args, runner=runner)
-    if feed.commit:
-        _run_git(["fetch", "--depth", "1", "origin", feed.commit], cwd=destination, runner=runner)
-        _run_git(["checkout", "--detach", "--force", feed.commit], cwd=destination, runner=runner)
-    commit = _run_git(["rev-parse", "HEAD"], cwd=destination, runner=runner)
+    if feed.source_subdir:
+        _run_git(
+            ["sparse-checkout", "set", "--no-cone", feed.source_subdir],
+            cwd=clone_destination,
+            runner=runner,
+        )
+    commit = _run_git(["rev-parse", "HEAD"], cwd=clone_destination, runner=runner)
     if not commit or any(ch.isspace() for ch in commit):
         raise FeedError(f"feed {feed.name} did not produce a usable HEAD")
-    if feed.commit and commit.lower() != feed.commit.lower():
-        raise FeedError(
-            f"feed {feed.name} resolved {commit}, expected pinned commit {feed.commit}"
-        )
+    if feed.source_subdir:
+        source = _feed_source_path(clone_destination, feed.source_subdir)
+        if not source.is_dir() or source.is_symlink():
+            raise FeedError(
+                f"feed {feed.name} source subdirectory is missing: {feed.source_subdir}"
+            )
+        if destination.exists() or destination.is_symlink():
+            if destination.is_symlink() or destination.is_file():
+                destination.unlink()
+            else:
+                shutil.rmtree(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, destination, symlinks=True)
     return commit
 
 
@@ -657,6 +549,53 @@ def _remove_custom_conflicts(source_root: Path, status: StatusCallback | None) -
         _emit(status, "feed", "replaced conflicting standard-feed packages", removed=removed)
 
 
+def _ensure_feed_link(source_root: Path, feed: FeedSpec) -> None:
+    """Ensure a synced official package is visible through ``package/feeds``.
+
+    ``scripts/feeds install`` normally creates this link from its generated
+    index.  The index can predate a package copied into a feed, though, so
+    create or correct the exact relative link after installation as a small
+    safety net.  This is derived from the feed target and applies to any
+    ``feeds/<feed>/.../<package>`` source-subdirectory sync.
+    """
+
+    if not feed.source_subdir:
+        return
+    destination = _safe_destination(source_root, feed.destination)
+    if not destination.is_dir() or destination.is_symlink():
+        raise FeedError(f"synced feed package is missing: {destination}")
+    parts = Path(feed.destination).parts
+    if len(parts) < 3 or parts[0] != "feeds":
+        raise FeedError(
+            f"synced feed destination must be under feeds/<feed>: {feed.destination}"
+        )
+    feed_name = parts[1]
+    package_name = parts[-1]
+    # Keep this path unresolved so an incorrect existing symlink can be
+    # replaced instead of being followed (and rejected as outside root).
+    link = source_root / "package" / "feeds" / feed_name / package_name
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if link.is_symlink():
+        if link.resolve() == destination:
+            return
+        link.unlink()
+    elif link.exists():
+        if link.is_dir():
+            shutil.rmtree(link)
+        else:
+            link.unlink()
+    link.symlink_to(os.path.relpath(destination, link.parent))
+
+
+def _ensure_synced_feed_links(
+    source_root: Path, feeds: Sequence[FeedSpec]
+) -> None:
+    """Make all source-subdirectory feed packages visible to OpenWrt."""
+
+    for feed in feeds:
+        _ensure_feed_link(source_root, feed)
+
+
 def _native_feed_update(
     source_root: Path,
     *,
@@ -765,6 +704,8 @@ def prepare_feeds_sync(
     if not root.is_dir():
         raise FeedError(f"source root does not exist: {root}")
     commits: dict[str, str] = {}
+    cloned_commits: dict[str, str] = {}
+    upstream_clone_destinations: list[Path] = []
     try:
         _emit(status, "feeds", "preparing project feeds", root=str(root))
         if require_native:
@@ -774,21 +715,40 @@ def prepare_feeds_sync(
             _native_feed_update(root, status=status, runner=runner)
         for feed in feed_specs:
             _emit(status, "feed", f"cloning {feed.name}", feed=feed.name)
-            _clone_feed(root, feed, runner=runner)
-        _copy_project_package_overlay(root, status=status)
+            cloned_commits[feed.name] = _clone_feed(root, feed, runner=runner)
+            if feed.clone_destination:
+                upstream_clone_destinations.append(
+                    _safe_destination(root, feed.clone_destination)
+                )
+        # The selected package directories have already been copied into the
+        # source feed tree.  Do not publish the full upstream repositories or
+        # their .git metadata in the immutable source snapshot.
+        for clone_destination in upstream_clone_destinations:
+            if clone_destination.is_symlink() or clone_destination.is_file():
+                clone_destination.unlink()
+            elif clone_destination.is_dir():
+                shutil.rmtree(clone_destination)
+            parent = clone_destination.parent
+            while parent != root and parent.is_dir():
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
         _remove_core_passwall(root, status)
         _patch_rust(root, status)
         if require_native:
             _native_feed_install(root, status=status, runner=runner)
             _remove_custom_conflicts(root, status)
-        if any(feed.name == "luci-app-tailscale-community" for feed in feed_specs):
-            _validate_tailscale_packages(root, status=status, runner=runner)
+            _ensure_synced_feed_links(root, feed_specs)
         validate_go_compatibility(root, status=status)
         if require_native:
             if require_metadata:
                 _native_package_metadata(root, status=status, runner=runner)
         commits = _git_commits(root, feed_specs, runner=runner)
-        commits.update(_project_package_provenance(root, feed_specs, runner=runner))
+        # A sparse source checkout is copied into a plain feed directory, so
+        # preserve the repository HEAD captured before that copy replaced it.
+        commits.update(cloned_commits)
         _emit(status, "feeds", "feeds prepared", feed_commits=commits)
         if require_metadata:
             missing = [
@@ -814,14 +774,6 @@ __all__ = [
     "GO_TOOLCHAIN_MAKEFILE",
     "GoCompatibilityReport",
     "PASSWALL_CORE_PACKAGES",
-    "TAILSCALE_VERSION",
-    "TAILSCALE_COMMIT",
-    "TAILSCALE_SOURCE_HASH",
-    "TAILSCALE_REPOSITORY",
-    "TAILSCALE_COMMUNITY_REPOSITORY",
-    "TAILSCALE_COMMUNITY_COMMIT",
-    "TAILSCALE_COMMUNITY_SECURITY_FIX",
-    "TAILSCALE_COMMUNITY_PACKAGE_ROOT",
     "prepare_feeds_sync",
     "validate_go_compatibility",
 ]
