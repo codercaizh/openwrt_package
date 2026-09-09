@@ -157,6 +157,49 @@ def test_preparation_version_is_part_of_snapshot_identity(tmp_path: Path, monkey
     assert manager.current("test").snapshot_id == second.snapshot_id
 
 
+def test_incompatible_go_refresh_keeps_previous_current_snapshot(tmp_path: Path) -> None:
+    template = tmp_path / "template"
+    module_dir = template / "package/passwall-packages/xray-core"
+    module_dir.mkdir(parents=True)
+    toolchain = template / "feeds/packages/lang/golang/golang"
+    toolchain.mkdir(parents=True)
+    (toolchain / "Makefile").write_text(
+        "GO_VERSION_MAJOR_MINOR:=1.27\nGO_VERSION_PATCH:=0\n",
+        encoding="utf-8",
+    )
+    (module_dir / "Makefile").write_text("GO_PKG:=github.com/xtls/xray-core\n", encoding="utf-8")
+    module = module_dir / "go.mod"
+    module.write_text("module github.com/xtls/xray-core\n\ngo 1.27\n", encoding="utf-8")
+    spec = SourceSpec("test", "https://example.invalid/openwrt.git", "main", None, "arm")
+
+    def runner(args, *, cwd=None, **kwargs):
+        if args[1:2] == ["clone"]:
+            shutil.copytree(template, Path(args[-1]))
+        elif args[1:3] == ["rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(args, 0, "source-sha\n", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    manager = SourceManager(tmp_path / "state", source_specs={"test": spec}, command_runner=runner)
+    first = manager.prepare_source(
+        "test",
+        feed_preparer=lambda *_: {},
+        catalog_builder=_catalog,
+    )
+
+    module.write_text("module github.com/xtls/xray-core\n\ngo 1.28\n", encoding="utf-8")
+    with pytest.raises(SourceError, match="Go toolchain 1.27.0 is incompatible"):
+        manager.prepare_source(
+            "test",
+            feed_preparer=lambda *_: {},
+            catalog_builder=_catalog,
+        )
+
+    current = manager.current("test")
+    assert current is not None
+    assert current.snapshot_id == first.snapshot_id
+    assert not list((tmp_path / "state" / "test").glob(".staging-*"))
+
+
 def test_cleanup_removes_feed_runtime_links_and_indexes(tmp_path: Path) -> None:
     source = tmp_path / "source"
     feeds = source / "feeds"

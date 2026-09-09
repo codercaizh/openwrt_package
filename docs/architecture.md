@@ -15,7 +15,9 @@
 
 ## Feed
 
-默认 feed 与原项目来源保持一致：Kenzo、rtp2httpd、luci-app-cloudflarespeedtest、Passwall packages、Passwall LuCI，以及原流程中的 `packages_lang_golang` 26.x 替换。Passwall 跟随仓库默认分支，取消旧的固定 commit。Rust 1.90.0 的替换仅在实际 Makefile 版本匹配时执行；替换文件不存在或补丁失败要报告错误。
+默认 feed 与原项目来源保持一致：Kenzo、rtp2httpd、luci-app-cloudflarespeedtest、Passwall packages、Passwall LuCI，以及原流程中的 `packages_lang_golang` 27.x 替换。Passwall 跟随仓库默认分支，取消旧的固定 commit。Rust 1.90.0 的替换仅在实际 Makefile 版本匹配时执行；替换文件不存在或补丁失败要报告错误。
+
+Feed 准备完成后会读取 Go feed 的 `GO_VERSION_MAJOR_MINOR`/`GO_VERSION_PATCH`，并只扫描带有 `GO_PKG` 或 `golang/host` 的 OpenWrt package Makefile 目录下的 `go.mod`。`vendor`、测试、示例和生成目录会被跳过；已存在的模块若声明了高于工具链的 `go` 版本，准备立即失败。检查发生在临时 staging 树切换为 `current` 之前，因此失败时上一份可用快照仍然保留。远程源码压缩包在后续 `make download` 阶段才获取，未出现在准备树中的模块不会被预扫描。
 
 `prepare_source()` 在临时 staging 目录完成源码检出、feed 检出、feed install、必要补丁和 catalog 扫描，全部成功后才切换 `current`。authoritative catalog 会保存为快照旁的 `catalog.json`；发布前清除 `tmp`、`staging_dir`、`build_dir`、`dl`、feed 临时索引和 `feeds/base` 准备阶段链接，避免把宿主准备环境的绝对链接带入后续 Docker 构建。构建/Web 通过 `PreparedSource.catalog_path` 读取已生成目录，不对清理后的 source 重新扫描。任一步骤失败，旧的 current 和 catalog 保持可用。`prepare_feeds_sync()` 提供给首次 Web 异步初始化、手动更新和北京时间 04:00 调度；它接受状态回调，但不持有 Web 事件循环。
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Callable, Mapping, Sequence
@@ -28,6 +29,49 @@ class FeedSpec:
     destination: str
     branch: str | None = None
     depth: int | None = 1
+
+
+@dataclass(frozen=True)
+class GoCompatibilityReport:
+    """The Go toolchain and module requirements found in a source tree."""
+
+    toolchain: tuple[int, int, int] | None
+    modules: Mapping[str, tuple[int, int, int]]
+
+
+# Go package sources are not downloaded while an immutable source snapshot is
+# prepared.  When a module manifest is already present in a feed, however, it
+# is cheap and useful to reject an incompatible toolchain before publishing
+# the snapshot.  Restrict the scan to directories with an OpenWrt Go package
+# Makefile; this avoids treating unrelated repository tooling as a build
+# dependency.
+GO_TOOLCHAIN_MAKEFILE = Path("feeds/packages/lang/golang/golang/Makefile")
+GO_PACKAGE_ROOTS: tuple[Path, ...] = (Path("package"), Path("feeds/packages"))
+_GO_PACKAGE_MARKER = re.compile(
+    r"(?m)^\s*(?:GO_PKG\s*[:?+]?=|PKG_BUILD_DEPENDS\s*[:?+]?=.*\bgolang/host\b)"
+)
+_GO_VERSION_ASSIGNMENT = re.compile(
+    r"(?m)^\s*GO_VERSION_(MAJOR_MINOR|PATCH)\s*[:?+]?=\s*([^#\s]*)"
+)
+_GO_DIRECTIVE = re.compile(r"^\s*go\s+([0-9]+(?:\.[0-9]+){1,2})(?:\s+//.*)?\s*$")
+_GO_SCAN_EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        ".github",
+        "vendor",
+        "test",
+        "tests",
+        "testdata",
+        "example",
+        "examples",
+        "fixtures",
+        "node_modules",
+        "build_dir",
+        "staging_dir",
+        "tmp",
+        "dl",
+    }
+)
 
 
 # These are the repositories used by the source snapshot preparer.  Passwall
@@ -54,7 +98,7 @@ FEED_SPECS: tuple[FeedSpec, ...] = (
         "golang",
         "https://github.com/sbwml/packages_lang_golang.git",
         "feeds/packages/lang/golang",
-        branch="26.x",
+        branch="27.x",
     ),
 )
 
@@ -173,6 +217,180 @@ def _clone_feed(
     if not commit or any(ch.isspace() for ch in commit):
         raise FeedError(f"feed {feed.name} did not produce a usable HEAD")
     return commit
+
+
+def _parse_go_version(raw: str, *, context: str) -> tuple[int, int, int]:
+    """Parse a Go version used by a Makefile or a module directive."""
+
+    parts = raw.strip().split(".")
+    if len(parts) not in (2, 3) or any(not part.isdigit() for part in parts):
+        raise FeedError(f"invalid Go version {raw!r} in {context}")
+    values = [int(part) for part in parts]
+    if values[0] < 1 or values[1] < 0 or (len(values) == 3 and values[2] < 0):
+        raise FeedError(f"invalid Go version {raw!r} in {context}")
+    return values[0], values[1], values[2] if len(values) == 3 else 0
+
+
+def _go_version_text(version: tuple[int, int, int]) -> str:
+    return ".".join(str(part) for part in version)
+
+
+def _go_package_marker(makefile: Path) -> bool:
+    try:
+        content = makefile.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise FeedError(f"unable to read Go package Makefile: {makefile}: {exc}") from exc
+    return bool(_GO_PACKAGE_MARKER.search(content))
+
+
+def _go_package_directories(source_root: Path) -> tuple[Path, ...]:
+    """Find OpenWrt package directories which explicitly use the Go helper."""
+
+    result: list[Path] = []
+    seen: set[Path] = set()
+    for relative_root in GO_PACKAGE_ROOTS:
+        package_root = source_root / relative_root
+        if not package_root.is_dir() or package_root.is_symlink():
+            continue
+        for current, directories, files in os.walk(package_root, topdown=True, followlinks=False):
+            current_path = Path(current)
+            directories[:] = [
+                name
+                for name in directories
+                if name not in _GO_SCAN_EXCLUDED_DIRS
+                and not (current_path / name).is_symlink()
+            ]
+            if "Makefile" not in files:
+                continue
+            makefile = current_path / "Makefile"
+            if _go_package_marker(makefile):
+                resolved = current_path.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    result.append(current_path)
+    return tuple(result)
+
+
+def _go_module_files(source_root: Path) -> tuple[Path, ...]:
+    """Return module manifests belonging to the reviewed Go package trees."""
+
+    result: list[Path] = []
+    seen: set[Path] = set()
+    for package_root in _go_package_directories(source_root):
+        for current, directories, files in os.walk(package_root, topdown=True, followlinks=False):
+            current_path = Path(current)
+            directories[:] = [
+                name
+                for name in directories
+                if name not in _GO_SCAN_EXCLUDED_DIRS
+                and not (current_path / name).is_symlink()
+            ]
+            if "go.mod" not in files:
+                continue
+            module = current_path / "go.mod"
+            if module.is_symlink() or not module.is_file():
+                continue
+            resolved = module.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                result.append(module)
+    return tuple(sorted(result, key=lambda path: path.as_posix()))
+
+
+def _go_toolchain_version(source_root: Path) -> tuple[int, int, int] | None:
+    """Read the compiler version declared by the cloned OpenWrt Go feed."""
+
+    makefile = source_root / GO_TOOLCHAIN_MAKEFILE
+    if not makefile.is_file() or makefile.is_symlink():
+        return None
+    try:
+        content = makefile.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise FeedError(f"unable to read Go toolchain Makefile: {makefile}: {exc}") from exc
+    values = {name: value for name, value in _GO_VERSION_ASSIGNMENT.findall(content)}
+    major_minor = values.get("MAJOR_MINOR")
+    if not major_minor:
+        raise FeedError(f"Go toolchain Makefile has no GO_VERSION_MAJOR_MINOR: {makefile}")
+    patch = values.get("PATCH", "")
+    return _parse_go_version(
+        f"{major_minor}.{patch}" if patch else major_minor,
+        context=str(makefile.relative_to(source_root)),
+    )
+
+
+def _go_module_requirement(module: Path) -> tuple[int, int, int] | None:
+    try:
+        content = module.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise FeedError(f"unable to read Go module manifest: {module}: {exc}") from exc
+    for line in content.splitlines():
+        match = _GO_DIRECTIVE.match(line)
+        if match:
+            return _parse_go_version(match.group(1), context=str(module))
+    return None
+
+
+def validate_go_compatibility(
+    source_root: str | os.PathLike[str],
+    *,
+    status: StatusCallback | None = None,
+) -> GoCompatibilityReport:
+    """Reject prepared Go packages that require a newer compiler.
+
+    Only ``go.mod`` files below OpenWrt package directories whose Makefile
+    opts into ``golang/host`` or defines ``GO_PKG`` are considered.  This
+    deliberately excludes vendored, test, example, and generated trees.  A
+    feed package's remote source archive may not exist until the later
+    ``make download`` stage; such a module is checked when its manifest is
+    available in the prepared tree.
+    """
+
+    root = Path(source_root).resolve()
+    modules: dict[str, tuple[int, int, int]] = {}
+    for module in _go_module_files(root):
+        requirement = _go_module_requirement(module)
+        if requirement is not None:
+            modules[str(module.relative_to(root))] = requirement
+
+    toolchain = _go_toolchain_version(root)
+    if modules and toolchain is None:
+        paths = ", ".join(sorted(modules))
+        raise FeedError(f"Go toolchain metadata is missing for module(s): {paths}")
+
+    if toolchain is not None:
+        incompatible = [
+            (path, requirement)
+            for path, requirement in sorted(modules.items())
+            if requirement > toolchain
+        ]
+        if incompatible:
+            details = "; ".join(
+                f"{path} requires Go >= {_go_version_text(requirement)}"
+                for path, requirement in incompatible
+            )
+            raise FeedError(
+                f"Go toolchain {_go_version_text(toolchain)} is incompatible: {details}"
+            )
+
+    if toolchain is None:
+        _emit(status, "feeds", "Go compatibility check skipped: no Go package modules found")
+    elif modules:
+        _emit(
+            status,
+            "feeds",
+            f"Go compatibility check passed: {_go_version_text(toolchain)}",
+            toolchain=_go_version_text(toolchain),
+            modules=modules,
+        )
+    else:
+        _emit(
+            status,
+            "feeds",
+            f"Go compatibility check passed: {_go_version_text(toolchain)}; no module manifests found",
+            toolchain=_go_version_text(toolchain),
+            modules={},
+        )
+    return GoCompatibilityReport(toolchain=toolchain, modules=modules)
 
 
 def _patch_rust(source_root: Path, status: StatusCallback | None) -> None:
@@ -372,6 +590,8 @@ def prepare_feeds_sync(
         if require_native:
             _native_feed_install(root, status=status, runner=runner)
             _remove_custom_conflicts(root, status)
+        validate_go_compatibility(root, status=status)
+        if require_native:
             if require_metadata:
                 _native_package_metadata(root, status=status, runner=runner)
         commits = _git_commits(root, feed_specs, runner=runner)
@@ -396,6 +616,10 @@ __all__ = [
     "FeedError",
     "FeedSpec",
     "CUSTOM_PACKAGE_OVERRIDES",
+    "GO_PACKAGE_ROOTS",
+    "GO_TOOLCHAIN_MAKEFILE",
+    "GoCompatibilityReport",
     "PASSWALL_CORE_PACKAGES",
     "prepare_feeds_sync",
+    "validate_go_compatibility",
 ]

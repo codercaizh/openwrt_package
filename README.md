@@ -107,9 +107,15 @@ PushPlus 可在页面“设置”中填写 token；token 只保存于持久化�
 ## feeds、配置和产物
 
 本项目保留原有的源码分支选择、Kenzo、rtp2httpd、cloudflarespeedtest、
-Passwall packages/LuCI 和 Go 26 feed；Passwall 跟随配置的默认分支，不再固定
+Passwall packages/LuCI 和 Go 27 feed；Passwall 跟随配置的默认分支，不再固定
 旧 commit。Rust 兼容补丁只在检测到对应版本时应用。feeds 位于工作区的源快照
 和缓存目录中，不直接修改仓库源码。
+
+准备 feeds 时会检查 Go 工具链版本与已存在的 OpenWrt Go package `go.mod` 要求。
+检查只覆盖声明 `GO_PKG` 或 `golang/host` 的 package 目录，并跳过 vendor、测试、
+示例和生成目录；发现模块要求更高版本时会拒绝发布新源码快照，同时保留上一份
+可用快照。远程包源码在后续 `make download` 才获取，因此尚未进入快照的模块会在
+编译阶段由 Go 工具链再次检查。
 
 配置校验优先使用 OpenWrt 原生生成的 `.packageinfo` 和
 `.config-package.in`。插件子选项的符号可能不是 `CONFIG_PACKAGE_` 前缀，工具

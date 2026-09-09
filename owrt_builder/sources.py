@@ -40,8 +40,9 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # ``staging_dir``/``tmp`` and must never be handed to a worker again.
 # Version 7 preserves and validates source archives which are tracked by the
 # OpenWrt repository under ``dl``.  Earlier snapshots deleted those archives
-# while cleaning preparation-container state.
-PREPARATION_VERSION = 7
+# while cleaning preparation-container state.  Version 8 adds the feed
+# toolchain compatibility gate for prepared Go package modules.
+PREPARATION_VERSION = 8
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 
@@ -832,7 +833,14 @@ class SourceManager:
 
                 feed_commits = prepare_feeds_sync(source_path, status=status)
             else:
+                from .feeds import validate_go_compatibility
+
                 feed_commits = dict(feed_preparer(source_path, status))
+                # Custom feed preparers are used by tests and integrations;
+                # keep them behind the same publication gate as the built-in
+                # preparer so an incompatible staging tree can never become
+                # the new ``current`` snapshot.
+                validate_go_compatibility(source_path, status=status)
 
             if catalog_builder is None:
                 from .catalog import scan_catalog
