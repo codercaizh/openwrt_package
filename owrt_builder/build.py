@@ -572,6 +572,12 @@ class BuildEngine:
                         container_name,
                         "--env",
                         "OWRT_BUILDER_WORKER=1",
+                        # The worker's stdout is piped through Docker rather
+                        # than attached to a TTY.  Disable Python's block
+                        # buffering so each streamed build line reaches the
+                        # Web SSE log immediately.
+                        "--env",
+                        "PYTHONUNBUFFERED=1",
                         "--env",
                         "OWRT_WORKER_LOCK_HELD=1",
                         "--env",
@@ -2049,7 +2055,16 @@ class BuildEngine:
                     raise BuildCancelled()
                 events = selector.select(timeout=0.25)
                 for key, _ in events:
-                    chunk = key.fileobj.read(64 * 1024)
+                    # ``subprocess.PIPE`` is a BufferedReader.  Its regular
+                    # ``read(n)`` may wait for the requested amount even
+                    # after ``select`` reports a small amount available,
+                    # which stalls low-volume worker logs until the process
+                    # exits.  ``read1`` performs one underlying read and
+                    # returns the bytes available now.
+                    try:
+                        chunk = key.fileobj.read1(64 * 1024)
+                    except BlockingIOError:
+                        continue
                     if not chunk:
                         selector.unregister(key.fileobj)
                         continue

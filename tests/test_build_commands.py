@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tarfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,6 +40,49 @@ def test_mediatek_worker_keeps_host_uid_without_privilege_or_host_network(tmp_pa
     assert "--network=host" not in command
     assert "--network" not in command
     assert "--user" in command
+
+
+def test_worker_disables_python_output_buffering_for_live_logs(tmp_path: Path) -> None:
+    command = _capture_worker_command(tmp_path, "n60pro")
+
+    env_index = command.index("--env")
+    env_values = {
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--env" and index + 1 < len(command)
+    }
+    assert "PYTHONUNBUFFERED=1" in env_values
+    assert command[env_index + 1] == "OWRT_BUILDER_WORKER=1"
+
+
+def test_stream_forwards_low_volume_output_before_process_exit(tmp_path: Path) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
+    log_path = tmp_path / "docker.log"
+    observed: list[float] = []
+    log_at_first_line: list[bytes] = []
+    started = time.monotonic()
+
+    def callback(line: str) -> None:
+        if line == "first-line":
+            observed.append(time.monotonic() - started)
+            log_at_first_line.append(log_path.read_bytes())
+
+    command = [
+        sys.executable,
+        "-c",
+        "import sys, time; print('first-line', flush=True); time.sleep(1.2); print('last-line', flush=True)",
+    ]
+    assert engine._run_stream(
+        command,
+        cwd=tmp_path,
+        callback=callback,
+        cancel_event=None,
+        log_path=log_path,
+    ) == 0
+
+    assert observed and observed[0] < 0.8
+    assert log_at_first_line and b"first-line\n" in log_at_first_line[0]
+    assert log_path.read_bytes().endswith(b"last-line\n")
 
 
 def test_arm_worker_uses_privilege_without_host_uid_or_host_network(tmp_path: Path) -> None:
