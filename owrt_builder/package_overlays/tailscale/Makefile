@@ -1,0 +1,62 @@
+include $(TOPDIR)/rules.mk
+
+# This recipe is maintained by OpenWrt Builder and deliberately builds the
+# upstream Tailscale source.  Do not replace these values with a floating
+# branch or a feed-provided package: the source snapshot fingerprint depends
+# on this exact release and archive hash. v1.102.3 resolves to commit
+# 53a0d659afa51835dd7a9283873cca44261454f8.
+PKG_NAME:=tailscale
+PKG_VERSION:=1.102.3
+PKG_RELEASE:=1
+
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/tailscale/tailscale/tar.gz/v$(PKG_VERSION)?
+PKG_HASH:=0e94d961c31ce7d33e8b7ce4ac6fdbec83ee5658784eed69eb7fce300729d717
+
+PKG_MAINTAINER:=OpenWrt Builder
+PKG_LICENSE:=BSD-3-Clause
+PKG_LICENSE_FILES:=LICENSE
+PKG_CPE_ID:=cpe:/a:tailscale:tailscale
+
+PKG_BUILD_DIR:=$(BUILD_DIR)/tailscale-$(PKG_VERSION)
+PKG_BUILD_DEPENDS:=golang/host
+PKG_BUILD_PARALLEL:=1
+PKG_BUILD_FLAGS:=no-mips16
+
+GO_PKG:=tailscale.com/cmd/tailscaled
+GO_PKG_LDFLAGS:=-X 'tailscale.com/version.longStamp=$(PKG_VERSION)-$(PKG_RELEASE) (OpenWrt Builder)'
+GO_PKG_LDFLAGS_X:=tailscale.com/version.shortStamp=$(PKG_VERSION)
+GO_PKG_TAGS:=ts_include_cli,ts_omit_aws,ts_omit_bird,ts_omit_completion,ts_omit_kube,ts_omit_systray,ts_omit_taildrop,ts_omit_tap,ts_omit_tpm
+
+include $(INCLUDE_DIR)/package.mk
+include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
+
+define Package/tailscale
+  SECTION:=net
+  CATEGORY:=Network
+  SUBMENU:=VPN
+  TITLE:=Zero config VPN (upstream Tailscale)
+  URL:=https://tailscale.com
+  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle +kmod-tun
+  PROVIDES:=tailscaled
+endef
+
+define Package/tailscale/description
+  Tailscale is a zero-config VPN built on WireGuard. This package is built
+  from the pinned upstream Tailscale release by OpenWrt Builder.
+endef
+
+define Package/tailscale/conffiles
+/etc/config/tailscale
+/etc/tailscale/
+endef
+
+define Package/tailscale/install
+	$(INSTALL_DIR) $(1)/usr/sbin $(1)/etc/init.d $(1)/etc/config
+	$(INSTALL_BIN) $(GO_PKG_BUILD_BIN_DIR)/tailscaled $(1)/usr/sbin
+	$(LN) tailscaled $(1)/usr/sbin/tailscale
+	$(INSTALL_BIN) ./files/tailscale.init $(1)/etc/init.d/tailscale
+	$(INSTALL_DATA) ./files/tailscale.conf $(1)/etc/config/tailscale
+endef
+
+$(eval $(call BuildPackage,tailscale))

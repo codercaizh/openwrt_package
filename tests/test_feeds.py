@@ -5,8 +5,15 @@ from pathlib import Path
 import pytest
 
 from owrt_builder.feeds import (
+    CUSTOM_PACKAGE_OVERRIDES,
     FEED_SPECS,
     FeedError,
+    TAILSCALE_COMMUNITY_COMMIT,
+    TAILSCALE_COMMUNITY_SECURITY_FIX,
+    TAILSCALE_COMMIT,
+    TAILSCALE_SOURCE_HASH,
+    TAILSCALE_VERSION,
+    _remove_custom_conflicts,
     validate_go_compatibility,
 )
 
@@ -41,6 +48,58 @@ def _write_go_package(root: Path, relative: str, requirement: str) -> Path:
 def test_golang_feed_tracks_27_x() -> None:
     golang = next(feed for feed in FEED_SPECS if feed.name == "golang")
     assert golang.branch == "27.x"
+
+
+def test_tailscale_packages_are_pinned_to_reviewed_sources() -> None:
+    community = next(
+        feed for feed in FEED_SPECS if feed.name == "luci-app-tailscale-community"
+    )
+    assert community.commit == TAILSCALE_COMMUNITY_COMMIT
+    assert len(community.commit or "") == 40
+    assert len(TAILSCALE_COMMUNITY_SECURITY_FIX) == 40
+    assert TAILSCALE_VERSION == "1.102.3"
+    assert len(TAILSCALE_COMMIT) == 40
+    assert len(TAILSCALE_SOURCE_HASH) == 64
+
+    recipe = Path(__file__).parents[1] / "owrt_builder/package_overlays/tailscale/Makefile"
+    text = recipe.read_text(encoding="utf-8")
+    assert f"PKG_VERSION:={TAILSCALE_VERSION}" in text
+    assert f"PKG_HASH:={TAILSCALE_SOURCE_HASH}" in text
+    assert TAILSCALE_COMMIT in text
+    assert "codeload.github.com/tailscale/tailscale" in text
+    assert "GO_PKG:=tailscale.com/cmd/tailscaled" in text
+
+
+def test_tailscale_override_removes_legacy_feed_links(tmp_path: Path) -> None:
+    feed_root = tmp_path / "package/feeds"
+    packages = feed_root / "packages"
+    luci = feed_root / "luci"
+    packages.mkdir(parents=True)
+    luci.mkdir(parents=True)
+    custom = tmp_path / "package/owrt-builder/tailscale"
+    custom.mkdir(parents=True)
+    (custom / "Makefile").write_text("official recipe\n", encoding="utf-8")
+    for feed_dir, name in (
+        (packages, "tailscale"),
+        (luci, "luci-app-tailscale"),
+        (luci, "luci-app-tailscale-community"),
+    ):
+        target = tmp_path / "feed-targets" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.mkdir()
+        (feed_dir / name).symlink_to(target)
+
+    _remove_custom_conflicts(tmp_path, None)
+
+    assert custom.is_dir()
+    for feed_dir, name in (
+        (packages, "tailscale"),
+        (luci, "luci-app-tailscale"),
+        (luci, "luci-app-tailscale-community"),
+    ):
+        assert not (feed_dir / name).exists()
+        assert not (feed_dir / name).is_symlink()
+    assert "tailscale-official" in CUSTOM_PACKAGE_OVERRIDES
 
 
 def test_go_compatibility_checks_reviewed_modules_only(tmp_path: Path) -> None:

@@ -108,8 +108,16 @@ PushPlus 可在页面“设置”中填写 token；token 只保存于持久化�
 
 本项目保留原有的源码分支选择、Kenzo、rtp2httpd、cloudflarespeedtest、
 Passwall packages/LuCI 和 Go 27 feed；Passwall 跟随配置的默认分支，不再固定
-旧 commit。Rust 兼容补丁只在检测到对应版本时应用。feeds 位于工作区的源快照
-和缓存目录中，不直接修改仓库源码。
+旧 commit。Tailscale 不再使用 OpenWrt/ImmortalWrt packages feed 中的版本：源码
+准备会安装项目维护的官方打包配方，从 Tailscale 官方仓库固定构建 `v1.102.3`
+（commit `53a0d659afa51835dd7a9283873cca44261454f8`，归档 SHA256 为
+`0e94d961c31ce7d33e8b7ce4ac6fdbec83ee5658784eed69eb7fce300729d717`）。LuCI
+应用来自 `Tokisaki-Galaxy/luci-app-tailscale-community` 固定 commit
+`99d7dea5d83d175ec95e777b606086cf415c369d`，包含命令注入修复
+`f6fbeb749a989b6e7aa6fc33fddc6e3f6faaf392`。准备阶段会删除默认 feed 的旧
+`tailscale`/`luci-app-tailscale` 链接，避免包来源随 feed 顺序变化；四个设备的
+默认配置均选择 `tailscale` 和 `luci-app-tailscale-community`。Rust 兼容补丁只在
+检测到对应版本时应用。feeds 位于工作区的源快照和缓存目录中，不直接修改仓库源码。
 
 准备 feeds 时会检查 Go 工具链版本与已存在的 OpenWrt Go package `go.mod` 要求。
 检查只覆盖声明 `GO_PKG` 或 `golang/host` 的 package 目录，并跳过 vendor、测试、
