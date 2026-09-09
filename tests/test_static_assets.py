@@ -72,6 +72,23 @@ def test_frontend_formats_task_times_and_log_rows_as_beijing_time() -> None:
     assert "北京时间" in script
 
 
+def test_source_badge_uses_last_success_time_and_handles_stale_refreshes() -> None:
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+    start = script.index("  async function loadSource()")
+    end = script.index("\n\n  async function loadCatalog()", start)
+    source_loader = script[start:end]
+
+    assert "function formatSourceUpdateTime(source)" in script
+    assert "source?.last_success_at || source?.snapshot?.created_at" in script
+    assert "源码更新中 · ${updatedAt}" in source_loader
+    assert "更新失败 · ${updatedAt}" in source_loader
+    assert "源码已就绪 · ${updatedAt}" in source_loader
+    assert "当前版本更新时间未知" in script
+    # The source badge must no longer expose an opaque snapshot id as its
+    # freshness indicator; the catalogue may still show that id elsewhere.
+    assert "snapshot_id" not in source_loader
+
+
 def test_top_level_event_bindings_tolerate_missing_optional_nodes() -> None:
     script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
 

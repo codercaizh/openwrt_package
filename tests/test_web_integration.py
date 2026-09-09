@@ -76,6 +76,7 @@ def test_source_refresh_keeps_catalogs_distinct_for_shared_source_devices(tmp_pa
 
     state = storage.get_state("source")
     assert state["ready"] is True
+    assert state["last_success_at"] == state["finished_at"]
     first = storage.latest_catalog(prepared.snapshot_id, "s905d")
     second = storage.latest_catalog(prepared.snapshot_id, "vplus")
     assert first is not None and second is not None
@@ -129,6 +130,7 @@ def test_source_refresh_failure_preserves_a_readable_current_snapshot(tmp_path: 
         path=tmp_path / "source",
         catalog_path=tmp_path / "catalog.json",
         source_commit="source-sha",
+        created_at="2026-09-08T17:39:48+00:00",
     )
 
     class SourceStub:
@@ -163,6 +165,25 @@ def test_source_refresh_failure_preserves_a_readable_current_snapshot(tmp_path: 
     assert state["status"] == "failed"
     assert state["ready"] is True
     assert state["snapshot_id"] == prepared.snapshot_id
+    assert state["last_success_at"] == "2026-09-08T17:39:48+00:00"
+    assert state["finished_at"] != state["last_success_at"]
+
+
+def test_public_source_state_does_not_use_failed_attempt_time_for_old_state() -> None:
+    public = web_module._public_source_state(
+        {
+            "status": "failed",
+            "ready": True,
+            "finished_at": "2026-09-09T05:29:33+00:00",
+            "snapshot": {
+                "snapshot_id": "current-v5",
+                "created_at": "2026-09-08T17:39:48+00:00",
+            },
+        }
+    )
+
+    assert public["last_success_at"] == "2026-09-08T17:39:48+00:00"
+    assert public["finished_at"] == "2026-09-09T05:29:33+00:00"
 
 
 def test_login_csrf_and_session_protection(tmp_path: Path) -> None:

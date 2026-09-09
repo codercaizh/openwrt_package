@@ -258,6 +258,14 @@ class SourceService:
         previous = raw_previous if isinstance(raw_previous, Mapping) else {}
         previous_ready = self._previous_state_usable(previous)
         preparing = dict(previous) if previous_ready else {}
+        # ``finished_at`` records the latest attempt, including failures.  Keep
+        # the last successful completion separately so a refresh in progress or
+        # a failed refresh cannot make the current snapshot look newer than it
+        # is.  Older state has no such field, so migrate from the immutable
+        # snapshot's creation time when it is available.
+        last_success_at = _source_last_success_at(previous) if previous_ready else None
+        if last_success_at:
+            preparing["last_success_at"] = last_success_at
         preparing.update({"status": "preparing", "ready": previous_ready, "reason": reason, "started_at": started})
         self.storage.set_state("source", preparing)
 
@@ -302,6 +310,7 @@ class SourceService:
                     if device != "*":
                         state_snapshots[device] = snapshot
                 first_snapshot = first_snapshot or snapshot
+            finished_at = utc_now()
             self.storage.set_state(
                 "source",
                 {
@@ -311,13 +320,16 @@ class SourceService:
                     "snapshot_id": first_snapshot.get("snapshot_id") if first_snapshot else None,
                     "snapshots": state_snapshots,
                     "last_attempt_failed": False,
-                    "finished_at": utc_now(),
+                    "finished_at": finished_at,
+                    "last_success_at": finished_at,
                     "reason": reason,
                 },
             )
         except Exception as exc:  # keep old current/catalog available on failure
             LOGGER.exception("source preparation failed")
             failed = dict(previous) if previous_ready else {}
+            if last_success_at:
+                failed["last_success_at"] = last_success_at
             failed.update({
                 "status": "failed",
                 "ready": previous_ready,
@@ -1067,6 +1079,13 @@ def _public_source_state(state: Mapping[str, Any] | None) -> dict[str, Any]:
     if not state:
         return {"status": "not_started", "ready": False}
     result = {str(key): _json_safe(value) for key, value in state.items()}
+    # Keep the API useful for state written before ``last_success_at`` was
+    # introduced.  A snapshot's created_at is immutable and therefore safe as
+    # a migration fallback; the attempt finished_at is deliberately excluded.
+    if result.get("ready") and not result.get("last_success_at"):
+        last_success_at = _source_last_success_at(result)
+        if last_success_at:
+            result["last_success_at"] = last_success_at
     for key in ("snapshot", "snapshots"):
         value = result.get(key)
         if isinstance(value, Mapping):
@@ -1084,6 +1103,32 @@ def _public_source_state(state: Mapping[str, Any] | None) -> dict[str, Any]:
                 if field in value
             }
     return result
+
+
+def _source_last_success_at(state: Mapping[str, Any]) -> str | None:
+    """Return the stable timestamp for the currently usable source snapshot."""
+
+    value = state.get("last_success_at")
+    if isinstance(value, str) and value.strip():
+        return value
+    candidates: list[str] = []
+    snapshot = state.get("snapshot")
+    if isinstance(snapshot, Mapping):
+        created_at = snapshot.get("created_at")
+        if isinstance(created_at, str) and created_at.strip():
+            candidates.append(created_at)
+    snapshots = state.get("snapshots")
+    if isinstance(snapshots, Mapping):
+        # This is only a migration fallback for old state without a top-level
+        # success timestamp.  ISO-8601 timestamps sort lexicographically when
+        # emitted by the builder, so the newest available snapshot is enough.
+        candidates.extend(
+            value.get("created_at")
+            for value in snapshots.values()
+            if isinstance(value, Mapping) and isinstance(value.get("created_at"), str)
+        )
+    candidates = [value for value in candidates if value.strip()]
+    return max(candidates) if candidates else None
 
 
 def _supported_devices(runtime: Runtime) -> list[DeviceSpec]:

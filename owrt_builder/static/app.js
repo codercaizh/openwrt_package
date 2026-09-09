@@ -44,6 +44,13 @@
     return `${beijingTimeFormatter.format(date)} 北京时间`;
   }
 
+  function formatSourceUpdateTime(source) {
+    const value = source?.last_success_at || source?.snapshot?.created_at;
+    if (!value) return "当前版本更新时间未知";
+    const formatted = formatBeijingTime(value);
+    return formatted.startsWith("时间无效") ? "当前版本更新时间未知" : `当前版本更新时间 ${formatted}`;
+  }
+
   function csrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)owrt_csrf=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : "";
@@ -251,12 +258,13 @@
       const result = await api("/api/sources");
       const ready = Boolean(result.ready);
       const badge = $("source-badge");
+      const updatedAt = formatSourceUpdateTime(result);
       badge.textContent = ready
         ? result.status === "preparing"
-          ? `源码更新中（沿用旧快照）· ${String(result.snapshot_id || "").slice(0, 12)}`
+          ? `源码更新中 · ${updatedAt}`
           : result.status === "failed"
-            ? `源码更新失败（沿用旧快照）· ${String(result.snapshot_id || "").slice(0, 12)}`
-            : `源码已就绪 · ${String(result.snapshot_id || "").slice(0, 12)}`
+            ? `更新失败 · ${updatedAt}`
+            : `源码已就绪 · ${updatedAt}`
         : result.status === "failed" ? "源码更新失败" : "源码准备中";
       badge.className = `badge ${ready ? "ready" : ""}`;
       if (result.status === "preparing" && !state.sourcePoll) {
