@@ -97,8 +97,11 @@ def test_source_badge_stays_compact_on_narrow_screens() -> None:
     assert ".topbar { min-width:0;" in style
     assert ".top-actions { min-width:0;" in style
     assert ".badge { display:inline-flex;" in style
+    assert ".top-actions > button { flex:0 0 auto; white-space:nowrap; }" in style
+    assert ".top-actions > .badge { flex:1 1 auto; }" in style
     assert "text-overflow:ellipsis" in style
     assert "@media (max-width:760px) { .top-actions { flex:1 1 100%;" in style
+    assert "flex-direction:column; align-items:flex-end" not in style
 
 
 def test_top_level_event_bindings_tolerate_missing_optional_nodes() -> None:
