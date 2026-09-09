@@ -179,18 +179,40 @@ def compose_fragment(
     produce a generic image.
     """
 
+    append_text, fragment_text = compose_fragment_parts(
+        fragment,
+        defconfig_dir=defconfig_dir,
+    )
+    if not append_text:
+        return fragment_text
+    return append_text + "\n" + fragment_text
+
+
+def compose_fragment_parts(
+    fragment: str | os.PathLike[str],
+    *,
+    defconfig_dir: str | os.PathLike[str] | None = None,
+) -> tuple[str, str]:
+    """Return ``(CONFIG_APPEND text, device fragment text)``.
+
+    ``CONFIG_APPEND`` is a board baseline, rather than part of the device's
+    selectable plugin fragment.  Callers that need to edit package symbols
+    must keep these two pieces separate so an explicit Web package list cannot
+    remove hardware-required packages from the append file.
+    """
+
     path = Path(fragment)
     text = path.read_text(encoding="utf-8")
     match = re.search(r"^\s*#CONFIG_APPEND=([^\s#]+)\s*$", text, flags=re.MULTILINE)
     if not match:
-        return text
+        return "", text
     if defconfig_dir is None:
         raise ConfigurationError(f"{path} requests CONFIG_APPEND but no defconfig directory was supplied")
     append_name = match.group(1)
     append_path = Path(defconfig_dir) / append_name
     if not append_path.is_file():
         raise ConfigurationError(f"requested CONFIG_APPEND file not found: {append_path}")
-    return append_path.read_text(encoding="utf-8") + "\n" + text
+    return append_path.read_text(encoding="utf-8"), text
 
 
 def _package_for_symbol(catalog: Catalog, symbol: str) -> tuple[str | None, bool]:
@@ -470,6 +492,7 @@ __all__ = [
     "ConfigValidation",
     "ConfigurationError",
     "compose_fragment",
+    "compose_fragment_parts",
     "parse_config",
     "validate_fragment",
     "validate_with_defconfig",

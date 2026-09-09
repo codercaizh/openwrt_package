@@ -27,7 +27,13 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 import uuid
 
 from .catalog import Catalog
-from .configuration import ConfigDocument, ConfigEntry, compose_fragment, parse_config, validate_fragment
+from .configuration import (
+    ConfigDocument,
+    ConfigEntry,
+    compose_fragment_parts,
+    parse_config,
+    validate_fragment,
+)
 from .devices import CatalogError, DeviceCatalog, DeviceSpec, SourceSpec, load_catalog
 from .arm_packager import ArmPackagerError, package_arm
 from .cache import BuildCacheError, BuildCacheManager
@@ -65,6 +71,32 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _deduplicate_config_assignments(text: str) -> str:
+    """Keep the last assignment for each Kconfig symbol in a fragment.
+
+    Device append files and the main fragment can both mention a package or
+    option.  The later fragment is the deliberate override, but emitting both
+    assignments makes the generated config ambiguous to humans and to tools
+    that inspect it before ``make defconfig``.  Preserve comments and blank
+    lines while dropping only superseded config assignment lines.
+    """
+
+    lines = text.splitlines(keepends=True)
+    last_line: dict[str, int] = {}
+    parsed: list[tuple[str, str | None]] = []
+    for index, line in enumerate(lines):
+        entries = parse_config(line).entries
+        symbol = entries[0].symbol if len(entries) == 1 else None
+        parsed.append((line, symbol))
+        if symbol is not None:
+            last_line[symbol] = index
+    return "".join(
+        line
+        for index, (line, symbol) in enumerate(parsed)
+        if symbol is None or last_line[symbol] == index
+    )
 
 
 def _safe_task_id(value: str) -> str:
@@ -1168,9 +1200,14 @@ class BuildEngine:
         if not device_config.is_file():
             raise BuildError(f"device config not found: {device_config}")
         try:
-            device_text = compose_fragment(
+            append_text, fragment_text = compose_fragment_parts(
                 device_config,
                 defconfig_dir=openwrt_dir / "defconfig",
+            )
+            device_text = (
+                append_text + "\n" + fragment_text
+                if append_text
+                else fragment_text
             )
         except Exception as exc:
             raise BuildError(f"unable to compose device config: {exc}") from exc
@@ -1264,11 +1301,16 @@ class BuildEngine:
         # The reviewed fragment may already contain target/profile entries.
         # Remove those exact symbols before adding the canonical target block
         # once, avoiding duplicate Kconfig assignments and choice overrides.
-        device_text_for_output = "".join(
-            line
-            for line in device_text.splitlines(keepends=True)
-            if not any(entry.symbol in target_symbols for entry in parse_config(line).entries)
-        )
+        def remove_target_symbols(text: str) -> str:
+            return "".join(
+                line
+                for line in text.splitlines(keepends=True)
+                if not any(entry.symbol in target_symbols for entry in parse_config(line).entries)
+            )
+
+        device_text_for_output = remove_target_symbols(device_text)
+        append_text_for_output = remove_target_symbols(append_text)
+        fragment_text_for_output = remove_target_symbols(fragment_text)
         base_config = config_root / "base.config"
         if base_config.is_file():
             chunks.append(base_config.read_text(encoding="utf-8"))
@@ -1279,10 +1321,13 @@ class BuildEngine:
             chunks.append(device_text_for_output)
         else:
             # An explicit package list is a deliberate replacement of every
-            # package symbol and package-local option, including
-            # ``# CONFIG_PACKAGE_x is not set`` entries.  Parsing against the
-            # prepared ownership map avoids leaving an old disabled option
-            # behind when a child Kconfig symbol has a different prefix.
+            # package symbol and package-local option in the main device
+            # fragment, including ``# CONFIG_PACKAGE_x is not set`` entries.
+            # The CONFIG_APPEND file is a hardware baseline and must remain
+            # intact even when the Web UI sends an explicit package list.
+            # Parsing against the prepared ownership map avoids leaving an old
+            # disabled option behind when a child Kconfig symbol has a
+            # different prefix.
             owned_symbols = {
                 item.symbol
                 for item in catalog.packages
@@ -1292,10 +1337,11 @@ class BuildEngine:
                 for item in catalog.packages
                 for option in item.options
             )
+            chunks.append(append_text_for_output)
             chunks.append(
                 "".join(
                     line
-                    for line in device_text_for_output.splitlines(keepends=True)
+                    for line in fragment_text_for_output.splitlines(keepends=True)
                     if not any(
                         entry.symbol in owned_symbols
                         for entry in parse_config(line).entries
@@ -1309,7 +1355,7 @@ class BuildEngine:
             chunks.append(f"CONFIG_PACKAGE_{package}=y\n")
         for entry in option_entries:
             chunks.append(f"{entry.symbol}={entry.value}\n")
-        rendered = "".join(chunks)
+        rendered = _deduplicate_config_assignments("".join(chunks))
         rendered_doc = parse_config(rendered)
         for symbol in target_symbols:
             if sum(entry.symbol == symbol for entry in rendered_doc.entries) != 1:

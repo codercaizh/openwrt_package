@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from owrt_builder.build import BuildCancelled, BuildEngine, BuildError, BuildRequest, CommandFailed
+from owrt_builder.catalog import Catalog, KconfigOption, PackageMetadata
+from owrt_builder.devices import DeviceCatalog, DeviceSpec, SourceSpec
 from owrt_builder.sources import PREPARATION_VERSION
 
 
@@ -216,6 +218,110 @@ def test_pipeline_does_not_start_verbose_compile_after_cancellation(tmp_path: Pa
 
     assert commands == [["make", "defconfig"], ["make", "download"], ["make", "-j4"]]
     assert any("跳过详细诊断编译" in line for line in lines)
+
+
+def test_explicit_packages_keep_config_append_hardware_baseline(tmp_path: Path) -> None:
+    """Web package replacement must not remove board-required append symbols."""
+
+    repo_root = tmp_path / "repo"
+    config_root = repo_root / "configs"
+    config_root.mkdir(parents=True)
+    (config_root / "n60pro.config").write_text(
+        """CONFIG_TARGET_mediatek_filogic_DEVICE_n60pro=y
+CONFIG_PACKAGE_main-plugin=y
+CONFIG_MAIN_PLUGIN_MODE=n
+CONFIG_PACKAGE_optional-plugin=y
+#CONFIG_APPEND=board.config
+""",
+        encoding="utf-8",
+    )
+    openwrt_dir = tmp_path / "openwrt"
+    (openwrt_dir / "defconfig").mkdir(parents=True)
+    (openwrt_dir / "defconfig" / "board.config").write_text(
+        """CONFIG_CONNINFRA_AUTO_UP=y
+CONFIG_MTK_MT_WIFI=m
+CONFIG_MTK_WARP_V2=y
+CONFIG_PACKAGE_kmod-mediatek_hnat=y
+CONFIG_PACKAGE_kmod-mt_wifi=y
+CONFIG_PACKAGE_kmod-warp=y
+CONFIG_PACKAGE_main-plugin=y
+CONFIG_MAIN_PLUGIN_MODE=n
+""",
+        encoding="utf-8",
+    )
+
+    spec = DeviceSpec(
+        key="n60pro",
+        aliases=(),
+        platform="mediatek",
+        source_id="test-source",
+        profile="n60pro",
+        config="n60pro.config",
+        packager="mediatek",
+        target="mediatek/filogic",
+    )
+    source = SourceSpec(
+        id="test-source",
+        url="https://example.invalid/source.git",
+        branch="main",
+        snapshot="0123456789abcdef0123456789abcdef01234567",
+        platform="mediatek",
+    )
+    devices = DeviceCatalog(
+        path=config_root / "devices.toml",
+        default_config="n60pro.config",
+        sources={source.id: source},
+        devices={spec.key: spec},
+    )
+    packages = [
+        PackageMetadata(
+            name="main-plugin",
+            options=[
+                KconfigOption(
+                    symbol="CONFIG_MAIN_PLUGIN_MODE",
+                    kind="bool",
+                    package="main-plugin",
+                ),
+            ],
+        ),
+        PackageMetadata(name="optional-plugin"),
+        PackageMetadata(name="kmod-mediatek_hnat"),
+        PackageMetadata(name="kmod-mt_wifi"),
+        PackageMetadata(name="kmod-warp"),
+    ]
+    catalog = Catalog(root=openwrt_dir, packages=packages, authoritative=True)
+    engine = BuildEngine(
+        repo_root=repo_root,
+        workspace=tmp_path / "workspace",
+        catalog=devices,
+        use_docker=False,
+    )
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+
+    output = engine._write_config(
+        spec,
+        source,
+        openwrt_dir,
+        build_dir,
+        ("main-plugin",),
+        {"CONFIG_MAIN_PLUGIN_MODE": True},
+        catalog,
+    )
+    text = output.read_text(encoding="utf-8")
+
+    assert "CONFIG_PACKAGE_kmod-mediatek_hnat=y" in text
+    assert "CONFIG_PACKAGE_kmod-mt_wifi=y" in text
+    assert "CONFIG_PACKAGE_kmod-warp=y" in text
+    assert "CONFIG_CONNINFRA_AUTO_UP=y" in text
+    assert "CONFIG_MTK_MT_WIFI=m" in text
+    assert "CONFIG_MTK_WARP_V2=y" in text
+    assert "CONFIG_PACKAGE_optional-plugin=y" not in text
+    assert "CONFIG_PACKAGE_main-plugin=y" in text
+    assert "CONFIG_MAIN_PLUGIN_MODE=y" in text
+    assert text.count("CONFIG_PACKAGE_main-plugin=") == 1
+    assert text.count("CONFIG_MAIN_PLUGIN_MODE=") == 1
+    assert text.count("CONFIG_PACKAGE_kmod-mediatek_hnat=") == 1
 
 
 def test_requested_snapshot_errors_preserve_missing_vs_contaminated_reason(tmp_path: Path) -> None:
