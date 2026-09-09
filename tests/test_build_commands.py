@@ -139,9 +139,9 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
         ["make", "defconfig"],
         ["make", "download"],
         ["make", "-j3"],
-        ["make", "-j3", "V=s"],
+        ["make", "V=s", "-j1"],
     ]
-    assert any("开始详细诊断：make -j3 V=s" in line for line in lines)
+    assert any("开始串行详细诊断：make V=s -j1" in line for line in lines)
     assert any("首次正式编译错误" in line for line in lines)
     assert any("正式编译仍判定为失败" in line for line in lines)
 
@@ -159,7 +159,7 @@ def test_pipeline_preserves_formal_error_when_verbose_compile_fails(tmp_path: Pa
         commands.append(list(command))
         if command == ["make", "-j2"]:
             raise CommandFailed(command, 2)
-        if command == ["make", "-j2", "V=s"]:
+        if command == ["make", "V=s", "-j1"]:
             raise CommandFailed(command, 7)
 
     engine._run_checked = run_checked  # type: ignore[method-assign]
@@ -174,7 +174,7 @@ def test_pipeline_preserves_formal_error_when_verbose_compile_fails(tmp_path: Pa
             jobs=2,
         )
 
-    assert commands[-2:] == [["make", "-j2"], ["make", "-j2", "V=s"]]
+    assert commands[-2:] == [["make", "-j2"], ["make", "V=s", "-j1"]]
     assert any("首次正式编译错误" in line and "exited 2" in line for line in lines)
     assert any("详细诊断编译错误" in line and "exited 7" in line for line in lines)
 

@@ -1386,11 +1386,11 @@ class BuildEngine:
         """Run the formal compile and retain a verbose failure diagnostic.
 
         OpenWrt's parallel make output often ends with only the failing target.
-        If that formal compile fails, immediately rerun the same target with
-        the caller's job count and ``V=s`` in the same tree.  The diagnostic
-        result never changes the outcome of the formal compile: a successful
-        diagnostic is still a failed build, and a diagnostic failure is
-        reported alongside the original failure in the streamed log.
+        If that formal compile fails, immediately rerun the same tree in
+        serial verbose mode (``make V=s -j1``).  The diagnostic result never
+        changes the outcome of the formal compile: a successful diagnostic is
+        still a failed build, and a diagnostic failure is reported alongside
+        the original failure in the streamed log.
         """
 
         command = ["make", f"-j{jobs}"]
@@ -1409,7 +1409,7 @@ class BuildEngine:
         except CommandFailed as exc:
             formal_error = exc
             self._emit(callback, "")
-            self._emit(callback, "========== 正式编译失败，开始详细诊断：make -j%s V=s ==========" % jobs)
+            self._emit(callback, "========== 正式编译失败，开始串行详细诊断：make V=s -j1 ==========")
             self._emit(callback, f"首次正式编译错误：{formal_error}")
 
         # The event can be set after the formal command exits but before the
@@ -1419,7 +1419,7 @@ class BuildEngine:
             self._emit(callback, "已收到取消请求，跳过详细诊断编译")
             raise BuildCancelled()
 
-        diagnostic_command = ["make", f"-j{jobs}", "V=s"]
+        diagnostic_command = ["make", "V=s", "-j1"]
         try:
             self._run_checked(
                 diagnostic_command,
