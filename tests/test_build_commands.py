@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 import tarfile
 import time
@@ -13,7 +14,7 @@ import pytest
 from owrt_builder.build import BuildCancelled, BuildEngine, BuildError, BuildRequest, CommandFailed
 from owrt_builder.catalog import Catalog, KconfigOption, PackageMetadata
 from owrt_builder.devices import DeviceCatalog, DeviceSpec, SourceSpec
-from owrt_builder.sources import PREPARATION_VERSION
+from owrt_builder.sources import PREPARATION_VERSION, SourceManager
 
 
 def _capture_worker_command(tmp_path: Path, device: str) -> list[str]:
@@ -31,6 +32,23 @@ def _capture_worker_command(tmp_path: Path, device: str) -> list[str]:
     assert not result.ok
     assert commands
     return commands[0]
+
+
+def _git_seed_source(root: Path) -> Path:
+    source = root / "source"
+    seed = source / "dl" / "datconf-6bb733f7.tar.bz2"
+    seed.parent.mkdir(parents=True)
+    seed.write_bytes(b"trusted source seed\n")
+    subprocess.run(["git", "init", "-q", str(source)], check=True)
+    subprocess.run(["git", "-C", str(source), "config", "user.name", "test"], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "config", "user.email", "test@example.invalid"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(source), "add", "dl"], check=True)
+    subprocess.run(["git", "-C", str(source), "commit", "-qm", "seed"], check=True)
+    SourceManager._clean_generated_tree(source)
+    return source
 
 
 def test_mediatek_worker_keeps_host_uid_without_privilege_or_host_network(tmp_path: Path) -> None:
@@ -83,6 +101,25 @@ def test_stream_forwards_low_volume_output_before_process_exit(tmp_path: Path) -
     assert observed and observed[0] < 0.8
     assert log_at_first_line and b"first-line\n" in log_at_first_line[0]
     assert log_path.read_bytes().endswith(b"last-line\n")
+
+
+def test_copy_snapshot_stages_tracked_download_seed_before_linking_public_cache(tmp_path: Path) -> None:
+    source = _git_seed_source(tmp_path)
+    workspace = tmp_path / "workspace"
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+
+    destination = BuildEngine._copy_snapshot(
+        source,
+        build_dir,
+        lambda _line: None,
+        workspace=workspace,
+    )
+
+    cached_seed = workspace / "cache" / "dl" / "datconf-6bb733f7.tar.bz2"
+    assert cached_seed.read_bytes() == b"trusted source seed\n"
+    assert (destination / "dl").is_symlink()
+    assert (destination / "dl" / "datconf-6bb733f7.tar.bz2").read_bytes() == cached_seed.read_bytes()
 
 
 def test_arm_worker_uses_privilege_without_host_uid_or_host_network(tmp_path: Path) -> None:

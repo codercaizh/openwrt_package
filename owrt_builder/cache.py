@@ -27,6 +27,8 @@ import time
 import uuid
 from typing import Any, Callable, Iterable, Iterator, Mapping
 
+from .sources import SourceError, stage_download_seeds
+
 
 LogCallback = Callable[[str], None]
 
@@ -1197,6 +1199,10 @@ class BuildCacheManager:
         destination = lease.source_root
         if not destination.is_dir() or destination.is_symlink():
             raise BuildCacheError(f"cached source tree missing: {destination}")
+        try:
+            stage_download_seeds(snapshot_path, self.download_cache)
+        except SourceError as exc:
+            raise BuildCacheError(f"invalid tracked download seed: {exc}") from exc
         self.touch(
             lease.device,
             task_id=lease.task_id,

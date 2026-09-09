@@ -37,7 +37,7 @@ from .configuration import (
 from .devices import CatalogError, DeviceCatalog, DeviceSpec, SourceSpec, load_catalog
 from .arm_packager import ArmPackagerError, package_arm
 from .cache import BuildCacheError, BuildCacheManager
-from .sources import PreparedSource, SourceError, SourceManager
+from .sources import PreparedSource, SourceError, SourceManager, stage_download_seeds
 
 
 LogCallback = Callable[[str], None]
@@ -1153,6 +1153,12 @@ class BuildEngine:
             raise BuildError(f"prepared source path missing: {snapshot_path}")
         destination = build_dir / "openwrt"
         BuildEngine._emit(callback, f"复制不可变源码快照到 {destination}")
+        workspace = workspace or build_dir.parent.parent
+        download_cache = workspace / "cache" / "dl"
+        try:
+            stage_download_seeds(snapshot_path, download_cache)
+        except SourceError as exc:
+            raise BuildError(f"invalid tracked download seed: {exc}") from exc
         shutil.copytree(snapshot_path, destination, symlinks=True)
         # A published source snapshot is deliberately independent of the
         # preparation container, but older snapshots may still contain
@@ -1168,8 +1174,6 @@ class BuildEngine:
                 path.unlink()
             else:
                 shutil.rmtree(path)
-        workspace = workspace or build_dir.parent.parent
-        download_cache = workspace / "cache" / "dl"
         download_cache.mkdir(parents=True, exist_ok=True)
         os.symlink(os.path.relpath(download_cache, destination), destination / "dl")
         return destination

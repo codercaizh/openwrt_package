@@ -13,8 +13,9 @@ from contextlib import contextmanager
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -37,12 +38,26 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # Version 6 invalidates snapshots created while Web native defconfig
 # validation could write into the published tree.  Such snapshots may contain
 # ``staging_dir``/``tmp`` and must never be handed to a worker again.
-PREPARATION_VERSION = 6
+# Version 7 preserves and validates source archives which are tracked by the
+# OpenWrt repository under ``dl``.  Earlier snapshots deleted those archives
+# while cleaning preparation-container state.
+PREPARATION_VERSION = 7
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 
 class SourceError(RuntimeError):
     """A source/feed operation failed before a new snapshot was published."""
+
+
+@dataclass(frozen=True)
+class DownloadSeed:
+    """A regular file tracked by the source repository under ``dl``."""
+
+    relative_path: PurePosixPath
+    source_path: Path
+    object_id: str
+    mode: int
+    sha256: str
 
 
 @dataclass(frozen=True)
@@ -134,6 +149,297 @@ def _json_load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SourceError(f"invalid snapshot manifest: {path}")
     return value
+
+
+def _remove_path(path: Path) -> None:
+    """Remove one path without following a top-level symlink."""
+
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _safe_download_relative_path(raw: str) -> PurePosixPath:
+    """Validate a Git path before using it below a source/cache root."""
+
+    relative = PurePosixPath(raw)
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or relative.parts[0] != "dl"
+        or len(relative.parts) == 1
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise SourceError(f"invalid tracked download seed path: {raw!r}")
+    return relative
+
+
+def _git_run(source_path: Path, args: Sequence[str], *, text: bool = False) -> bytes | str:
+    """Run a read-only Git query for a prepared source tree."""
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(source_path), *args],
+            capture_output=True,
+            check=True,
+            text=text,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        raise SourceError(f"git {' '.join(args)} failed: {detail}") from exc
+    return result.stdout
+
+
+def _tracked_download_entries(source_path: Path) -> dict[PurePosixPath, tuple[int, str]]:
+    """Return regular-file entries tracked by ``HEAD`` below ``dl``.
+
+    The source snapshots retain their Git metadata, which gives us an
+    authoritative allow-list even when the preparation commands have left
+    ignored or untracked files in the working tree.  A source without Git
+    metadata cannot have trusted seeds; callers handle that as an empty list
+    during cleanup and as an error when a ``dl`` tree is present at validation.
+    """
+
+    git_metadata = source_path / ".git"
+    if not git_metadata.exists():
+        return {}
+    if git_metadata.is_symlink() or not git_metadata.is_dir():
+        raise SourceError(f"source Git metadata must be a private directory: {git_metadata}")
+    output = _git_run(
+        source_path,
+        ["ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", "dl"],
+    )
+    assert isinstance(output, bytes)
+    entries: dict[PurePosixPath, tuple[int, str]] = {}
+    for record in output.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, raw_name = record.split(b"\t", 1)
+            mode_text, object_type, object_id = metadata.decode("ascii").split()
+            name = raw_name.decode("utf-8", errors="surrogateescape")
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise SourceError(f"invalid Git tree entry below dl in {source_path}") from exc
+        relative = _safe_download_relative_path(name)
+        mode = int(mode_text, 8)
+        if object_type != "blob" or not stat.S_ISREG(mode):
+            raise SourceError(f"tracked download seed is not a regular file: {name}")
+        entries[relative] = (mode, object_id)
+    return entries
+
+
+def _git_blob(source_path: Path, object_id: str) -> bytes:
+    output = _git_run(source_path, ["cat-file", "blob", object_id])
+    assert isinstance(output, bytes)
+    return output
+
+
+def _git_hash(source_path: Path, relative: PurePosixPath) -> str:
+    output = _git_run(source_path, ["hash-object", "--", relative.as_posix()], text=True)
+    assert isinstance(output, str)
+    return output.strip()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def validate_download_seeds(source_path: str | os.PathLike[str]) -> dict[PurePosixPath, DownloadSeed]:
+    """Validate and return the exact tracked files present below ``dl``.
+
+    A source snapshot may contain ``dl`` only when every file in it is a
+    regular file tracked by the source repository's ``HEAD``.  The working
+    tree is checked for extra files, symlinks, path escapes, missing files and
+    content changes.  An absent ``dl`` directory is valid for sources that do
+    not vendor download seeds.
+    """
+
+    root = Path(source_path)
+    if root.is_symlink() or not root.is_dir():
+        raise SourceError(f"prepared source path missing: {root}")
+    dl = root / "dl"
+    has_dl = dl.exists() or dl.is_symlink()
+    entries = _tracked_download_entries(root)
+    if not entries:
+        if has_dl:
+            raise SourceError("source snapshot contains an untracked or empty dl tree")
+        return {}
+    if dl.is_symlink() or not dl.is_dir():
+        raise SourceError("source snapshot dl tree must be a regular directory")
+
+    seeds: dict[PurePosixPath, DownloadSeed] = {}
+    expected = set(entries)
+    root_resolved = root.resolve()
+    dl_resolved = dl.resolve()
+    for relative, (mode, object_id) in entries.items():
+        path = root.joinpath(*relative.parts)
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(root_resolved)
+            resolved.relative_to(dl_resolved)
+        except (OSError, ValueError) as exc:
+            raise SourceError(f"download seed is missing: {relative}") from exc
+        parent = path.parent
+        while parent != root:
+            if parent.is_symlink():
+                raise SourceError(f"download seed path contains a symlink: {relative}")
+            parent = parent.parent
+        if path.is_symlink() or not path.is_file():
+            raise SourceError(f"download seed is not a regular file: {relative}")
+        actual_object_id = _git_hash(root, relative)
+        if actual_object_id != object_id:
+            raise SourceError(f"download seed content differs from Git HEAD: {relative}")
+        seeds[relative] = DownloadSeed(
+            relative_path=relative,
+            source_path=path,
+            object_id=object_id,
+            mode=mode,
+            sha256=_file_sha256(path),
+        )
+
+    seen: set[PurePosixPath] = set()
+    for current, directories, files in os.walk(dl, followlinks=False):
+        current_path = Path(current)
+        for name in directories:
+            item = current_path / name
+            relative = PurePosixPath(item.relative_to(root).as_posix())
+            if item.is_symlink():
+                raise SourceError(f"source snapshot dl contains a symlink: {relative}")
+            if not item.is_dir():
+                raise SourceError(f"source snapshot dl contains a non-directory: {relative}")
+            try:
+                item.resolve(strict=True).relative_to(dl_resolved)
+            except (OSError, ValueError) as exc:
+                raise SourceError(f"source snapshot dl path escapes its root: {relative}") from exc
+        for name in files:
+            item = current_path / name
+            relative = PurePosixPath(item.relative_to(root).as_posix())
+            if item.is_symlink():
+                raise SourceError(f"source snapshot dl contains a symlink: {relative}")
+            if not item.is_file():
+                raise SourceError(f"source snapshot dl contains a non-regular file: {relative}")
+            if relative not in expected:
+                raise SourceError(f"source snapshot contains an untracked dl file: {relative}")
+            seen.add(relative)
+    missing = expected - seen
+    if missing:
+        names = ", ".join(sorted(path.as_posix() for path in missing))
+        raise SourceError(f"source snapshot is missing tracked dl seed(s): {names}")
+    return seeds
+
+
+def _restore_tracked_download_seeds(
+    source_path: Path,
+    entries: Mapping[PurePosixPath, tuple[int, str]],
+) -> None:
+    """Replace ``source_path/dl`` with the exact Git-tracked seed files."""
+
+    dl = source_path / "dl"
+    if not entries:
+        _remove_path(dl)
+        return
+    temporary = source_path / f".dl-seeds.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    temporary.mkdir()
+    try:
+        for relative, (mode, object_id) in entries.items():
+            destination = temporary.joinpath(*relative.parts[1:])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(_git_blob(source_path, object_id))
+            os.chmod(destination, mode & 0o777)
+        _remove_path(dl)
+        os.replace(temporary, dl)
+    finally:
+        _remove_path(temporary)
+
+
+@contextmanager
+def _download_seed_lock(download_cache: Path):
+    """Serialize seed imports without locking the mutable OpenWrt tree."""
+
+    lock_path = download_cache.parent / ".dl-seeds.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as handle:
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except (ImportError, OSError) as exc:
+            raise SourceError(f"unable to lock download cache: {lock_path}") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _cache_target(download_cache: Path, relative: PurePosixPath) -> Path:
+    """Create and validate cache parents without following symlinks."""
+
+    if download_cache.is_symlink() or not download_cache.is_dir():
+        raise SourceError(f"download cache must be a regular directory: {download_cache}")
+    parent = download_cache
+    for part in relative.parts[1:-1]:
+        parent = parent / part
+        if parent.is_symlink():
+            raise SourceError(f"download cache path contains a symlink: {relative}")
+        if parent.exists() and not parent.is_dir():
+            raise SourceError(f"download cache path is not a directory: {relative}")
+        parent.mkdir(exist_ok=True)
+    return parent / relative.parts[-1]
+
+
+def _install_download_seed(seed: DownloadSeed, download_cache: Path) -> None:
+    target = _cache_target(download_cache, seed.relative_path)
+    if target.is_symlink():
+        raise SourceError(f"download cache contains a symlink for {seed.relative_path}")
+    if target.is_dir():
+        raise SourceError(f"download cache contains a directory for {seed.relative_path}")
+    if target.is_file() and _file_sha256(target) == seed.sha256:
+        return
+
+    temporary_fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.seed.",
+        dir=target.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(temporary_fd, "wb") as output, seed.source_path.open("rb") as source:
+            shutil.copyfileobj(source, output, length=1024 * 1024)
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(temporary, seed.mode & 0o777)
+        os.replace(temporary, target)
+        if _file_sha256(target) != seed.sha256:
+            raise SourceError(f"download cache seed verification failed: {seed.relative_path}")
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def stage_download_seeds(
+    source_path: str | os.PathLike[str],
+    download_cache: str | os.PathLike[str],
+) -> tuple[DownloadSeed, ...]:
+    """Atomically import validated source seeds into the shared download cache."""
+
+    seeds = validate_download_seeds(source_path)
+    if not seeds:
+        return ()
+    cache = Path(download_cache)
+    if cache.is_symlink():
+        raise SourceError(f"download cache must not be a symlink: {cache}")
+    if cache.exists() and not cache.is_dir():
+        raise SourceError(f"download cache must be a regular directory: {cache}")
+    cache.mkdir(parents=True, exist_ok=True)
+    if cache.is_symlink() or not cache.is_dir():
+        raise SourceError(f"download cache must be a regular directory: {cache}")
+    with _download_seed_lock(cache):
+        for seed in seeds.values():
+            _install_download_seed(seed, cache)
+    return tuple(seeds.values())
 
 
 class SourceManager:
@@ -268,6 +574,7 @@ class SourceManager:
         stale_generated = [
             name
             for name in _GENERATED_TREE_NAMES
+            if name != "dl"
             if (source_path / name).exists() or (source_path / name).is_symlink()
         ]
         feeds_path = source_path / "feeds"
@@ -286,6 +593,7 @@ class SourceManager:
                 f"source snapshot contains preparation-runtime directories: "
                 f"{', '.join(stale_generated)}"
             )
+        validate_download_seeds(source_path)
         return PreparedSource(
             source_id=source_id,
             snapshot_id=snapshot_id,
@@ -374,12 +682,17 @@ class SourceManager:
         caches under ``tmp``/``dl``.  Those files are tied to the preparation
         container (and may contain absolute interpreter symlinks), so copying
         them into a later build container can make an otherwise valid snapshot
-        fail before Kconfig starts.  The authoritative package catalogue has
-        already been serialized beside the source tree at this point; the
-        build worker recreates its own metadata/build directories.
+        fail before Kconfig starts.  The exception is a source repository's
+        tracked download seeds under ``dl``; those are restored from Git below.
+        The authoritative package catalogue has already been serialized beside
+        the source tree at this point; the build worker recreates its own
+        metadata/build directories.
         """
 
+        tracked_downloads = _tracked_download_entries(source_path)
         for name in _GENERATED_TREE_NAMES:
+            if name == "dl":
+                continue
             path = source_path / name
             if not (path.exists() or path.is_symlink()):
                 continue
@@ -387,6 +700,11 @@ class SourceManager:
                 path.unlink()
             else:
                 shutil.rmtree(path)
+
+        # ``dl`` is normally generated runtime state, but this source tree
+        # deliberately tracks several MTK archives there.  Recreate only the
+        # exact Git objects so preparation leftovers cannot enter a snapshot.
+        _restore_tracked_download_seeds(source_path, tracked_downloads)
 
         # scripts/feeds leaves these indexes and a ``feeds/base`` symlink in
         # the source tree.  The latter often points at the staging container's
@@ -600,6 +918,7 @@ def prepare_source(*args: Any, **kwargs: Any) -> PreparedSource:
 
 __all__ = [
     "DEVICE_SPECS",
+    "DownloadSeed",
     "SOURCE_SPECS",
     "DeviceSpec",
     "PreparedSource",
@@ -607,6 +926,8 @@ __all__ = [
     "SourceError",
     "SourceManager",
     "SourceSpec",
+    "stage_download_seeds",
+    "validate_download_seeds",
     "prepare_source",
     "resolve_device",
 ]

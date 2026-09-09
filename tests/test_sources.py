@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from pathlib import PurePosixPath
 import shutil
 import subprocess
 
@@ -9,7 +10,13 @@ import pytest
 from owrt_builder.catalog import Catalog, PackageMetadata
 from owrt_builder.devices import SourceSpec
 from owrt_builder import sources as sources_module
-from owrt_builder.sources import SourceError, SourceManager
+from owrt_builder.sources import (
+    SourceError,
+    SourceManager,
+    PREPARATION_VERSION,
+    stage_download_seeds,
+    validate_download_seeds,
+)
 
 
 def _catalog(root: Path) -> Catalog:
@@ -19,6 +26,23 @@ def _catalog(root: Path) -> Catalog:
         authoritative=True,
         generated_files=("tmp/.packageinfo", "tmp/.config-package.in"),
     )
+
+
+def _git_source_with_seed(root: Path, *, seed: bytes = b"trusted seed\n") -> tuple[Path, Path]:
+    source = root / "source"
+    source.mkdir(parents=True)
+    seed_path = source / "dl" / "datconf-6bb733f7.tar.bz2"
+    seed_path.parent.mkdir()
+    seed_path.write_bytes(seed)
+    subprocess.run(["git", "init", "-q", str(source)], check=True)
+    subprocess.run(["git", "-C", str(source), "config", "user.name", "test"], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "config", "user.email", "test@example.invalid"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(source), "add", "dl"], check=True)
+    subprocess.run(["git", "-C", str(source), "commit", "-qm", "seed"], check=True)
+    return source, seed_path
 
 
 def test_source_publish_is_atomic_and_failed_refresh_keeps_current(tmp_path: Path) -> None:
@@ -159,6 +183,85 @@ def test_cleanup_removes_feed_runtime_links_and_indexes(tmp_path: Path) -> None:
     assert not (feeds / "packages.tmp").exists()
     assert not (feeds / "stale.tmp").exists()
     assert (feeds / "packages").is_dir()
+
+
+def test_cleanup_preserves_tracked_download_seeds_and_removes_runtime_dl_files(tmp_path: Path) -> None:
+    source, seed = _git_source_with_seed(tmp_path)
+    runtime = source / "dl" / "runtime-download.tar.gz"
+    runtime.write_bytes(b"generated during metadata preparation")
+    (source / "dl" / "escape").symlink_to(tmp_path / "outside")
+
+    SourceManager._clean_generated_tree(source)
+
+    assert seed.read_bytes() == b"trusted seed\n"
+    assert not runtime.exists()
+    assert not (source / "dl" / "escape").exists()
+    assert set(validate_download_seeds(source)) == {
+        PurePosixPath("dl/datconf-6bb733f7.tar.bz2")
+    }
+
+
+def test_cleanup_removes_dl_when_source_has_no_tracked_seeds(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "dl").mkdir()
+    (source / "dl" / "runtime-download.tar.gz").write_bytes(b"runtime")
+
+    SourceManager._clean_generated_tree(source)
+
+    assert not (source / "dl").exists()
+
+
+def test_download_seed_cache_import_reuses_correct_and_replaces_wrong_file(tmp_path: Path) -> None:
+    source, seed = _git_source_with_seed(tmp_path)
+    SourceManager._clean_generated_tree(source)
+    cache = tmp_path / "cache" / "dl"
+
+    stage_download_seeds(source, cache)
+    cached = cache / Path(*seed.relative_to(source).parts[1:])
+    assert cached.read_bytes() == seed.read_bytes()
+    original_mtime = cached.stat().st_mtime_ns
+
+    stage_download_seeds(source, cache)
+    assert cached.stat().st_mtime_ns == original_mtime
+
+    cached.write_bytes(b"corrupt cache entry")
+    stage_download_seeds(source, cache)
+    assert cached.read_bytes() == seed.read_bytes()
+
+
+def test_snapshot_validation_rejects_extra_download_files_and_symlinks(tmp_path: Path) -> None:
+    source, seed = _git_source_with_seed(tmp_path)
+    SourceManager._clean_generated_tree(source)
+    snapshot = tmp_path / "state" / "test" / "snapshots" / "snapshot"
+    snapshot_source = snapshot / "source"
+    snapshot_source.parent.mkdir(parents=True)
+    shutil.copytree(source, snapshot_source, symlinks=True)
+    (snapshot / "catalog.json").write_text("{}\n", encoding="utf-8")
+    (snapshot / "manifest.json").write_text(
+        f'{{"preparation_version": {PREPARATION_VERSION}, "source_id": "test", '
+        '"snapshot_id": "snapshot", "source_commit": "source"}\n',
+        encoding="utf-8",
+    )
+    manager = SourceManager(
+        tmp_path / "state",
+        source_specs={"test": SourceSpec("test", "https://example.invalid/openwrt.git", "main", None, "arm")},
+    )
+
+    assert manager._read_prepared(snapshot, expected_source_id="test").path == snapshot_source
+    tracked_seed = snapshot_source / "dl" / "datconf-6bb733f7.tar.bz2"
+    tracked_seed.write_bytes(b"tampered")
+    with pytest.raises(SourceError, match="differs from Git HEAD"):
+        manager._read_prepared(snapshot, expected_source_id="test")
+    tracked_seed.write_bytes(seed.read_bytes())
+    (snapshot_source / "dl" / "extra.tar.gz").write_bytes(b"extra")
+    with pytest.raises(SourceError, match="untracked dl file"):
+        manager._read_prepared(snapshot, expected_source_id="test")
+
+    (snapshot_source / "dl" / "extra.tar.gz").unlink()
+    (snapshot_source / "dl" / "escape").symlink_to(tmp_path / "outside")
+    with pytest.raises(SourceError, match="symlink"):
+        manager._read_prepared(snapshot, expected_source_id="test")
 
 
 def test_current_rejects_external_snapshot_and_manifest_directory_mismatch(tmp_path: Path) -> None:
