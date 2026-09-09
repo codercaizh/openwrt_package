@@ -42,6 +42,13 @@ from .sources import PreparedSource, SourceError, SourceManager, stage_download_
 
 LogCallback = Callable[[str], None]
 
+# The host-side stream waits for one long-lived worker container, while the
+# worker-side stream runs individual make/download/packaging commands.  Keep
+# their clocks separate so nested heartbeats cannot look like one timer.
+CONTAINER_HEARTBEAT_SECONDS = 10 * 60
+COMMAND_HEARTBEAT_SECONDS = 3 * 60
+MIN_HEARTBEAT_SECONDS = 5.0
+
 
 def _format_heartbeat(label: str, elapsed_seconds: float) -> str:
     """Render a short, safe context label with command-local elapsed time."""
@@ -52,6 +59,19 @@ def _format_heartbeat(label: str, elapsed_seconds: float) -> str:
         f"[heartbeat][{clean_label}] 命令仍在运行，已耗时 "
         f"{elapsed // 60} 分钟 {elapsed % 60} 秒"
     )
+
+
+def _resolve_heartbeat_seconds(default_seconds: float) -> float:
+    """Apply the legacy global override while keeping level-specific defaults."""
+
+    raw = os.environ.get("OWRT_LOG_HEARTBEAT_SECONDS")
+    if raw is None:
+        return max(MIN_HEARTBEAT_SECONDS, float(default_seconds))
+    try:
+        configured = float(raw)
+    except ValueError:
+        configured = float(default_seconds)
+    return max(MIN_HEARTBEAT_SECONDS, configured)
 
 
 BUILDER_CONTEXT_LABEL = "org.openwrt.builder.context"
@@ -566,6 +586,7 @@ class BuildEngine:
                         callback=callback,
                         cancel_event=cancel_event,
                         heartbeat_label="构建编译镜像",
+                        heartbeat_seconds=CONTAINER_HEARTBEAT_SECONDS,
                     )
                 command = ["docker", "run", "--rm", "--init"]
                 # MediaTek compilation only needs the normal container
@@ -628,6 +649,7 @@ class BuildEngine:
                         log_path=log_path,
                         container_name=container_name,
                         heartbeat_label="构建容器",
+                        heartbeat_seconds=CONTAINER_HEARTBEAT_SECONDS,
                     )
                 finally:
                     if arm_privileged:
@@ -763,6 +785,7 @@ class BuildEngine:
                 callback=callback,
                 cancel_event=None,
                 heartbeat_label="恢复 ARM 工作区权限",
+                heartbeat_seconds=CONTAINER_HEARTBEAT_SECONDS,
             )
         except (OSError, BuildError) as exc:
             self._emit(callback, f"恢复 ARM 工作区文件权限失败: {exc}")
@@ -1434,6 +1457,7 @@ class BuildEngine:
             callback=callback,
             cancel_event=cancel_event,
             heartbeat_label="make defconfig",
+            heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
         )
         self._run_checked(
             ["make", "download"],
@@ -1443,6 +1467,7 @@ class BuildEngine:
             cancel_event=cancel_event,
             retry_once=True,
             heartbeat_label="make download",
+            heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
         )
         self._run_compile_with_diagnostics(
             openwrt_dir,
@@ -1481,6 +1506,7 @@ class BuildEngine:
                 callback=callback,
                 cancel_event=cancel_event,
                 heartbeat_label=f"make -j{jobs}",
+                heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
             )
             return
         except BuildCancelled:
@@ -1507,6 +1533,7 @@ class BuildEngine:
                 callback=callback,
                 cancel_event=cancel_event,
                 heartbeat_label="make V=s -j1",
+                heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
             )
             if cancel_event is not None and cancel_event.is_set():
                 raise BuildCancelled()
@@ -2021,6 +2048,7 @@ class BuildEngine:
         env: Mapping[str, str] | None = None,
         retry_once: bool = False,
         heartbeat_label: str | None = None,
+        heartbeat_seconds: float | None = None,
     ) -> None:
         attempts = 2 if retry_once else 1
         last_code = 1
@@ -2032,6 +2060,7 @@ class BuildEngine:
                 cancel_event=cancel_event,
                 env=env,
                 heartbeat_label=heartbeat_label,
+                heartbeat_seconds=heartbeat_seconds,
             )
             if last_code == 0:
                 return
@@ -2050,6 +2079,7 @@ class BuildEngine:
         log_path: Path | None = None,
         container_name: str | None = None,
         heartbeat_label: str | None = None,
+        heartbeat_seconds: float | None = None,
     ) -> int:
         merged_env = os.environ.copy()
         if env:
@@ -2074,11 +2104,9 @@ class BuildEngine:
         buffer = b""
         started_monotonic = time.monotonic()
         last_output_monotonic = started_monotonic
-        try:
-            heartbeat_seconds = float(os.environ.get("OWRT_LOG_HEARTBEAT_SECONDS", "30"))
-        except ValueError:
-            heartbeat_seconds = 30.0
-        heartbeat_seconds = max(5.0, heartbeat_seconds)
+        heartbeat_interval = _resolve_heartbeat_seconds(
+            heartbeat_seconds if heartbeat_seconds is not None else COMMAND_HEARTBEAT_SECONDS
+        )
         try:
             while True:
                 if cancel_event is not None and cancel_event.is_set():
@@ -2110,7 +2138,7 @@ class BuildEngine:
                 now = time.monotonic()
                 if (
                     process.poll() is None
-                    and now - last_output_monotonic >= heartbeat_seconds
+                    and now - last_output_monotonic >= heartbeat_interval
                 ):
                     elapsed = int(now - started_monotonic)
                     self._emit(callback, _format_heartbeat(heartbeat_label or "命令", elapsed))

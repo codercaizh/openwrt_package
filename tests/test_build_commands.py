@@ -17,7 +17,9 @@ from owrt_builder.build import (
     BuildEngine,
     BuildError,
     BuildRequest,
+    COMMAND_HEARTBEAT_SECONDS,
     CommandFailed,
+    CONTAINER_HEARTBEAT_SECONDS,
     _format_heartbeat,
 )
 from owrt_builder.catalog import Catalog, KconfigOption, PackageMetadata
@@ -85,11 +87,13 @@ def test_worker_disables_python_output_buffering_for_live_logs(tmp_path: Path) -
 def test_worker_stream_uses_a_safe_container_heartbeat_label(tmp_path: Path) -> None:
     engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path)
     labels: list[str | None] = []
+    intervals: list[float | None] = []
     engine._check_docker = lambda: None  # type: ignore[method-assign]
     engine._image_exists = lambda _image: True  # type: ignore[method-assign]
 
     def run_stream(_command, **kwargs):
         labels.append(kwargs.get("heartbeat_label"))
+        intervals.append(kwargs.get("heartbeat_seconds"))
         return 1
 
     engine._run_stream = run_stream  # type: ignore[method-assign]
@@ -97,6 +101,7 @@ def test_worker_stream_uses_a_safe_container_heartbeat_label(tmp_path: Path) -> 
 
     assert not result.ok
     assert labels == ["构建容器"]
+    assert intervals == [CONTAINER_HEARTBEAT_SECONDS]
 
 
 def test_heartbeat_labels_render_command_local_elapsed_time() -> None:
@@ -109,6 +114,11 @@ def test_heartbeat_labels_render_command_local_elapsed_time() -> None:
     assert "[heartbeat][make -j2]" in compile_step
 
 
+def test_heartbeat_defaults_keep_container_and_command_levels_separate() -> None:
+    assert CONTAINER_HEARTBEAT_SECONDS == 10 * 60
+    assert COMMAND_HEARTBEAT_SECONDS == 3 * 60
+
+
 def test_stream_heartbeats_use_independent_command_elapsed_clocks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -119,6 +129,7 @@ def test_stream_heartbeats_use_independent_command_elapsed_clocks(
         ticks[0] += 6.0
         return ticks[0]
 
+    monkeypatch.delenv("OWRT_LOG_HEARTBEAT_SECONDS", raising=False)
     monkeypatch.setattr(build_module.time, "monotonic", fake_monotonic)
 
     def run(label: str) -> list[str]:
@@ -129,6 +140,7 @@ def test_stream_heartbeats_use_independent_command_elapsed_clocks(
             callback=lines.append,
             cancel_event=None,
             heartbeat_label=label,
+            heartbeat_seconds=5,
         ) == 0
         return [line for line in lines if line.startswith("[heartbeat]")]
 
@@ -271,11 +283,13 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
     config.write_text("CONFIG_TEST=y\n", encoding="utf-8")
     commands: list[list[str]] = []
     labels: list[str | None] = []
+    intervals: list[float | None] = []
     lines: list[str] = []
 
     def run_checked(command, **kwargs):
         commands.append(list(command))
         labels.append(kwargs.get("heartbeat_label"))
+        intervals.append(kwargs.get("heartbeat_seconds"))
         if command == ["make", "-j3"]:
             raise CommandFailed(command, 2)
 
@@ -297,6 +311,12 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
         ["make", "V=s", "-j1"],
     ]
     assert labels == ["make defconfig", "make download", "make -j3", "make V=s -j1"]
+    assert intervals == [
+        COMMAND_HEARTBEAT_SECONDS,
+        COMMAND_HEARTBEAT_SECONDS,
+        COMMAND_HEARTBEAT_SECONDS,
+        COMMAND_HEARTBEAT_SECONDS,
+    ]
     assert any("开始串行详细诊断：make V=s -j1" in line for line in lines)
     assert any("首次正式编译错误" in line for line in lines)
     assert any("串行详细诊断编译成功，继续后续打包" in line for line in lines)
