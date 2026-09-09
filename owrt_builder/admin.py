@@ -1,11 +1,13 @@
-"""Local-only administrator bootstrap CLI.
+"""Local-only administrator provisioning CLI.
 
 Examples::
 
     python -m owrt_builder.admin create-admin admin
     OWRT_ADMIN_PASSWORD='...long secret...' python -m owrt_builder.admin create-admin admin
 
-The environment form is useful for provisioning but the password is never
+The Web service creates ``admin/admin`` atomically on its first startup; this
+command remains available for CLI-only or recovery provisioning. The
+environment form is useful for provisioning but the password is never
 printed. Public registration is intentionally not implemented.
 """
 

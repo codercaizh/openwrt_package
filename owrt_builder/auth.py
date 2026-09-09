@@ -20,13 +20,26 @@ from .storage import Storage
 
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ROUNDS = 310_000
+PASSWORD_MIN_LENGTH = 12
 SESSION_COOKIE = "owrt_session"
 CSRF_COOKIE = "owrt_csrf"
 
 
-def hash_password(password: str, rounds: int = PASSWORD_ROUNDS) -> str:
-    if not isinstance(password, str) or len(password) < 12:
-        raise ValueError("管理员密码至少需要 12 个字符")
+def hash_password(password: str, rounds: int = PASSWORD_ROUNDS, *, allow_weak: bool = False) -> str:
+    """Hash a password with PBKDF2.
+
+    The normal account-management path requires a 12-character password.  A
+    separate, explicit bootstrap escape hatch is used only for the documented
+    first-run ``admin/admin`` account; callers must never use it for updates.
+    Keeping the exception here makes it impossible for a settings request to
+    accidentally weaken the password policy.
+    """
+
+    minimum = 1 if allow_weak else PASSWORD_MIN_LENGTH
+    if not isinstance(password, str) or len(password) < minimum:
+        if allow_weak:
+            raise ValueError("管理员密码不能为空")
+        raise ValueError(f"管理员密码至少需要 {PASSWORD_MIN_LENGTH} 个字符")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
     return f"{PASSWORD_SCHEME}${rounds}${_b64(salt)}${_b64(digest)}"

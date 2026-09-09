@@ -12,7 +12,7 @@
     <section id="login-panel" class="panel login-panel">
       <div class="eyebrow">LOCAL BUILD CONTROL</div>
       <h1>OpenWrt 固件构建</h1>
-      <p class="muted">管理员登录后选择设备、插件和子选项。</p>
+      <p class="muted">管理员登录后选择设备、插件和子选项。首次启动使用 admin/admin，请登录后立即在设置中修改。</p>
       <form id="login-form" autocomplete="on">
         <label>用户名<input id="username" name="username" autocomplete="username" required></label>
         <label>密码<input id="password" name="password" type="password" autocomplete="current-password" required></label>
@@ -24,8 +24,28 @@
     <section id="app-panel" hidden>
       <header class="topbar">
         <div><div class="eyebrow">OPENWRT BUILDER</div><h1>构建控制台</h1></div>
-        <div class="top-actions"><span id="source-badge" class="badge">源码准备中</span><button id="logout" class="ghost">退出</button></div>
+        <div class="top-actions"><span id="source-badge" class="badge">源码准备中</span><button id="open-settings" class="ghost">设置</button><button id="logout" class="ghost">退出</button></div>
       </header>
+
+      <section id="settings-panel" class="panel settings-panel" hidden>
+        <div class="section-heading"><div><h2>账户与通知设置</h2><p class="muted">密码以安全散列保存；PushPlus token 只显示配置状态，不会回显。</p></div><button id="close-settings" class="ghost" type="button">收起</button></div>
+        <div class="settings-grid">
+          <form id="account-form" autocomplete="off">
+            <h3>管理员账户</h3>
+            <label>用户名<input id="settings-username" name="settings-username" autocomplete="username" required></label>
+            <label>当前密码<input id="current-password" name="current-password" type="password" autocomplete="current-password" required></label>
+            <label>新密码<input id="new-password" name="new-password" type="password" autocomplete="new-password" minlength="12" placeholder="至少 12 个字符"></label>
+            <button class="primary" type="submit">保存账户</button>
+          </form>
+          <form id="pushplus-form" autocomplete="off">
+            <h3>PushPlus 通知</h3>
+            <p id="pushplus-status" class="muted small">读取中…</p>
+            <label>Token<input id="pushplus-token" name="pushplus-token" type="password" autocomplete="new-password" placeholder="留空表示清空"></label>
+            <div class="form-actions"><button class="primary" type="submit">保存 token</button><button id="clear-pushplus" class="ghost" type="button">清空 token</button></div>
+          </form>
+        </div>
+        <p id="settings-message" class="message" role="status"></p>
+      </section>
 
       <div class="layout">
         <section class="panel builder-panel">

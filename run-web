@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF'
+用法：./run-web [端口]
+
+启动单个 OpenWrt Builder Web 容器。默认端口为 8000；源码目录旁的
+.owrt-web 目录用于保存数据库、任务日志、源码快照和构建缓存。
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+if [[ "$#" -gt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+port="${1:-8000}"
+if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+  echo "端口必须是 1 到 65535 的整数" >&2
+  exit 2
+fi
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+data_root="${OWRT_DATA_HOST_PATH:-$repo_root/.owrt-web}"
+data_root="$(realpath -m -- "$data_root")"
+image="${OWRT_BUILDER_IMAGE:-owrt-builder:local}"
+container_name="${OWRT_WEB_CONTAINER_NAME:-owrt-builder-web}"
+
+# This mode is used by the offline contract test and prints the resolved
+# host paths without touching Docker or the current deployment.
+if [[ "${OWRT_START_WEB_DRY_RUN:-0}" == "1" ]]; then
+  printf 'repo_root=%s\ndata_root=%s\nport=%s\ndocker_socket=/var/run/docker.sock\n' \
+    "$repo_root" "$data_root" "$port"
+  exit 0
+fi
+
+command -v docker >/dev/null 2>&1 || { echo "未找到 docker" >&2; exit 1; }
+[[ -S /var/run/docker.sock ]] || { echo "未找到 /var/run/docker.sock" >&2; exit 1; }
+mkdir -p "$data_root"
+
+if docker ps --format '{{.Names}}' | grep -Fxq "$container_name"; then
+  echo "容器已运行：$container_name（不会重启）"
+  exit 0
+fi
+if docker ps -a --format '{{.Names}}' | grep -Fxq "$container_name"; then
+  docker rm "$container_name" >/dev/null
+fi
+
+mkdir -p "$data_root/workspace" "$data_root/state" "$data_root/state/logs" "$data_root/state/artifacts"
+echo "构建单容器 Web 镜像：$image"
+docker build --target web --file "$repo_root/docker/Dockerfile" --tag "$image" "$repo_root"
+
+docker run --detach \
+  --name "$container_name" \
+  --restart unless-stopped \
+  --env OWRT_REPO_ROOT="$repo_root" \
+  --env OWRT_WORKSPACE="$data_root/workspace" \
+  --env OWRT_DATA_DIR="$data_root/state" \
+  --env OWRT_BIND_HOST=0.0.0.0 \
+  --env OWRT_BIND_PORT=8000 \
+  --env OWRT_PUBLIC_ORIGIN="${OWRT_PUBLIC_ORIGIN:-http://127.0.0.1:$port}" \
+  --env OWRT_ALLOWED_ORIGINS="${OWRT_ALLOWED_ORIGINS:-*}" \
+  --env OWRT_SECURE_COOKIE="${OWRT_SECURE_COOKIE:-0}" \
+  --env OWRT_TRUST_PROXY="${OWRT_TRUST_PROXY:-0}" \
+  --env PUSHPLUS_ENDPOINT="${PUSHPLUS_ENDPOINT:-https://www.pushplus.plus/send}" \
+  --volume "$repo_root:$repo_root:ro" \
+  --volume "$repo_root:/opt/owrt-builder:ro" \
+  --volume "$data_root:$data_root:rw" \
+  --volume /var/run/docker.sock:/var/run/docker.sock \
+  --workdir "$repo_root" \
+  --publish "$port:8000" \
+  "$image"
+
+echo "Web 已启动：http://127.0.0.1:$port（首次登录：admin/admin）"

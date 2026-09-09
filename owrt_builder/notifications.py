@@ -1,9 +1,10 @@
 """Optional PushPlus notifications with bounded, independent retries.
 
 PushPlus accepts JSON ``POST https://www.pushplus.plus/send`` payloads with a
-``token``, ``title`` and ``content``.  The token is read only from the process
-environment and is never persisted or written to a build log.  Tests can pass
-an in-memory transport rather than making an external request.
+``token``, ``title`` and ``content``.  The Web control plane can provide a
+runtime token reader backed by its persistent settings store; the token is
+never included in build logs or API responses.  Tests can pass an in-memory
+transport rather than making an external request.
 """
 
 from __future__ import annotations
@@ -66,14 +67,32 @@ class NotificationSettings:
 class PushPlusNotifier:
     """Fire-and-forget notifier; each job gets its own bounded retry thread."""
 
-    def __init__(self, settings: NotificationSettings | None = None, transport: Transport | None = None, on_result: Callable[[str, bool, int], None] | None = None):
+    def __init__(
+        self,
+        settings: NotificationSettings | None = None,
+        transport: Transport | None = None,
+        on_result: Callable[[str, bool, int], None] | None = None,
+        token_provider: Callable[[], str | None] | None = None,
+    ):
         self.settings = settings or NotificationSettings.from_env()
         self.transport = transport or UrlLibTransport()
         self.on_result = on_result
+        self.token_provider = token_provider
+
+    def _token(self) -> str | None:
+        if self.token_provider is not None:
+            try:
+                token = self.token_provider()
+            except Exception:
+                # Notification settings must never make a build fail.  Treat a
+                # broken settings backend as an unavailable notification.
+                return None
+            return token.strip() if isinstance(token, str) and token.strip() else None
+        return self.settings.token
 
     @property
     def enabled(self) -> bool:
-        return bool(self.settings.token)
+        return bool(self._token())
 
     def send_async(self, job: dict[str, Any], status: str, error: str | None = None) -> bool:
         if not self.enabled:
@@ -83,6 +102,9 @@ class PushPlusNotifier:
         return True
 
     def _send(self, job: dict[str, Any], status: str, error: str | None) -> None:
+        token = self._token()
+        if not token:
+            return
         # Keep content useful without including command lines, environment or
         # user-supplied secrets.  The destination token never enters content.
         labels = {"succeeded": "成功", "failed": "失败", "canceled": "已取消", "interrupted": "中断"}
@@ -90,7 +112,7 @@ class PushPlusNotifier:
         if error and status in {"failed", "interrupted"}:
             content += f"\n错误：{str(error)[:500]}"
         payload = {
-            "token": self.settings.token,
+            "token": token,
             "title": f"{self.settings.title_prefix}：{labels.get(status, status)}",
             "content": content,
             "template": "txt",

@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
@@ -33,12 +34,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator
 
-from .auth import AuthManager, settings_from_env
+from .auth import AuthManager, PASSWORD_MIN_LENGTH, hash_password, settings_from_env, verify_password
 from .build import BuildEngine, BuildRequest, logical_cpu_count
 from .catalog import Catalog, scan_catalog
 from .configuration import parse_config
 from .devices import DeviceCatalog, DeviceSpec, load_catalog
-from .notifications import PushPlusNotifier
+from .notifications import NotificationSettings, PushPlusNotifier
 from .sources import PreparedSource, SourceError, SourceManager
 from .storage import Storage, utc_now
 
@@ -147,6 +148,20 @@ class StrictBody(BaseModel):
 class LoginBody(StrictBody):
     username: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=1, max_length=512)
+
+
+class SettingsBody(StrictBody):
+    """Account and PushPlus updates accepted by the settings page.
+
+    Optional fields are inspected through ``model_fields_set`` so changing a
+    username does not accidentally clear an existing notification token.
+    """
+
+    username: str | None = Field(default=None, max_length=120)
+    current_password: str | None = Field(default=None, max_length=512)
+    new_password: str | None = Field(default=None, max_length=512)
+    pushplus_token: str | None = Field(default=None, max_length=512)
+    clear_pushplus: StrictBool = False
 
 
 class JobBody(StrictBody):
@@ -954,6 +969,29 @@ def _safe_error(value: Any) -> str:
     return _safe_log(value)[:2_000]
 
 
+def _validate_admin_username(value: str) -> str:
+    username = str(value).strip()
+    if not username or len(username) > 120 or any(character.isspace() for character in username):
+        raise ValueError("用户名不能为空、不能含空白且长度不能超过 120")
+    return username
+
+
+def _mask_secret(value: str | None) -> str:
+    return "••••••••" if value else ""
+
+
+def _public_settings(storage: Storage, user_id: int) -> dict[str, Any]:
+    user = storage.get_admin(user_id)
+    token = storage.get_pushplus_token()
+    return {
+        "username": user["username"] if user else "",
+        "pushplus": {
+            "configured": bool(token),
+            "masked": _mask_secret(token),
+        },
+    }
+
+
 def _config_symbol(value: str) -> str:
     value = str(value).strip()
     return value if value.startswith("CONFIG_") else f"CONFIG_{value}"
@@ -1165,6 +1203,10 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
     settings = settings or Settings()
     storage = Storage(settings.db_path, settings.log_dir, settings.artifact_dir)
     auth = AuthManager(storage, settings_from_env())
+    # Migrate an environment-provided token into the persistent settings row
+    # once.  A later Web setting can clear it without the environment silently
+    # restoring the old secret on every restart.
+    storage.ensure_setting("pushplus_token", os.getenv("PUSHPLUS_TOKEN", ""))
     app_runtime = runtime
     runtime_error: str | None = None
     if app_runtime is None:
@@ -1179,11 +1221,17 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
     source_service: SourceService | None = None
     worker: QueueWorker | None = None
     scheduler: Scheduler | None = None
-    app_notifier = notifier or PushPlusNotifier()
+    app_notifier = notifier or PushPlusNotifier(
+        settings=NotificationSettings.from_env(),
+        token_provider=storage.get_pushplus_token,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal app_runtime, source_service, worker, scheduler
+        # Keep the first-run account deterministic for local deployments.  The
+        # operation is atomic and is a no-op for every existing installation.
+        storage.ensure_default_admin("admin", hash_password("admin", allow_weak=True))
         if app_runtime is not None:
             source_service = SourceService(app_runtime, storage)
             worker = QueueWorker(app_runtime, storage, settings, app_notifier)
@@ -1263,6 +1311,59 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
     @app.get("/api/auth/me")
     async def me(session: dict[str, Any] = Depends(get_auth)):
         return {"ok": True, "user": {"id": int(session["user_id"]), "username": session["username"]}}
+
+    @app.get("/api/settings")
+    async def get_settings(session: dict[str, Any] = Depends(get_auth)):
+        return {"ok": True, "settings": _public_settings(storage, int(session["user_id"]))}
+
+    @app.put("/api/settings")
+    async def update_settings(
+        body: SettingsBody,
+        request: Request,
+        response: Response,
+        session: dict[str, Any] = Depends(get_mutation_auth),
+    ):
+        user_id = int(session["user_id"])
+        account_fields = {"username", "new_password"} & body.model_fields_set
+        account_changed = bool(account_fields)
+        if account_changed:
+            user = storage.get_admin(user_id)
+            if user is None or not body.current_password or not verify_password(body.current_password, user["password_hash"]):
+                raise HTTPException(status_code=403, detail="当前密码错误")
+            try:
+                requested_username = body.username if "username" in body.model_fields_set else str(user["username"])
+                if requested_username is None:
+                    raise ValueError("用户名不能为空")
+                username = _validate_admin_username(requested_username)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            password_hash: str | None = None
+            if "new_password" in body.model_fields_set and body.new_password is not None:
+                if len(body.new_password) < PASSWORD_MIN_LENGTH:
+                    raise HTTPException(status_code=422, detail=f"新密码至少需要 {PASSWORD_MIN_LENGTH} 个字符")
+                try:
+                    password_hash = hash_password(body.new_password)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+            try:
+                storage.update_admin(user_id, username, password_hash)
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(status_code=409, detail="用户名已存在") from exc
+            # Require an explicit login with the new identity/password.  This
+            # also invalidates sessions in other browsers and devices.
+            auth.clear_cookies(response)
+
+        if body.clear_pushplus or "pushplus_token" in body.model_fields_set:
+            token = None if body.clear_pushplus else (body.pushplus_token or "").strip()
+            if token and any(ord(character) < 0x20 for character in token):
+                raise HTTPException(status_code=422, detail="PushPlus token 包含非法控制字符")
+            storage.set_setting("pushplus_token", token or None)
+
+        return {
+            "ok": True,
+            "requires_login": account_changed,
+            "settings": _public_settings(storage, user_id),
+        }
 
     @app.get("/api/health")
     async def health(session: dict[str, Any] = Depends(get_auth)):

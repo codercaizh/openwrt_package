@@ -41,3 +41,18 @@ def test_pushplus_reports_canceled_tasks() -> None:
     assert notifier.send_async({"id": "job-2", "device": "n60pro"}, "canceled", "用户取消")
     assert transport.done.wait(2)
     assert "已取消" in str(transport.calls[0][1]["title"])
+
+
+def test_pushplus_reads_persisted_token_when_a_job_finishes() -> None:
+    transport = FakeTransport([(200, {"code": 200}), (200, {"code": 200})])
+    token = {"value": "first-token"}
+    notifier = PushPlusNotifier(
+        NotificationSettings(token=None, retries=1),
+        transport=transport,
+        token_provider=lambda: token["value"],
+    )
+    notifier._send({"id": "job-3", "device": "n60pro"}, "succeeded", None)
+    token["value"] = "second-token"
+    notifier._send({"id": "job-4", "device": "n60pro"}, "failed", "compile failed")
+    assert transport.calls[0][1]["token"] == "first-token"
+    assert transport.calls[1][1]["token"] == "second-token"

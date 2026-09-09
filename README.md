@@ -1,8 +1,7 @@
 # OpenWrt Builder
 
-这是一个面向个人使用的 OpenWrt 固件编译工具。宿主机只需要 Docker
-（以及 Docker Compose，使用 Web 控制面时需要），源码、feeds、编译环境和
-产物都由工具管理。
+这是一个面向个人使用的 OpenWrt 固件编译工具。宿主机只需要 Docker；源码、
+feeds、编译环境和产物都由工具管理。
 
 目前支持四个 ARM 设备：
 
@@ -58,19 +57,29 @@ GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传
 
 ## Web 控制面
 
-首次启动前复制环境模板并填写绝对路径：
+Web 控制面由一个容器直接提供静态页面和 API。启动器会自动构建 Web 镜像、挂载
+Docker socket，并把仓库和 `.owrt-web` 持久化目录以宿主机绝对路径映射给 Web 及其
+编译 worker。启动时唯一的业务参数是端口，默认 `8000`：
 
 ```bash
-cp .env.example .env
-# 修改 OWRT_REPO_HOST_PATH、OWRT_DATA_HOST_PATH、OWRT_PUBLIC_ORIGIN
-./owrt web -d
+./run-web              # http://127.0.0.1:8000
+./run-web 18000        # 使用其他端口
 ```
 
-首次部署创建本地管理员。命令会交互式读取密码，不会把密码放进 shell 历史：
+首次启动会原子创建本地管理员 `admin/admin`，不会覆盖已有数据库。登录后打开“设置”
+修改用户名和密码；修改账户后所有旧会话都会失效并要求重新登录。密码只保存为
+PBKDF2 散列，页面不会回显密码。
+
+如需直接使用 Compose，单容器配置也支持 `OWRT_WEB_PORT`、`OWRT_REPO_HOST_PATH` 和
+`OWRT_DATA_HOST_PATH` 覆盖默认值：
 
 ```bash
-docker compose run --rm web python3 -m owrt_builder.admin create-admin admin
+OWRT_WEB_PORT=18000 docker compose up --build -d web
 ```
+
+Compose 和 `run-web` 都只启动 `web` 服务，不依赖 Caddy 或其他额外容器。Web 容器
+必须能访问 Docker socket，且宿主路径需要对 Docker daemon 可见；`run-web` 已自动
+处理这些挂载。
 
 页面启动后会异步准备两个本地 source/feed 快照，页面可以显示插件来源、简介、
 默认选中项和 package-local 子选项。feeds 可以手动刷新，也会每天北京时间
@@ -85,24 +94,15 @@ docker compose run --rm web python3 -m owrt_builder.admin create-admin admin
 数据库记录会按 `1` 和 `true` 兼容读取。`GET /api/devices` 的 `runtime` 字段返回
 `logical_cpus`、`default_parallel_jobs` 和 `max_parallel_jobs`，供网页初始化输入框。
 
-公网部署时应让 Caddy 或其他反向代理提供 HTTPS，并设置严格的
-`OWRT_PUBLIC_ORIGIN`。如果公网入口会使用变化的 IP 或多个域名，可以显式设置
-`OWRT_ALLOWED_ORIGINS` 为逗号分隔的 HTTP(S) Origin，或设置为 `*` 接受任意合法
-HTTP(S) Origin；通配符不会绕过会话登录和 CSRF token 校验。Web 容器需要访问 Docker socket 来启动隔离的编译容器，
-因此应将该服务只暴露给可信管理员，并保管好管理员密码。PushPlus 是可选的：
-填写 `PUSHPLUS_TOKEN` 后，成功、失败、取消或中断结果会异步推送到微信；通知
-失败不会改变编译结果。
+公网部署时应在前置网关提供 HTTPS，并设置严格的 `OWRT_PUBLIC_ORIGIN`、
+`OWRT_SECURE_COOKIE=1` 和 `OWRT_TRUST_PROXY=1`。如果公网入口会使用变化的 IP 或多个
+域名，可以显式设置 `OWRT_ALLOWED_ORIGINS` 为逗号分隔的 HTTP(S) Origin，或设置为
+`*` 接受任意合法 HTTP(S) Origin；通配符不会绕过会话登录和 CSRF token 校验。由于
+Web 容器需要访问 Docker socket 来启动隔离的编译容器，应只向可信管理员暴露端口。
 
-Compose 默认让 Web 只监听宿主机回环地址，并由 Caddy 接管 80/443。需要直接从
-`8000` 访问时，设置 `OWRT_WEB_BIND_ADDRESS=0.0.0.0`、对应的 HTTP
-`OWRT_PUBLIC_ORIGIN` 和 `OWRT_SECURE_COOKIE=0`，然后只启动 Web 服务：
-
-```bash
-docker compose up --build -d web
-```
-
-这样不会自动启动 Caddy；使用 HTTPS 反向代理时恢复模板中的回环绑定和安全 Cookie
-设置，并启动 `caddy` 服务。
+PushPlus 可在页面“设置”中填写 token；token 只保存于持久化状态目录，API 只返回是否
+已配置和固定掩码。构建成功、失败、取消或中断会异步推送通知，通知失败不会改变编译
+结果。旧部署也可以在启动时提供 `PUSHPLUS_TOKEN`，首次启动会迁移到持久化设置。
 
 ## feeds、配置和产物
 

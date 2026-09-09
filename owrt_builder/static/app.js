@@ -66,6 +66,7 @@
   }
 
   function show(node, text, className = "") {
+    if (!node) return;
     node.textContent = text || "";
     node.className = className;
   }
@@ -115,6 +116,81 @@
     } catch (_) {
       $("login-panel").hidden = false;
       $("app-panel").hidden = true;
+    }
+  }
+
+  async function loadSettings() {
+    const result = await api("/api/settings");
+    const settings = result.settings || {};
+    const username = $("settings-username");
+    if (username) username.value = settings.username || "";
+    const pushplus = settings.pushplus || {};
+    show(
+      $("pushplus-status"),
+      pushplus.configured ? `已配置（${pushplus.masked || "已隐藏"}）` : "未配置",
+      pushplus.configured ? "message" : "muted small",
+    );
+  }
+
+  async function openSettings() {
+    const panel = $("settings-panel");
+    if (!panel) return;
+    panel.hidden = false;
+    try {
+      await loadSettings();
+    } catch (error) {
+      show($("settings-message"), error.message, "error");
+    }
+  }
+
+  function closeSettings() {
+    const panel = $("settings-panel");
+    if (panel) panel.hidden = true;
+  }
+
+  async function saveAccount(event) {
+    event.preventDefault();
+    try {
+      const username = $("settings-username").value.trim();
+      const currentPassword = $("current-password").value;
+      const newPassword = $("new-password").value;
+      const body = { username, current_password: currentPassword };
+      if (newPassword) body.new_password = newPassword;
+      const result = await api("/api/settings", { method: "PUT", body });
+      if (result.requires_login) {
+        window.location.reload();
+        return;
+      }
+      $("current-password").value = "";
+      $("new-password").value = "";
+      show($("settings-message"), "账户设置已保存。", "message");
+      await loadSettings();
+    } catch (error) {
+      show($("settings-message"), error.message, "error");
+    }
+  }
+
+  async function savePushplus(event) {
+    event.preventDefault();
+    try {
+      const token = $("pushplus-token").value.trim();
+      await api("/api/settings", { method: "PUT", body: { pushplus_token: token } });
+      $("pushplus-token").value = "";
+      show($("settings-message"), "PushPlus 设置已保存。", "message");
+      await loadSettings();
+    } catch (error) {
+      show($("settings-message"), error.message, "error");
+    }
+  }
+
+  async function clearPushplus() {
+    try {
+      await api("/api/settings", { method: "PUT", body: { clear_pushplus: true } });
+      $("pushplus-token").value = "";
+      show($("settings-message"), "PushPlus token 已清空。", "message");
+      await loadSettings();
+    } catch (error) {
+      show($("settings-message"), error.message, "error");
     }
   }
 
@@ -682,6 +758,11 @@
   }
 
   bindEvent("login-form", "submit", login);
+  bindEvent("open-settings", "click", openSettings);
+  bindEvent("close-settings", "click", closeSettings);
+  bindEvent("account-form", "submit", saveAccount);
+  bindEvent("pushplus-form", "submit", savePushplus);
+  bindEvent("clear-pushplus", "click", clearPushplus);
   bindEvent("logout", "click", async () => {
     try { await api("/api/auth/logout", { method: "POST", body: {} }); } finally { window.location.reload(); }
   });

@@ -62,7 +62,7 @@ def _parser() -> argparse.ArgumentParser:
     worker = sub.add_parser("worker", help=argparse.SUPPRESS)
     worker.add_argument("--request-file", required=True, type=Path)
 
-    web = sub.add_parser("web", help="start the web service with Docker Compose")
+    web = sub.add_parser("web", help="start the single-container web service with Docker Compose")
     web.add_argument("compose_args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     return parser
 

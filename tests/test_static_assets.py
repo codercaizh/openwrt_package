@@ -70,6 +70,19 @@ def test_top_level_event_bindings_tolerate_missing_optional_nodes() -> None:
     assert 'bindEvent("submit-job", "click", submitJob);' in script
 
 
+def test_settings_ui_uses_masked_pushplus_status_and_account_update_api() -> None:
+    html = (ROOT / "owrt_builder/static/index.html").read_text(encoding="utf-8")
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+
+    for element_id in ("open-settings", "settings-panel", "account-form", "pushplus-form", "pushplus-status", "clear-pushplus"):
+        assert f'id="{element_id}"' in html
+    assert 'api("/api/settings")' in script
+    assert 'api("/api/settings", { method: "PUT", body: { pushplus_token: token } })' in script
+    assert 'body: { clear_pushplus: true }' in script
+    assert "requires_login" in script
+    assert "push-secret" not in script
+
+
 def test_catalog_selection_order_is_stable_until_the_next_catalog_refresh() -> None:
     script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
 

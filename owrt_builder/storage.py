@@ -160,6 +160,11 @@ class Storage:
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_catalog_created ON catalog_snapshots(source_snapshot_id,device,created_at);
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             # ``CREATE TABLE IF NOT EXISTS`` does not update an existing
@@ -189,6 +194,20 @@ class Storage:
             )
             return int(cur.lastrowid)
 
+    def ensure_default_admin(self, username: str, password_hash: str) -> bool:
+        """Atomically create the first-run account without touching old data."""
+
+        now = utc_now()
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM admin_users LIMIT 1").fetchone() is not None:
+                return False
+            db.execute(
+                "INSERT INTO admin_users(username,password_hash,created_at) VALUES(?,?,?)",
+                (username, password_hash, now),
+            )
+            return True
+
     def get_admin_by_username(self, username: str) -> dict[str, Any] | None:
         with self.connect() as db:
             return self._row_dict(db.execute("SELECT * FROM admin_users WHERE username=?", (username,)).fetchone())
@@ -196,6 +215,22 @@ class Storage:
     def get_admin(self, user_id: int) -> dict[str, Any] | None:
         with self.connect() as db:
             return self._row_dict(db.execute("SELECT * FROM admin_users WHERE id=?", (user_id,)).fetchone())
+
+    def update_admin(self, user_id: int, username: str, password_hash: str | None = None) -> None:
+        """Update account identity and invalidate every existing session."""
+
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if password_hash is None:
+                cursor = db.execute("UPDATE admin_users SET username=? WHERE id=?", (username, user_id))
+            else:
+                cursor = db.execute(
+                    "UPDATE admin_users SET username=?,password_hash=? WHERE id=?",
+                    (username, password_hash, user_id),
+                )
+            if cursor.rowcount != 1:
+                raise ValueError("管理员账户不存在")
+            db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
 
     def admin_count(self) -> int:
         with self.connect() as db:
@@ -233,6 +268,10 @@ class Storage:
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
         with self.connect() as db:
             db.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
+
+    def delete_user_sessions(self, user_id: int) -> None:
+        with self.connect() as db:
+            db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
 
     def delete_expired_sessions(self, now: str | None = None) -> None:
         with self.connect() as db:
@@ -572,6 +611,45 @@ class Storage:
         row["items"] = _loads(row.pop("items_json", None), [])
         row["metadata"] = _loads(row.pop("metadata_json", None), {})
         return row
+
+    # -- application settings ---------------------------------------------
+
+    def has_setting(self, key: str) -> bool:
+        with self.connect() as db:
+            return db.execute("SELECT 1 FROM app_settings WHERE key=?", (key,)).fetchone() is not None
+
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        with self.connect() as db:
+            row = db.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+        return str(row[0]) if row is not None else default
+
+    def set_setting(self, key: str, value: str | None) -> None:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", str(key)):
+            raise ValueError("invalid setting key")
+        if value is None:
+            with self.connect() as db:
+                db.execute("DELETE FROM app_settings WHERE key=?", (key,))
+            return
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO app_settings(key,value,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+                (key, str(value), utc_now()),
+            )
+
+    def ensure_setting(self, key: str, value: str) -> None:
+        if not self.has_setting(key):
+            with self.connect() as db:
+                db.execute(
+                    "INSERT INTO app_settings(key,value,updated_at) VALUES(?,?,?) "
+                    "ON CONFLICT(key) DO NOTHING",
+                    (key, str(value), utc_now()),
+                )
+
+    def get_pushplus_token(self) -> str | None:
+        token = self.get_setting("pushplus_token", "")
+        token = token.strip() if token else ""
+        return token or None
 
 
 @contextlib.contextmanager
