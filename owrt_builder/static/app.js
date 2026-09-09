@@ -413,17 +413,6 @@
     };
   }
 
-  async function validateConfiguration() {
-    try {
-      const result = await api("/api/configuration/validate", { method: "POST", body: configurationBody() });
-      renderIssues(result.issues || []);
-      show($("builder-message"), result.authoritative ? "原生 defconfig 校验完成。" : "已完成静态校验，原生 defconfig 结果不可用。", "message");
-    } catch (error) {
-      renderIssues(error.body?.detail?.issues || []);
-      show($("builder-message"), error.message, "error");
-    }
-  }
-
   async function submitJob() {
     try {
       const result = await api("/api/jobs", { method: "POST", body: configurationBody() });
@@ -700,7 +689,6 @@
     orderCatalogSelectedFirst();
     renderCatalog();
   }));
-  $("validate").addEventListener("click", validateConfiguration);
   $("submit-job").addEventListener("click", submitJob);
   $("reload-jobs").addEventListener("click", loadJobs);
   $("refresh-sources").addEventListener("click", refreshSources);

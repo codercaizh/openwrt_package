@@ -23,6 +23,21 @@ def test_mobile_catalog_has_all_category_contracts() -> None:
     assert "@media (max-width:560px)" in style
 
 
+def test_build_form_submits_directly_without_frontend_validation_button() -> None:
+    html = (ROOT / "owrt_builder/static/index.html").read_text(encoding="utf-8")
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+
+    assert 'id="validate"' not in html
+    assert "校验配置" not in html
+    assert "validateConfiguration" not in script
+    assert "/api/configuration/validate" not in script
+    assert 'id="submit-job"' in html
+    assert '$("submit-job").addEventListener("click", submitJob);' in script
+    assert 'api("/api/jobs", { method: "POST", body: configurationBody() })' in script
+    # Server-side validation feedback returned by submission remains visible.
+    assert "renderIssues(result.issues || []);" in script
+
+
 def test_catalog_selection_order_is_stable_until_the_next_catalog_refresh() -> None:
     script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
 
