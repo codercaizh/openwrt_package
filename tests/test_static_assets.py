@@ -80,13 +80,25 @@ def test_source_badge_uses_last_success_time_and_handles_stale_refreshes() -> No
 
     assert "function formatSourceUpdateTime(source)" in script
     assert "source?.last_success_at || source?.snapshot?.created_at" in script
-    assert "源码更新中 · ${updatedAt}" in source_loader
-    assert "更新失败 · ${updatedAt}" in source_loader
-    assert "源码已就绪 · ${updatedAt}" in source_loader
-    assert "当前版本更新时间未知" in script
+    assert 'return "源: --"' in script
+    assert "return `源: ${beijingTimeFormatter.format(date)}`" in script
+    assert "badge.textContent = formatSourceUpdateTime(result);" in source_loader
+    assert "源码更新中" not in source_loader
+    assert "更新失败" not in source_loader
+    assert "源码已就绪" not in source_loader
     # The source badge must no longer expose an opaque snapshot id as its
     # freshness indicator; the catalogue may still show that id elsewhere.
     assert "snapshot_id" not in source_loader
+
+
+def test_source_badge_stays_compact_on_narrow_screens() -> None:
+    style = (ROOT / "owrt_builder/static/style.css").read_text(encoding="utf-8")
+
+    assert ".topbar { min-width:0;" in style
+    assert ".top-actions { min-width:0;" in style
+    assert ".badge { display:inline-flex;" in style
+    assert "text-overflow:ellipsis" in style
+    assert "@media (max-width:760px) { .top-actions { flex:1 1 100%;" in style
 
 
 def test_top_level_event_bindings_tolerate_missing_optional_nodes() -> None:

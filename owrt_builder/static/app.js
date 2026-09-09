@@ -46,9 +46,10 @@
 
   function formatSourceUpdateTime(source) {
     const value = source?.last_success_at || source?.snapshot?.created_at;
-    if (!value) return "当前版本更新时间未知";
-    const formatted = formatBeijingTime(value);
-    return formatted.startsWith("时间无效") ? "当前版本更新时间未知" : `当前版本更新时间 ${formatted}`;
+    if (!value) return "源: --";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "源: --";
+    return `源: ${beijingTimeFormatter.format(date)}`;
   }
 
   function csrfToken() {
@@ -258,14 +259,7 @@
       const result = await api("/api/sources");
       const ready = Boolean(result.ready);
       const badge = $("source-badge");
-      const updatedAt = formatSourceUpdateTime(result);
-      badge.textContent = ready
-        ? result.status === "preparing"
-          ? `源码更新中 · ${updatedAt}`
-          : result.status === "failed"
-            ? `更新失败 · ${updatedAt}`
-            : `源码已就绪 · ${updatedAt}`
-        : result.status === "failed" ? "源码更新失败" : "源码准备中";
+      badge.textContent = formatSourceUpdateTime(result);
       badge.className = `badge ${ready ? "ready" : ""}`;
       if (result.status === "preparing" && !state.sourcePoll) {
         state.sourcePoll = window.setInterval(async () => {
@@ -286,7 +280,7 @@
         }, 5000);
       }
     } catch (_) {
-      $("source-badge").textContent = "源码不可用";
+      $("source-badge").textContent = "源: --";
     }
   }
 
