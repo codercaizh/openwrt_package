@@ -1387,10 +1387,10 @@ class BuildEngine:
 
         OpenWrt's parallel make output often ends with only the failing target.
         If that formal compile fails, immediately rerun the same tree in
-        serial verbose mode (``make V=s -j1``).  The diagnostic result never
-        changes the outcome of the formal compile: a successful diagnostic is
-        still a failed build, and a diagnostic failure is reported alongside
-        the original failure in the streamed log.
+        serial verbose mode (``make V=s -j1``).  A successful diagnostic
+        confirms that the parallel failure was transient and lets the build
+        continue to packaging; a second failure is raised with the detailed
+        command's error while the original failure remains in the log.
         """
 
         command = ["make", f"-j{jobs}"]
@@ -1430,19 +1430,15 @@ class BuildEngine:
             )
             if cancel_event is not None and cancel_event.is_set():
                 raise BuildCancelled()
-            self._emit(callback, "详细诊断编译已结束，但正式编译仍判定为失败")
+            self._emit(callback, "串行详细诊断编译成功，继续后续打包")
         except BuildCancelled:
             self._emit(callback, "详细诊断编译期间收到取消请求，已终止诊断")
             raise
         except Exception as diagnostic_error:  # noqa: BLE001 - preserve both errors in the log
-            self._emit(callback, f"详细诊断编译错误：{diagnostic_error}")
+            self._emit(callback, f"串行详细诊断编译失败：{diagnostic_error}")
+            raise
         finally:
-            self._emit(callback, "========== 详细诊断结束；正式编译失败原因已保留 ==========")
-
-        # Always preserve the formal compile's exit code/error as the build
-        # result.  The detailed command is evidence for the log only.
-        assert formal_error is not None
-        raise formal_error
+            self._emit(callback, "========== 详细诊断结束；首次并行编译日志已保留 ==========")
 
     def _package(
         self,

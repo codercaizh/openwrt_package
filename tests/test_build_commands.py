@@ -124,16 +124,15 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
             raise CommandFailed(command, 2)
 
     engine._run_checked = run_checked  # type: ignore[method-assign]
-    with pytest.raises(CommandFailed, match=r"make -j3$"):
-        engine._run_pipeline(
-            SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
-            SimpleNamespace(snapshot_id="snapshot"),
-            openwrt,
-            config,
-            lines.append,
-            None,
-            jobs=3,
-        )
+    engine._run_pipeline(
+        SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
+        SimpleNamespace(snapshot_id="snapshot"),
+        openwrt,
+        config,
+        lines.append,
+        None,
+        jobs=3,
+    )
 
     assert commands == [
         ["make", "defconfig"],
@@ -143,7 +142,7 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
     ]
     assert any("开始串行详细诊断：make V=s -j1" in line for line in lines)
     assert any("首次正式编译错误" in line for line in lines)
-    assert any("正式编译仍判定为失败" in line for line in lines)
+    assert any("串行详细诊断编译成功，继续后续打包" in line for line in lines)
 
 
 def test_pipeline_preserves_formal_error_when_verbose_compile_fails(tmp_path: Path) -> None:
@@ -163,7 +162,7 @@ def test_pipeline_preserves_formal_error_when_verbose_compile_fails(tmp_path: Pa
             raise CommandFailed(command, 7)
 
     engine._run_checked = run_checked  # type: ignore[method-assign]
-    with pytest.raises(CommandFailed, match=r"command exited 2: make -j2$"):
+    with pytest.raises(CommandFailed, match=r"command exited 7: make V=s -j1$"):
         engine._run_pipeline(
             SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
             SimpleNamespace(snapshot_id="snapshot"),
@@ -176,7 +175,7 @@ def test_pipeline_preserves_formal_error_when_verbose_compile_fails(tmp_path: Pa
 
     assert commands[-2:] == [["make", "-j2"], ["make", "V=s", "-j1"]]
     assert any("首次正式编译错误" in line and "exited 2" in line for line in lines)
-    assert any("详细诊断编译错误" in line and "exited 7" in line for line in lines)
+    assert any("串行详细诊断编译失败" in line and "exited 7" in line for line in lines)
 
 
 def test_pipeline_does_not_start_verbose_compile_after_cancellation(tmp_path: Path) -> None:
