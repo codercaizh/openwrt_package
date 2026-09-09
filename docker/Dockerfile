@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     FORCE_UNSAFE_CONFIGURE=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
+    TZ=Asia/Shanghai \
     HOME=/tmp \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -17,7 +18,7 @@ RUN apt-get update \
       gperf help2man libelf-dev libncurses-dev libssl-dev libtool \
       libz-dev make patch perl pkg-config python3 python3-pip python3-ply \
       python3-setuptools qemu-utils rsync squashfs-tools subversion swig \
-      tar unzip util-linux wget xz-utils zip zlib1g-dev zstd jq p7zip-full \
+      tar tzdata unzip util-linux wget xz-utils zip zlib1g-dev zstd jq p7zip-full \
       dosfstools e2fsprogs fdisk parted btrfs-progs uuid-runtime \
  && ln -sf /usr/bin/python3 /usr/bin/python3.9 \
  && ln -sf /usr/bin/python3-config /usr/bin/python3.9-config \
@@ -50,6 +51,7 @@ COPY docs ./docs
 COPY docker ./docker
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai \
     OWRT_DATA_DIR=/var/lib/owrt-builder \
     OWRT_BIND_HOST=0.0.0.0 \
     OWRT_BIND_PORT=8000
@@ -61,5 +63,7 @@ CMD ["python3", "-m", "uvicorn", "owrt_builder.web:app", "--host", "0.0.0.0", "-
 # BuildEngine and GitHub Actions.
 FROM owrt-base AS worker
 WORKDIR /workspace/repo
+ENV TZ=Asia/Shanghai \
+    PYTHONUNBUFFERED=1
 ENTRYPOINT []
 CMD ["python3", "-m", "owrt_builder.cli", "--help"]

@@ -426,16 +426,24 @@ def stage_download_seeds(
     """Atomically import validated source seeds into the shared download cache."""
 
     seeds = validate_download_seeds(source_path)
-    if not seeds:
-        return ()
     cache = Path(download_cache)
+    cache_parent = cache.parent
+    if cache_parent.is_symlink():
+        raise SourceError(f"download cache parent must not be a symlink: {cache_parent}")
+    if cache_parent.exists() and not cache_parent.is_dir():
+        raise SourceError(f"download cache parent must be a directory: {cache_parent}")
     if cache.is_symlink():
         raise SourceError(f"download cache must not be a symlink: {cache}")
     if cache.exists() and not cache.is_dir():
         raise SourceError(f"download cache must be a regular directory: {cache}")
+    cache_parent.mkdir(parents=True, exist_ok=True)
+    if cache_parent.is_symlink() or not cache_parent.is_dir():
+        raise SourceError(f"download cache parent must be a real directory: {cache_parent}")
     cache.mkdir(parents=True, exist_ok=True)
     if cache.is_symlink() or not cache.is_dir():
         raise SourceError(f"download cache must be a regular directory: {cache}")
+    if not seeds:
+        return ()
     with _download_seed_lock(cache):
         for seed in seeds.values():
             _install_download_seed(seed, cache)

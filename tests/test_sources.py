@@ -212,6 +212,17 @@ def test_cleanup_removes_dl_when_source_has_no_tracked_seeds(tmp_path: Path) -> 
     assert not (source / "dl").exists()
 
 
+def test_stage_download_seeds_validates_cache_root_without_tracked_seeds(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    cache = tmp_path / "cache" / "dl"
+    cache.parent.mkdir(parents=True)
+    cache.symlink_to(tmp_path, target_is_directory=True)
+
+    with pytest.raises(SourceError, match="must not be a symlink"):
+        stage_download_seeds(source, cache)
+
+
 def test_download_seed_cache_import_reuses_correct_and_replaces_wrong_file(tmp_path: Path) -> None:
     source, seed = _git_source_with_seed(tmp_path)
     SourceManager._clean_generated_tree(source)

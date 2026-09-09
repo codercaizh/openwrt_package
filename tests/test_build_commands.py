@@ -11,7 +11,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from owrt_builder.build import BuildCancelled, BuildEngine, BuildError, BuildRequest, CommandFailed
+import owrt_builder.build as build_module
+from owrt_builder.build import (
+    BuildCancelled,
+    BuildEngine,
+    BuildError,
+    BuildRequest,
+    CommandFailed,
+    _format_heartbeat,
+)
 from owrt_builder.catalog import Catalog, KconfigOption, PackageMetadata
 from owrt_builder.devices import DeviceCatalog, DeviceSpec, SourceSpec
 from owrt_builder.sources import PREPARATION_VERSION, SourceManager
@@ -70,7 +78,69 @@ def test_worker_disables_python_output_buffering_for_live_logs(tmp_path: Path) -
         if value == "--env" and index + 1 < len(command)
     }
     assert "PYTHONUNBUFFERED=1" in env_values
+    assert "TZ=Asia/Shanghai" in env_values
     assert command[env_index + 1] == "OWRT_BUILDER_WORKER=1"
+
+
+def test_worker_stream_uses_a_safe_container_heartbeat_label(tmp_path: Path) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path)
+    labels: list[str | None] = []
+    engine._check_docker = lambda: None  # type: ignore[method-assign]
+    engine._image_exists = lambda _image: True  # type: ignore[method-assign]
+
+    def run_stream(_command, **kwargs):
+        labels.append(kwargs.get("heartbeat_label"))
+        return 1
+
+    engine._run_stream = run_stream  # type: ignore[method-assign]
+    result = engine.build(BuildRequest(device="n60pro", task_id="heartbeat-container"))
+
+    assert not result.ok
+    assert labels == ["构建容器"]
+
+
+def test_heartbeat_labels_render_command_local_elapsed_time() -> None:
+    container = _format_heartbeat("构建容器", 65)
+    compile_step = _format_heartbeat("make -j2", 125)
+
+    assert container == "[heartbeat][构建容器] 命令仍在运行，已耗时 1 分钟 5 秒"
+    assert compile_step == "[heartbeat][make -j2] 命令仍在运行，已耗时 2 分钟 5 秒"
+    assert "[heartbeat][构建容器]" in container
+    assert "[heartbeat][make -j2]" in compile_step
+
+
+def test_stream_heartbeats_use_independent_command_elapsed_clocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
+    ticks = [0.0]
+
+    def fake_monotonic() -> float:
+        ticks[0] += 6.0
+        return ticks[0]
+
+    monkeypatch.setattr(build_module.time, "monotonic", fake_monotonic)
+
+    def run(label: str) -> list[str]:
+        lines: list[str] = []
+        assert engine._run_stream(
+            [sys.executable, "-c", "import time; time.sleep(1.3)"],
+            cwd=tmp_path,
+            callback=lines.append,
+            cancel_event=None,
+            heartbeat_label=label,
+        ) == 0
+        return [line for line in lines if line.startswith("[heartbeat]")]
+
+    container_heartbeats = run("构建容器")
+    make_heartbeats = run("make -j2")
+
+    assert container_heartbeats and make_heartbeats
+    assert all("[heartbeat][构建容器]" in line for line in container_heartbeats)
+    assert all("[heartbeat][make -j2]" in line for line in make_heartbeats)
+    # Each _run_stream owns its start clock, so the nested command does not
+    # inherit the outer Docker wait's elapsed value.
+    assert container_heartbeats[0].rsplit(" ", 2)[-2:] == make_heartbeats[0].rsplit(" ", 2)[-2:]
 
 
 def test_stream_forwards_low_volume_output_before_process_exit(tmp_path: Path) -> None:
@@ -200,10 +270,12 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
     config = tmp_path / "generated.config"
     config.write_text("CONFIG_TEST=y\n", encoding="utf-8")
     commands: list[list[str]] = []
+    labels: list[str | None] = []
     lines: list[str] = []
 
-    def run_checked(command, **_kwargs):
+    def run_checked(command, **kwargs):
         commands.append(list(command))
+        labels.append(kwargs.get("heartbeat_label"))
         if command == ["make", "-j3"]:
             raise CommandFailed(command, 2)
 
@@ -224,6 +296,7 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
         ["make", "-j3"],
         ["make", "V=s", "-j1"],
     ]
+    assert labels == ["make defconfig", "make download", "make -j3", "make V=s -j1"]
     assert any("开始串行详细诊断：make V=s -j1" in line for line in lines)
     assert any("首次正式编译错误" in line for line in lines)
     assert any("串行详细诊断编译成功，继续后续打包" in line for line in lines)

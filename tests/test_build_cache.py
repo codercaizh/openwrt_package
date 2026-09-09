@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from owrt_builder.build import BuildRequest, logical_cpu_count
-from owrt_builder.cache import BuildCacheManager
+from owrt_builder.cache import BuildCacheError, BuildCacheManager
 
 
 def _resolver(value: str) -> str:
@@ -111,6 +111,49 @@ def test_device_cache_reuses_across_snapshot_updates_and_preserves_incremental_d
     )
     assert metadata["snapshot_id"] == "new-snapshot"
     assert metadata["ready"] is True
+
+
+def test_legacy_download_migration_drops_symlinks_and_keeps_regular_files(tmp_path: Path) -> None:
+    manager = BuildCacheManager(tmp_path, default_estimate_bytes=1)
+    destination = tmp_path / "cache-entry" / "openwrt"
+    dl = destination / "dl"
+    dl.mkdir(parents=True)
+    (dl / "trusted.tar.gz").write_bytes(b"trusted")
+    external = tmp_path / "outside-download"
+    external.write_bytes(b"must stay outside the cache")
+    (dl / "escape.tar.gz").symlink_to(external)
+    (dl / "unsafe-directory").mkdir()
+    (dl / "unsafe-directory" / "file").write_bytes(b"runtime")
+    cache = tmp_path / "cache" / "dl"
+    cache.mkdir(parents=True)
+    (cache / "escape.tar.gz").symlink_to(external)
+
+    manager._ensure_download_link(destination)
+
+    assert (cache / "trusted.tar.gz").read_bytes() == b"trusted"
+    assert not (cache / "escape.tar.gz").exists()
+    assert not (cache / "unsafe-directory").exists()
+    assert external.read_bytes() == b"must stay outside the cache"
+    assert (destination / "dl").is_symlink()
+    assert (destination / "dl" / "trusted.tar.gz").read_bytes() == b"trusted"
+
+
+@pytest.mark.parametrize("kind", ["symlink", "file"])
+def test_download_cache_root_must_be_real_directory_without_tracked_seeds(
+    tmp_path: Path, kind: str
+) -> None:
+    manager = BuildCacheManager(tmp_path, default_estimate_bytes=1)
+    cache = tmp_path / "cache" / "dl"
+    cache.parent.mkdir(parents=True)
+    if kind == "symlink":
+        cache.symlink_to(tmp_path, target_is_directory=True)
+    else:
+        cache.write_text("not a directory", encoding="utf-8")
+    destination = tmp_path / "cache-entry" / "openwrt"
+    destination.mkdir(parents=True)
+
+    with pytest.raises(BuildCacheError, match="download cache"):
+        manager._ensure_download_link(destination)
 
 
 def test_new_cache_stays_not_ready_until_build_finishes(tmp_path: Path) -> None:

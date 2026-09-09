@@ -27,6 +27,22 @@
     interrupted: "中断",
     canceling: "取消中",
   };
+  const beijingTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  function formatBeijingTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "时间无效（北京时间）";
+    return `${beijingTimeFormatter.format(date)} 北京时间`;
+  }
 
   function csrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)owrt_csrf=([^;]+)/);
@@ -550,7 +566,7 @@
         top.append(title, badge);
         const meta = document.createElement("span");
         meta.className = "job-meta";
-        meta.textContent = `${job.created_at} · ${job.packages?.length || 0} 个插件`;
+        meta.textContent = `${formatBeijingTime(job.created_at)} · ${job.packages?.length || 0} 个插件`;
         button.append(top, meta);
         button.addEventListener("click", () => openJob(job.id));
         list.appendChild(button);
@@ -639,7 +655,7 @@
     if (!row || Number(row.seq) <= state.lastSeq) return;
     state.lastSeq = Number(row.seq);
     const log = $("job-log");
-    log.textContent += `[${row.created_at}] ${row.line}\n`;
+    log.textContent += `[${formatBeijingTime(row.created_at)}] ${row.line}\n`;
     log.scrollTop = log.scrollHeight;
   }
 

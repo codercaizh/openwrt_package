@@ -63,6 +63,7 @@ docker run --detach \
   --env OWRT_DATA_DIR="$data_root/state" \
   --env OWRT_BIND_HOST=0.0.0.0 \
   --env OWRT_BIND_PORT=8000 \
+  --env TZ=Asia/Shanghai \
   --env OWRT_PUBLIC_ORIGIN="${OWRT_PUBLIC_ORIGIN:-http://127.0.0.1:$port}" \
   --env OWRT_ALLOWED_ORIGINS="${OWRT_ALLOWED_ORIGINS:-*}" \
   --env OWRT_SECURE_COOKIE="${OWRT_SECURE_COOKIE:-0}" \

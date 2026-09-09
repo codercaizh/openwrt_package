@@ -1149,8 +1149,7 @@ class BuildCacheManager:
         move its files into the shared cache before replacing it.
         """
 
-        download_cache = self.download_cache
-        download_cache.mkdir(parents=True, exist_ok=True)
+        download_cache = self._ensure_download_cache_directory()
         dl = destination / "dl"
         if dl.is_symlink():
             try:
@@ -1167,7 +1166,20 @@ class BuildCacheManager:
         elif dl.is_dir():
             for item in list(dl.iterdir()):
                 target = download_cache / item.name
+                if target.is_symlink():
+                    _remove_tree(target)
+                # A legacy ``dl`` directory is untrusted mutable state.  In
+                # particular, moving a symlink here would turn it into a
+                # shared-cache entry and make later workers follow an
+                # attacker-controlled target.  Keep only regular files.
+                if item.is_symlink() or not item.is_file():
+                    _remove_tree(item)
+                    continue
                 if target.exists() or target.is_symlink():
+                    if target.is_dir() or not target.is_file():
+                        raise BuildCacheError(
+                            f"download cache entry is not a regular file: {target}"
+                        )
                     _remove_tree(item)
                 else:
                     os.replace(item, target)
@@ -1175,6 +1187,27 @@ class BuildCacheManager:
         elif dl.exists():
             dl.unlink(missing_ok=True)
         dl.symlink_to(os.path.relpath(download_cache, destination))
+
+    def _ensure_download_cache_directory(self) -> Path:
+        """Create the shared download root only when it is a real directory."""
+
+        download_cache = self.download_cache
+        cache_parent = download_cache.parent
+        if cache_parent.is_symlink():
+            raise BuildCacheError(f"download cache parent must not be a symlink: {cache_parent}")
+        if cache_parent.exists() and not cache_parent.is_dir():
+            raise BuildCacheError(f"download cache parent must be a directory: {cache_parent}")
+        if download_cache.is_symlink():
+            raise BuildCacheError(f"download cache must not be a symlink: {download_cache}")
+        if download_cache.exists() and not download_cache.is_dir():
+            raise BuildCacheError(f"download cache must be a directory: {download_cache}")
+        cache_parent.mkdir(parents=True, exist_ok=True)
+        if cache_parent.is_symlink() or not cache_parent.is_dir():
+            raise BuildCacheError(f"download cache parent must be a real directory: {cache_parent}")
+        download_cache.mkdir(parents=True, exist_ok=True)
+        if download_cache.is_symlink() or not download_cache.is_dir():
+            raise BuildCacheError(f"download cache must be a real directory: {download_cache}")
+        return download_cache
 
     def refresh_source(
         self,

@@ -61,6 +61,17 @@ def test_index_versions_assets_and_disables_document_caching(tmp_path: Path) -> 
     assert response.headers["pragma"] == "no-cache"
 
 
+def test_frontend_formats_task_times_and_log_rows_as_beijing_time() -> None:
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+
+    assert 'new Intl.DateTimeFormat("zh-CN"' in script
+    assert 'timeZone: "Asia/Shanghai"' in script
+    assert "function formatBeijingTime(value)" in script
+    assert "formatBeijingTime(job.created_at)" in script
+    assert "formatBeijingTime(row.created_at)" in script
+    assert "北京时间" in script
+
+
 def test_top_level_event_bindings_tolerate_missing_optional_nodes() -> None:
     script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
 

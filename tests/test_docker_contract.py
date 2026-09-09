@@ -21,6 +21,8 @@ def test_web_stage_has_docker_cli_and_worker_stage_does_not() -> None:
 
     assert "apt-get install -y --no-install-recommends docker.io" in web
     assert "docker.io" not in worker
+    assert "TZ=Asia/Shanghai" in dockerfile
+    assert "ENV TZ=Asia/Shanghai" in worker
 
 
 def test_web_compose_mounts_host_docker_socket() -> None:
@@ -30,6 +32,7 @@ def test_web_compose_mounts_host_docker_socket() -> None:
     assert "/var/run/docker.sock:/var/run/docker.sock" in web
     assert "caddy" not in compose
     assert "${OWRT_WEB_PORT:-8000}:8000" in compose
+    assert "TZ: Asia/Shanghai" in web
 
 
 def test_single_container_launcher_preserves_host_paths_for_worker_mounts() -> None:
@@ -53,6 +56,7 @@ def test_single_container_launcher_preserves_host_paths_for_worker_mounts() -> N
     assert '"$repo_root:$repo_root:ro"' in source
     assert '"$data_root:$data_root:rw"' in source
     assert '--volume /var/run/docker.sock:/var/run/docker.sock' in source
+    assert '--env TZ=Asia/Shanghai' in source
 
 
 def test_single_container_launcher_passes_same_host_paths_to_docker(tmp_path: Path) -> None:

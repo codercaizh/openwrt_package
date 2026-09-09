@@ -41,6 +41,19 @@ from .sources import PreparedSource, SourceError, SourceManager, stage_download_
 
 
 LogCallback = Callable[[str], None]
+
+
+def _format_heartbeat(label: str, elapsed_seconds: float) -> str:
+    """Render a short, safe context label with command-local elapsed time."""
+
+    clean_label = " ".join(str(label).split())[:64] or "命令"
+    elapsed = max(0, int(elapsed_seconds))
+    return (
+        f"[heartbeat][{clean_label}] 命令仍在运行，已耗时 "
+        f"{elapsed // 60} 分钟 {elapsed % 60} 秒"
+    )
+
+
 BUILDER_CONTEXT_LABEL = "org.openwrt.builder.context"
 
 
@@ -552,6 +565,7 @@ class BuildEngine:
                         cwd=self.repo_root,
                         callback=callback,
                         cancel_event=cancel_event,
+                        heartbeat_label="构建编译镜像",
                     )
                 command = ["docker", "run", "--rm", "--init"]
                 # MediaTek compilation only needs the normal container
@@ -580,6 +594,8 @@ class BuildEngine:
                         "PYTHONUNBUFFERED=1",
                         "--env",
                         "OWRT_WORKER_LOCK_HELD=1",
+                        "--env",
+                        "TZ=Asia/Shanghai",
                         "--env",
                         "HOME=/tmp/owrt-home",
                         "--env",
@@ -611,6 +627,7 @@ class BuildEngine:
                         cancel_event=cancel_event,
                         log_path=log_path,
                         container_name=container_name,
+                        heartbeat_label="构建容器",
                     )
                 finally:
                     if arm_privileged:
@@ -718,6 +735,8 @@ class BuildEngine:
             "--init",
             "--user",
             "0:0",
+            "--env",
+            "TZ=Asia/Shanghai",
             "--volume",
             f"{self.workspace}:/workspace/work:rw",
             self.image,
@@ -743,6 +762,7 @@ class BuildEngine:
                 cwd=self.repo_root,
                 callback=callback,
                 cancel_event=None,
+                heartbeat_label="恢复 ARM 工作区权限",
             )
         except (OSError, BuildError) as exc:
             self._emit(callback, f"恢复 ARM 工作区文件权限失败: {exc}")
@@ -1413,6 +1433,7 @@ class BuildEngine:
             env=env,
             callback=callback,
             cancel_event=cancel_event,
+            heartbeat_label="make defconfig",
         )
         self._run_checked(
             ["make", "download"],
@@ -1421,6 +1442,7 @@ class BuildEngine:
             callback=callback,
             cancel_event=cancel_event,
             retry_once=True,
+            heartbeat_label="make download",
         )
         self._run_compile_with_diagnostics(
             openwrt_dir,
@@ -1458,6 +1480,7 @@ class BuildEngine:
                 env=env,
                 callback=callback,
                 cancel_event=cancel_event,
+                heartbeat_label=f"make -j{jobs}",
             )
             return
         except BuildCancelled:
@@ -1483,6 +1506,7 @@ class BuildEngine:
                 env=env,
                 callback=callback,
                 cancel_event=cancel_event,
+                heartbeat_label="make V=s -j1",
             )
             if cancel_event is not None and cancel_event.is_set():
                 raise BuildCancelled()
@@ -1996,6 +2020,7 @@ class BuildEngine:
         cancel_event: Any,
         env: Mapping[str, str] | None = None,
         retry_once: bool = False,
+        heartbeat_label: str | None = None,
     ) -> None:
         attempts = 2 if retry_once else 1
         last_code = 1
@@ -2006,6 +2031,7 @@ class BuildEngine:
                 callback=callback,
                 cancel_event=cancel_event,
                 env=env,
+                heartbeat_label=heartbeat_label,
             )
             if last_code == 0:
                 return
@@ -2023,6 +2049,7 @@ class BuildEngine:
         env: Mapping[str, str] | None = None,
         log_path: Path | None = None,
         container_name: str | None = None,
+        heartbeat_label: str | None = None,
     ) -> int:
         merged_env = os.environ.copy()
         if env:
@@ -2086,10 +2113,7 @@ class BuildEngine:
                     and now - last_output_monotonic >= heartbeat_seconds
                 ):
                     elapsed = int(now - started_monotonic)
-                    self._emit(
-                        callback,
-                        f"[heartbeat] 命令仍在运行，已耗时 {elapsed // 60} 分钟 {elapsed % 60} 秒",
-                    )
+                    self._emit(callback, _format_heartbeat(heartbeat_label or "命令", elapsed))
                     last_output_monotonic = now
                 if process.poll() is not None and not selector.get_map():
                     break

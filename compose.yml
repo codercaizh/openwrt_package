@@ -8,6 +8,7 @@ services:
     container_name: ${OWRT_WEB_CONTAINER_NAME:-owrt-builder-web}
     restart: unless-stopped
     environment:
+      TZ: Asia/Shanghai
       # The host paths are intentionally identical inside this container:
       # BuildEngine passes them to the host Docker daemon for worker mounts.
       OWRT_REPO_ROOT: ${OWRT_REPO_HOST_PATH:-${PWD}}
