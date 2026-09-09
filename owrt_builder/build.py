@@ -1366,13 +1366,83 @@ class BuildEngine:
             cancel_event=cancel_event,
             retry_once=True,
         )
-        self._run_checked(
-            ["make", f"-j{jobs}"],
-            cwd=openwrt_dir,
-            env=env,
-            callback=callback,
-            cancel_event=cancel_event,
+        self._run_compile_with_diagnostics(
+            openwrt_dir,
+            env,
+            callback,
+            cancel_event,
+            jobs=jobs,
         )
+
+    def _run_compile_with_diagnostics(
+        self,
+        openwrt_dir: Path,
+        env: Mapping[str, str],
+        callback: LogCallback,
+        cancel_event: Any,
+        *,
+        jobs: int,
+    ) -> None:
+        """Run the formal compile and retain a verbose failure diagnostic.
+
+        OpenWrt's parallel make output often ends with only the failing target.
+        If that formal compile fails, immediately rerun the same target with
+        the caller's job count and ``V=s`` in the same tree.  The diagnostic
+        result never changes the outcome of the formal compile: a successful
+        diagnostic is still a failed build, and a diagnostic failure is
+        reported alongside the original failure in the streamed log.
+        """
+
+        command = ["make", f"-j{jobs}"]
+        formal_error: CommandFailed | None = None
+        try:
+            self._run_checked(
+                command,
+                cwd=openwrt_dir,
+                env=env,
+                callback=callback,
+                cancel_event=cancel_event,
+            )
+            return
+        except BuildCancelled:
+            raise
+        except CommandFailed as exc:
+            formal_error = exc
+            self._emit(callback, "")
+            self._emit(callback, "========== 正式编译失败，开始详细诊断：make -j%s V=s ==========" % jobs)
+            self._emit(callback, f"首次正式编译错误：{formal_error}")
+
+        # The event can be set after the formal command exits but before the
+        # diagnostic command is spawned.  Do not launch a second make in that
+        # case; _run_stream also checks the event while the command runs.
+        if cancel_event is not None and cancel_event.is_set():
+            self._emit(callback, "已收到取消请求，跳过详细诊断编译")
+            raise BuildCancelled()
+
+        diagnostic_command = ["make", f"-j{jobs}", "V=s"]
+        try:
+            self._run_checked(
+                diagnostic_command,
+                cwd=openwrt_dir,
+                env=env,
+                callback=callback,
+                cancel_event=cancel_event,
+            )
+            if cancel_event is not None and cancel_event.is_set():
+                raise BuildCancelled()
+            self._emit(callback, "详细诊断编译已结束，但正式编译仍判定为失败")
+        except BuildCancelled:
+            self._emit(callback, "详细诊断编译期间收到取消请求，已终止诊断")
+            raise
+        except Exception as diagnostic_error:  # noqa: BLE001 - preserve both errors in the log
+            self._emit(callback, f"详细诊断编译错误：{diagnostic_error}")
+        finally:
+            self._emit(callback, "========== 详细诊断结束；正式编译失败原因已保留 ==========")
+
+        # Always preserve the formal compile's exit code/error as the build
+        # result.  The detailed command is evidence for the log only.
+        assert formal_error is not None
+        raise formal_error
 
     def _package(
         self,

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from owrt_builder.build import BuildEngine, BuildError, BuildRequest
+from owrt_builder.build import BuildCancelled, BuildEngine, BuildError, BuildRequest, CommandFailed
 from owrt_builder.sources import PREPARATION_VERSION
 
 
@@ -107,6 +107,116 @@ def test_pipeline_applies_jobs_only_to_final_compile(tmp_path: Path) -> None:
     )
 
     assert commands == [["make", "defconfig"], ["make", "download"], ["make", "-j3"]]
+
+
+def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Path) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
+    openwrt = tmp_path / "openwrt"
+    openwrt.mkdir()
+    config = tmp_path / "generated.config"
+    config.write_text("CONFIG_TEST=y\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    lines: list[str] = []
+
+    def run_checked(command, **_kwargs):
+        commands.append(list(command))
+        if command == ["make", "-j3"]:
+            raise CommandFailed(command, 2)
+
+    engine._run_checked = run_checked  # type: ignore[method-assign]
+    with pytest.raises(CommandFailed, match=r"make -j3$"):
+        engine._run_pipeline(
+            SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
+            SimpleNamespace(snapshot_id="snapshot"),
+            openwrt,
+            config,
+            lines.append,
+            None,
+            jobs=3,
+        )
+
+    assert commands == [
+        ["make", "defconfig"],
+        ["make", "download"],
+        ["make", "-j3"],
+        ["make", "-j3", "V=s"],
+    ]
+    assert any("开始详细诊断：make -j3 V=s" in line for line in lines)
+    assert any("首次正式编译错误" in line for line in lines)
+    assert any("正式编译仍判定为失败" in line for line in lines)
+
+
+def test_pipeline_preserves_formal_error_when_verbose_compile_fails(tmp_path: Path) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
+    openwrt = tmp_path / "openwrt"
+    openwrt.mkdir()
+    config = tmp_path / "generated.config"
+    config.write_text("CONFIG_TEST=y\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    lines: list[str] = []
+
+    def run_checked(command, **_kwargs):
+        commands.append(list(command))
+        if command == ["make", "-j2"]:
+            raise CommandFailed(command, 2)
+        if command == ["make", "-j2", "V=s"]:
+            raise CommandFailed(command, 7)
+
+    engine._run_checked = run_checked  # type: ignore[method-assign]
+    with pytest.raises(CommandFailed, match=r"command exited 2: make -j2$"):
+        engine._run_pipeline(
+            SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
+            SimpleNamespace(snapshot_id="snapshot"),
+            openwrt,
+            config,
+            lines.append,
+            None,
+            jobs=2,
+        )
+
+    assert commands[-2:] == [["make", "-j2"], ["make", "-j2", "V=s"]]
+    assert any("首次正式编译错误" in line and "exited 2" in line for line in lines)
+    assert any("详细诊断编译错误" in line and "exited 7" in line for line in lines)
+
+
+def test_pipeline_does_not_start_verbose_compile_after_cancellation(tmp_path: Path) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
+    openwrt = tmp_path / "openwrt"
+    openwrt.mkdir()
+    config = tmp_path / "generated.config"
+    config.write_text("CONFIG_TEST=y\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    lines: list[str] = []
+
+    class CancelEvent:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def is_set(self) -> bool:
+            return self.cancelled
+
+    cancel_event = CancelEvent()
+
+    def run_checked(command, **_kwargs):
+        commands.append(list(command))
+        if command == ["make", "-j4"]:
+            cancel_event.cancelled = True
+            raise CommandFailed(command, 2)
+
+    engine._run_checked = run_checked  # type: ignore[method-assign]
+    with pytest.raises(BuildCancelled):
+        engine._run_pipeline(
+            SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
+            SimpleNamespace(snapshot_id="snapshot"),
+            openwrt,
+            config,
+            lines.append,
+            cancel_event,
+            jobs=4,
+        )
+
+    assert commands == [["make", "defconfig"], ["make", "download"], ["make", "-j4"]]
+    assert any("跳过详细诊断编译" in line for line in lines)
 
 
 def test_requested_snapshot_errors_preserve_missing_vs_contaminated_reason(tmp_path: Path) -> None:
