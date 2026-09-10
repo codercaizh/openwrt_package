@@ -18,8 +18,11 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import shutil
 import subprocess
+import time
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -29,6 +32,12 @@ LogCallback = Callable[[str], None]
 
 class ArmPackagerError(RuntimeError):
     """The ARM image packaging step could not complete."""
+
+
+# The packit script should finish well before a six-hour build worker lease. A
+# finite script budget also turns an upstream wait_dev regression into a useful
+# failure instead of an unbounded Docker job.
+ARM_PACKIT_TIMEOUT_SECONDS = 30 * 60
 
 
 _PACKIT_SCRIPTS: Mapping[str, str] = {
@@ -55,8 +64,14 @@ def _run(
     env: Mapping[str, str] | None,
     callback: LogCallback,
     cancel_event: Any,
+    timeout_seconds: float | None = None,
 ) -> None:
-    """Run one command while forwarding output and honoring cancellation."""
+    """Run one command while forwarding output and honoring cancellation.
+
+    ``timeout_seconds`` is checked independently of child output.  This is
+    important for packit scripts such as ``wait_dev`` that can block forever
+    without writing another line to stdout.
+    """
 
     _emit(callback, "$ " + " ".join(str(item) for item in command))
     process = subprocess.Popen(
@@ -65,29 +80,81 @@ def _run(
         env=dict(env) if env is not None else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        universal_newlines=True,
+        text=False,
         start_new_session=(os.name == "posix"),
     )
     assert process.stdout is not None
-    try:
-        for line in process.stdout:
-            if cancel_event is not None and cancel_event.is_set():
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    buffer = b""
+    started = time.monotonic()
+
+    def terminate() -> None:
+        if process.poll() is not None:
+            return
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
+            process.wait(timeout=5)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
                 if os.name == "posix":
-                    os.killpg(process.pid, 15)
+                    os.killpg(process.pid, signal.SIGKILL)
                 else:
-                    process.terminate()
+                    process.kill()
+            except ProcessLookupError:
+                pass
+            # Reap the child even when escalation was needed.  This avoids a
+            # zombie and ensures cleanup has completed before the caller gets
+            # the timeout/cancellation error.
+            process.wait()
+
+    rendered = " ".join(str(item) for item in command)
+    try:
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                terminate()
                 raise ArmPackagerError("ARM packaging cancelled")
-            _emit(callback, line.rstrip("\n"))
+            events = selector.select(timeout=0.25)
+            for key, _ in events:
+                try:
+                    chunk = key.fileobj.read1(64 * 1024)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                buffer += chunk
+                while b"\n" in buffer:
+                    raw, buffer = buffer.split(b"\n", 1)
+                    _emit(callback, raw.decode("utf-8", errors="replace"))
+            if (
+                timeout_seconds is not None
+                and time.monotonic() - started >= timeout_seconds
+                and process.poll() is None
+            ):
+                terminate()
+                diagnostic = (
+                    f"ARM packit script timed out after {timeout_seconds:g} seconds: "
+                    f"{rendered}; the upstream script may be waiting for a loop "
+                    "partition device. Verify the privileged worker has the host "
+                    "/dev bind mounted and that loop devices are available."
+                )
+                _emit(callback, diagnostic)
+                raise ArmPackagerError(diagnostic)
+            if process.poll() is not None and not selector.get_map():
+                break
+        if buffer:
+            _emit(callback, buffer.decode("utf-8", errors="replace"))
         returncode = process.wait()
     finally:
+        selector.close()
         if process.poll() is None:
-            process.kill()
-            process.wait()
+            terminate()
         process.stdout.close()
     if returncode != 0:
-        rendered = " ".join(str(item) for item in command)
         raise ArmPackagerError(f"command exited {returncode}: {rendered}")
 
 
@@ -315,6 +382,7 @@ def package_arm(
         env=env,
         callback=callback,
         cancel_event=cancel_event,
+        timeout_seconds=ARM_PACKIT_TIMEOUT_SECONDS,
     )
 
     images = sorted(
@@ -337,4 +405,9 @@ def package_arm(
     return ArmPackageResult((archive_output,))
 
 
-__all__ = ["ArmPackagerError", "ArmPackageResult", "package_arm"]
+__all__ = [
+    "ARM_PACKIT_TIMEOUT_SECONDS",
+    "ArmPackagerError",
+    "ArmPackageResult",
+    "package_arm",
+]

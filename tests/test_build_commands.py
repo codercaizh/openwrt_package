@@ -65,6 +65,7 @@ def test_mediatek_worker_keeps_host_uid_without_privilege_or_host_network(tmp_pa
     command = _capture_worker_command(tmp_path, "n60pro")
 
     assert "--privileged" not in command
+    assert "/dev:/dev" not in command
     assert "--network=host" not in command
     assert "--network" not in command
     assert "--user" in command
@@ -208,6 +209,8 @@ def test_arm_worker_uses_privilege_without_host_uid_or_host_network(tmp_path: Pa
     command = _capture_worker_command(tmp_path, "s905d")
 
     assert "--privileged" in command
+    dev_mount_index = command.index("/dev:/dev")
+    assert command[dev_mount_index - 1] == "--volume"
     assert "--network=host" not in command
     assert "--network" not in command
     assert "--user" not in command

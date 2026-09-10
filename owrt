@@ -78,7 +78,10 @@ for argument in "${@:2}"; do
     case "$argument" in
         s905d|n1|vplus|h6-vplus)
             # The private ARM image packager may use loop/mount operations.
-            DOCKER_EXTRA_ARGS+=(--privileged)
+            # Its wait_dev helper observes partition nodes created by the
+            # host loop device, so expose the host device namespace only for
+            # this privileged packaging path.
+            DOCKER_EXTRA_ARGS+=(--privileged --volume /dev:/dev)
             DOCKER_USER_ARGS=()
             ARM_PACKAGING=1
             break

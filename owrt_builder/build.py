@@ -594,7 +594,11 @@ class BuildEngine:
                 # operations, so retain the elevated flag only for that
                 # reviewed packager path.
                 if arm_privileged:
-                    command.append("--privileged")
+                    # openwrt_packit waits for partition nodes under /dev
+                    # after parted creates a loop device.  Bind the host
+                    # device tree only for this privileged ARM worker; the
+                    # normal MediaTek worker remains in Docker's namespace.
+                    command.extend(["--privileged", "--volume", "/dev:/dev"])
                 else:
                     # The worker writes the large build tree as the invoking
                     # user.  This keeps the ordinary compiler isolated and

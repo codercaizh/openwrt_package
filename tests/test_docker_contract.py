@@ -88,3 +88,62 @@ def test_single_container_launcher_passes_same_host_paths_to_docker(tmp_path: Pa
     assert f"--volume {tmp_path / 'persistent'}:{tmp_path / 'persistent'}:rw" in calls
     assert "--volume /var/run/docker.sock:/var/run/docker.sock" in calls
     assert "--publish 18001:8000" in calls
+
+
+def test_dependency_free_launcher_mounts_host_dev_only_for_arm_builds(tmp_path: Path) -> None:
+    """The fallback Docker path exposes loop partition nodes only to ARM."""
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "docker-args.log"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$DOCKER_ARGS_LOG\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    fake_python = fake_bin / "python3"
+    fake_python.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_python.chmod(0o755)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "DOCKER_ARGS_LOG": str(log),
+            "OWRT_BUILDER_IMAGE": "contract-builder:local",
+        }
+    )
+
+    arm = subprocess.run(
+        [str(ROOT / "owrt"), "build", "s905d"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert arm.returncode == 0
+    arm_runs = [line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("run ")]
+    assert arm_runs
+    assert "--privileged" in arm_runs[0]
+    assert "--volume /dev:/dev" in arm_runs[0]
+
+    log.write_text("", encoding="utf-8")
+    non_arm = subprocess.run(
+        [str(ROOT / "owrt"), "build", "n60pro"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert non_arm.returncode == 0
+    non_arm_runs = [
+        line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("run ")
+    ]
+    assert non_arm_runs
+    assert all("--privileged" not in line for line in non_arm_runs)
+    assert all("--volume /dev:/dev" not in line for line in non_arm_runs)
