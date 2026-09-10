@@ -20,32 +20,40 @@ from .storage import Storage
 
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ROUNDS = 310_000
-PASSWORD_MIN_LENGTH = 12
 SESSION_COOKIE = "owrt_session"
 CSRF_COOKIE = "owrt_csrf"
 
 
-def hash_password(password: str, rounds: int = PASSWORD_ROUNDS, *, allow_weak: bool = False) -> str:
-    """Hash a password with PBKDF2.
+def validate_username(username: str) -> str:
+    """Validate an account name without normalizing its contents."""
 
-    The normal account-management path requires a 12-character password.  A
-    separate, explicit bootstrap escape hatch is used only for the documented
-    first-run ``admin/admin`` account; callers must never use it for updates.
-    Keeping the exception here makes it impossible for a settings request to
-    accidentally weaken the password policy.
-    """
+    if not isinstance(username, str) or not username:
+        raise ValueError("用户名不能为空")
+    return username
 
-    minimum = 1 if allow_weak else PASSWORD_MIN_LENGTH
-    if not isinstance(password, str) or len(password) < minimum:
-        if allow_weak:
-            raise ValueError("管理员密码不能为空")
-        raise ValueError(f"管理员密码至少需要 {PASSWORD_MIN_LENGTH} 个字符")
+
+def validate_password(password: str) -> str:
+    """Validate a password by presence only."""
+
+    if not isinstance(password, str) or not password:
+        raise ValueError("管理员密码不能为空")
+    return password
+
+
+def hash_password(password: str, rounds: int = PASSWORD_ROUNDS) -> str:
+    """Hash a non-empty password with PBKDF2."""
+
+    validate_password(password)
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
     return f"{PASSWORD_SCHEME}${rounds}${_b64(salt)}${_b64(digest)}"
 
 
 def verify_password(password: str, encoded: str) -> bool:
+    if not isinstance(password, str) or not password:
+        return False
+    if not isinstance(encoded, str):
+        return False
     try:
         scheme, rounds_text, salt_text, digest_text = encoded.split("$", 3)
         if scheme != PASSWORD_SCHEME:
@@ -91,16 +99,26 @@ class AuthManager:
     @staticmethod
     def _limit_key(request: Request, username: str) -> str:
         host = request.client.host if request.client else "unknown"
-        normalized = username.strip().casefold()[:160]
+        # Limit only the rate-limit key's storage footprint; this is not a
+        # validity check on the account name itself.
+        normalized = username.casefold()[:160]
         return f"{host}:{normalized}"
 
     def login(self, request: Request, response: Response, username: str, password: str) -> dict[str, Any]:
         self.validate_origin(request)
+        try:
+            username = validate_username(username)
+            password = validate_password(password)
+        except ValueError as exc:
+            # Keep malformed direct calls consistent with the API's generic
+            # invalid-credentials response.  The Pydantic request model also
+            # enforces the same non-empty input contract.
+            raise HTTPException(status_code=401, detail="用户名或密码错误") from exc
         key = self._limit_key(request, username)
         allowed, retry_after = self.storage.login_limit(key, int(time.time()), self.settings.login_window_seconds, self.settings.login_max_attempts)
         if not allowed:
             raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试", headers={"Retry-After": str(max(1, retry_after))})
-        user = self.storage.get_admin_by_username(username.strip())
+        user = self.storage.get_admin_by_username(username)
         if user is None or not verify_password(password, user["password_hash"]):
             # Do not distinguish an unknown account from a wrong password.
             raise HTTPException(status_code=401, detail="用户名或密码错误")

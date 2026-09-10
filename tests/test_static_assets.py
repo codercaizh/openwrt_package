@@ -124,6 +124,9 @@ def test_settings_ui_uses_masked_pushplus_status_and_account_update_api() -> Non
     assert 'body: { clear_pushplus: true }' in script
     assert "requires_login" in script
     assert "push-secret" not in script
+    assert 'body: { username: $("username").value, password: $("password").value }' in script
+    assert 'const username = $("settings-username").value;' in script
+    assert 'minlength="12"' not in html
 
 
 def test_catalog_selection_order_is_stable_until_the_next_catalog_refresh() -> None:

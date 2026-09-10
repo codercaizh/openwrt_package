@@ -120,7 +120,7 @@
     try {
       await api("/api/auth/login", {
         method: "POST",
-        body: { username: $("username").value.trim(), password: $("password").value },
+        body: { username: $("username").value, password: $("password").value },
       });
       $("password").value = "";
       $("login-panel").hidden = true;
@@ -175,7 +175,7 @@
   async function saveAccount(event) {
     event.preventDefault();
     try {
-      const username = $("settings-username").value.trim();
+      const username = $("settings-username").value;
       const currentPassword = $("current-password").value;
       const newPassword = $("new-password").value;
       const body = { username, current_password: currentPassword };

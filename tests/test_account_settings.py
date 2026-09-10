@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 
+from owrt_builder.admin import create_admin
 from owrt_builder.auth import hash_password, verify_password
 from owrt_builder.storage import Storage
 from owrt_builder.web import Settings, create_app
@@ -12,7 +13,7 @@ from owrt_builder.web import Settings, create_app
 
 def test_default_admin_bootstrap_is_atomic_and_does_not_overwrite_existing_users(tmp_path: Path) -> None:
     storage = Storage(tmp_path / "state.sqlite3", tmp_path / "logs", tmp_path / "artifacts")
-    bootstrap_hash = hash_password("admin", allow_weak=True)
+    bootstrap_hash = hash_password("admin")
 
     assert storage.ensure_default_admin("admin", bootstrap_hash) is True
     assert storage.ensure_default_admin("admin", hash_password("different-strong-password")) is False
@@ -26,6 +27,20 @@ def test_default_admin_bootstrap_is_atomic_and_does_not_overwrite_existing_users
     assert existing.ensure_default_admin("admin", bootstrap_hash) is False
     assert existing.get_admin_by_username("admin") is None
     assert existing.get_admin_by_username("operator") is not None
+
+
+def test_cli_admin_initialization_preserves_non_empty_whitespace_credentials(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "cli-state.sqlite3"
+    monkeypatch.setenv("OWRT_DB_PATH", str(db_path))
+    monkeypatch.setenv("OWRT_LOG_DIR", str(tmp_path / "cli-logs"))
+    monkeypatch.setenv("OWRT_ARTIFACT_DIR", str(tmp_path / "cli-artifacts"))
+
+    user_id = create_admin(" operator ", " ")
+    storage = Storage(db_path, tmp_path / "cli-logs", tmp_path / "cli-artifacts")
+    user = storage.get_admin(user_id)
+    assert user is not None
+    assert user["username"] == " operator "
+    assert verify_password(" ", user["password_hash"])
 
 
 def test_settings_mask_pushplus_and_invalidate_sessions_after_account_change(tmp_path: Path) -> None:
@@ -96,5 +111,41 @@ def test_settings_mask_pushplus_and_invalidate_sessions_after_account_change(tmp
             assert cleared.status_code == 200
             assert cleared.json()["settings"]["pushplus"] == {"configured": False, "masked": ""}
             assert storage.get_pushplus_token() is None
+
+    asyncio.run(request())
+
+
+def test_settings_account_change_accepts_short_and_whitespace_credentials(tmp_path: Path) -> None:
+    app = create_app(settings=Settings(data_dir=tmp_path))
+    storage = app.state.storage
+    storage.create_admin("admin", hash_password("p"))
+
+    async def request() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            login = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "p"},
+                headers={"Origin": "http://testserver"},
+            )
+            assert login.status_code == 200, login.text
+            changed = await client.put(
+                "/api/settings",
+                json={
+                    "username": " operator ",
+                    "current_password": "p",
+                    "new_password": " ",
+                },
+                headers={"Origin": "http://testserver", "X-CSRF-Token": login.json()["csrf"]},
+            )
+            assert changed.status_code == 200, changed.text
+
+            relogin = await client.post(
+                "/api/auth/login",
+                json={"username": " operator ", "password": " "},
+                headers={"Origin": "http://testserver"},
+            )
+            assert relogin.status_code == 200, relogin.text
+            assert relogin.json()["user"]["username"] == " operator "
 
     asyncio.run(request())

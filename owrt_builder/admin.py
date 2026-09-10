@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 
-from .auth import hash_password
+from .auth import hash_password, validate_username
 from .storage import Storage
 
 
@@ -33,9 +33,7 @@ def _storage_from_env() -> Storage:
 
 
 def create_admin(username: str, password: str | None = None) -> int:
-    username = username.strip()
-    if not username or len(username) > 120 or any(ch.isspace() for ch in username):
-        raise ValueError("用户名不能为空、不能含空白且长度不能超过 120")
+    username = validate_username(username)
     if password is None:
         password = os.getenv("OWRT_ADMIN_PASSWORD")
     if password is None:

@@ -34,7 +34,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator
 
-from .auth import AuthManager, PASSWORD_MIN_LENGTH, hash_password, settings_from_env, verify_password
+from .auth import (
+    AuthManager,
+    hash_password,
+    settings_from_env,
+    validate_username,
+    verify_password,
+)
 from .build import BuildEngine, BuildRequest, logical_cpu_count
 from .catalog import Catalog, scan_catalog
 from .configuration import parse_config
@@ -146,8 +152,8 @@ class StrictBody(BaseModel):
 
 
 class LoginBody(StrictBody):
-    username: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=1, max_length=512)
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
 
 
 class SettingsBody(StrictBody):
@@ -157,9 +163,9 @@ class SettingsBody(StrictBody):
     username does not accidentally clear an existing notification token.
     """
 
-    username: str | None = Field(default=None, max_length=120)
-    current_password: str | None = Field(default=None, max_length=512)
-    new_password: str | None = Field(default=None, max_length=512)
+    username: str | None = Field(default=None, min_length=1)
+    current_password: str | None = Field(default=None, min_length=1)
+    new_password: str | None = Field(default=None, min_length=1)
     pushplus_token: str | None = Field(default=None, max_length=512)
     clear_pushplus: StrictBool = False
 
@@ -982,10 +988,7 @@ def _safe_error(value: Any) -> str:
 
 
 def _validate_admin_username(value: str) -> str:
-    username = str(value).strip()
-    if not username or len(username) > 120 or any(character.isspace() for character in username):
-        raise ValueError("用户名不能为空、不能含空白且长度不能超过 120")
-    return username
+    return validate_username(value)
 
 
 def _mask_secret(value: str | None) -> str:
@@ -1276,7 +1279,7 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
         nonlocal app_runtime, source_service, worker, scheduler
         # Keep the first-run account deterministic for local deployments.  The
         # operation is atomic and is a no-op for every existing installation.
-        storage.ensure_default_admin("admin", hash_password("admin", allow_weak=True))
+        storage.ensure_default_admin("admin", hash_password("admin"))
         if app_runtime is not None:
             source_service = SourceService(app_runtime, storage)
             worker = QueueWorker(app_runtime, storage, settings, app_notifier)
@@ -1373,7 +1376,7 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
         account_changed = bool(account_fields)
         if account_changed:
             user = storage.get_admin(user_id)
-            if user is None or not body.current_password or not verify_password(body.current_password, user["password_hash"]):
+            if user is None or body.current_password is None or not verify_password(body.current_password, user["password_hash"]):
                 raise HTTPException(status_code=403, detail="当前密码错误")
             try:
                 requested_username = body.username if "username" in body.model_fields_set else str(user["username"])
@@ -1384,8 +1387,6 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             password_hash: str | None = None
             if "new_password" in body.model_fields_set and body.new_password is not None:
-                if len(body.new_password) < PASSWORD_MIN_LENGTH:
-                    raise HTTPException(status_code=422, detail=f"新密码至少需要 {PASSWORD_MIN_LENGTH} 个字符")
                 try:
                     password_hash = hash_password(body.new_password)
                 except ValueError as exc:
