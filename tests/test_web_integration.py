@@ -169,6 +169,174 @@ def test_source_refresh_failure_preserves_a_readable_current_snapshot(tmp_path: 
     assert state["finished_at"] != state["last_success_at"]
 
 
+def test_source_request_holds_cleanup_lock_through_worker_start(tmp_path: Path, monkeypatch) -> None:
+    """An accepted refresh cannot be lost when cleanup races thread startup."""
+
+    source_root = tmp_path / "snapshot" / "source"
+    source_root.mkdir(parents=True)
+    catalog_path = tmp_path / "snapshot" / "catalog.json"
+    Catalog(
+        root=source_root,
+        packages=[PackageMetadata(name="luci-app-demo", title="Demo")],
+        authoritative=True,
+    ).write(catalog_path)
+    prepared = PreparedSource(
+        source_id="armv8",
+        snapshot_id="request-race",
+        path=source_root,
+        catalog_path=catalog_path,
+        source_commit="source-sha",
+    )
+    runtime = Runtime(
+        devices=load_catalog(),
+        sources=SimpleNamespace(prepare_source=lambda *_args, **_kwargs: prepared),
+        build=SimpleNamespace(workspace=tmp_path / "workspace"),
+    )
+    storage = Storage(tmp_path / "state.sqlite3", tmp_path / "logs", tmp_path / "artifacts")
+    service = SourceService(runtime, storage)
+
+    class CleanupRaceThread:
+        def __init__(self, *, target, args, **_kwargs):
+            self.target = target
+            self.args = args
+
+        def is_alive(self) -> bool:
+            return False
+
+        def start(self) -> None:
+            # A racing cleanup would acquire the released gap in the old
+            # implementation and hold it while invoking the worker target.
+            cleanup = web_module.workspace_cleanup_lock(service._workspace(), timeout=0.0)
+            try:
+                cleanup.__enter__()
+            except web_module.CleanupError:
+                # The fixed implementation still owns the lock here.  Run the
+                # target synchronously so this test remains deterministic.
+                self.target(*self.args)
+            else:
+                try:
+                    self.target(*self.args)
+                finally:
+                    cleanup.__exit__(None, None, None)
+
+    monkeypatch.setattr(web_module.threading, "Thread", CleanupRaceThread)
+
+    assert service.request(force=False, reason="race-test") is True
+    state = storage.get_state("source")
+    assert state["status"] == "ready"
+    assert state["snapshot_id"] == prepared.snapshot_id
+
+
+def test_lifespan_starts_initial_source_refresh_before_queue_worker(tmp_path: Path, monkeypatch) -> None:
+    """Startup ordering prevents an idle worker poll from rejecting refresh."""
+
+    events: list[str] = []
+
+    class FakeSourceService:
+        def __init__(self, _runtime, _storage):
+            events.append("source-init")
+
+        def request(self, force: bool, reason: str) -> bool:
+            events.append(f"source-request:{force}:{reason}")
+            return True
+
+        def stop(self) -> None:
+            events.append("source-stop")
+
+    class FakeScheduler:
+        def __init__(self, service):
+            self.service = service
+
+        def start(self) -> None:
+            events.append("scheduler-start")
+            # Mirror Scheduler.start's initial request while keeping this test
+            # independent of a real background thread or clock.
+            self.service.request(False, "startup")
+
+        def stop(self) -> None:
+            events.append("scheduler-stop")
+
+    class FakeQueueWorker:
+        def __init__(self, *_args):
+            self.thread = None
+
+        def start(self) -> None:
+            events.append("worker-start")
+
+        def stop(self) -> None:
+            events.append("worker-stop")
+
+    monkeypatch.setattr(web_module, "SourceService", FakeSourceService)
+    monkeypatch.setattr(web_module, "Scheduler", FakeScheduler)
+    monkeypatch.setattr(web_module, "QueueWorker", FakeQueueWorker)
+
+    app = create_app(runtime=object(), settings=Settings(data_dir=tmp_path))
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            assert events[:4] == [
+                "source-init",
+                "scheduler-start",
+                "source-request:False:startup",
+                "worker-start",
+            ]
+
+    asyncio.run(run_lifespan())
+    assert events[-3:] == ["scheduler-stop", "source-stop", "worker-stop"]
+
+
+def test_scheduler_skips_startup_refresh_after_cache_cleanup(monkeypatch) -> None:
+    events: list[str] = []
+
+    class Source:
+        def status(self):
+            return {"status": "not_ready", "ready": False, "reason": "cache_cleanup"}
+
+        def request(self, *_args):
+            events.append("request")
+            return True
+
+    class NoopThread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            events.append("thread-start")
+
+    monkeypatch.setattr(web_module.threading, "Thread", NoopThread)
+
+    scheduler = web_module.Scheduler(Source())
+    scheduler.start()
+
+    assert events == ["thread-start"]
+
+
+def test_scheduler_starts_initial_refresh_for_unprepared_source(monkeypatch) -> None:
+    events: list[str] = []
+
+    class Source:
+        def status(self):
+            return {"status": "failed", "ready": False, "reason": "startup"}
+
+        def request(self, force, reason):
+            events.append((force, reason))
+            return True
+
+    class NoopThread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            events.append("thread-start")
+
+    monkeypatch.setattr(web_module.threading, "Thread", NoopThread)
+
+    scheduler = web_module.Scheduler(Source())
+    scheduler.start()
+
+    assert events == [(False, "startup"), "thread-start"]
+
+
 def test_public_source_state_does_not_use_failed_attempt_time_for_old_state() -> None:
     public = web_module._public_source_state(
         {

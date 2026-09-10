@@ -3,94 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
-  <title>OpenWrt Builder</title>
+  <meta name="theme-color" content="#08111f">
+  <meta name="description" content="OpenWrt 固件构建与运维控制台">
+  <title>OpenWrt Builder · 运维控制台</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <main class="shell">
-    <section id="login-panel" class="panel login-panel">
+    <section id="login-panel" class="panel login-panel" aria-labelledby="login-title">
       <div class="eyebrow">LOCAL BUILD CONTROL</div>
-      <h1>OpenWrt 固件构建</h1>
-      <p class="muted">管理员登录后选择设备、插件和子选项。首次启动使用 admin/admin，请登录后立即在设置中修改。</p>
+      <h1 id="login-title">OpenWrt 固件构建</h1>
+      <p class="muted">登录后管理源码、构建任务与固件产物。首次启动使用 admin/admin，请登录后立即修改。</p>
       <form id="login-form" autocomplete="on">
-        <label>用户名<input id="username" name="username" autocomplete="username" required></label>
-        <label>密码<input id="password" name="password" type="password" autocomplete="current-password" required></label>
-        <button class="primary" type="submit">登录</button>
+        <label for="username">用户名<input id="username" name="username" autocomplete="username" required></label>
+        <label for="password">密码<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary" type="submit">登录控制台</button>
       </form>
-      <p id="login-error" class="error" role="alert"></p>
+      <p id="login-error" class="error" role="alert" aria-live="assertive"></p>
     </section>
 
     <section id="app-panel" hidden>
-      <header class="topbar">
-        <div><div class="eyebrow">OPENWRT BUILDER</div><h1>构建控制台</h1></div>
-        <div class="top-actions"><span id="source-badge" class="badge">源码准备中</span><button id="open-settings" class="ghost">设置</button><button id="logout" class="ghost">退出</button></div>
+      <header class="topbar" role="banner">
+        <a class="brand" href="#overview" aria-label="返回概览"><span class="brand-mark" aria-hidden="true">◒</span><span><span class="eyebrow">OPENWRT BUILDER</span><strong>构建控制台</strong></span></a>
+        <nav class="top-nav" aria-label="主导航"><a data-route="overview" href="#overview" aria-current="page">概览</a><a data-route="jobs" href="#jobs">任务</a><a data-route="processes" href="#processes">进程</a><a id="open-settings" data-route="settings" href="#settings" aria-controls="settings-panel">设置</a><button id="logout" class="ghost" type="button">退出</button></nav>
       </header>
 
-      <section id="settings-panel" class="panel settings-panel" hidden>
-        <div class="section-heading"><div><h2>账户与通知设置</h2><p class="muted">密码以安全散列保存；PushPlus token 只显示配置状态，不会回显。</p></div><button id="close-settings" class="ghost" type="button">收起</button></div>
-        <div class="settings-grid">
-          <form id="account-form" autocomplete="off">
-            <h3>管理员账户</h3>
-            <label>用户名<input id="settings-username" name="settings-username" autocomplete="username" required></label>
-            <label>当前密码<input id="current-password" name="current-password" type="password" autocomplete="current-password" required></label>
-            <label>新密码<input id="new-password" name="new-password" type="password" autocomplete="new-password"></label>
-            <button class="primary" type="submit">保存账户</button>
-          </form>
-          <form id="pushplus-form" autocomplete="off">
-            <h3>PushPlus 通知</h3>
-            <p id="pushplus-status" class="muted small">读取中…</p>
-            <label>Token<input id="pushplus-token" name="pushplus-token" type="password" autocomplete="new-password" placeholder="留空表示清空"></label>
-            <div class="form-actions"><button class="primary" type="submit">保存 token</button><button id="clear-pushplus" class="ghost" type="button">清空 token</button></div>
-          </form>
-        </div>
-        <p id="settings-message" class="message" role="status"></p>
-      </section>
-
-      <div class="layout">
-        <section class="panel builder-panel">
-          <div class="section-heading"><div><h2>新建构建</h2><p class="muted">目录来自当前源码快照，提交时会锁定快照。</p></div><button id="refresh-sources" class="ghost">更新源</button></div>
-          <label>设备<select id="device-select"></select></label>
-          <div class="build-controls" aria-label="构建资源设置">
-            <label>
-              并行核心数
-              <input id="parallel-jobs" type="number" min="1" step="1" inputmode="numeric" required>
-              <span id="parallel-jobs-hint" class="muted small">读取系统逻辑核心数…</span>
-            </label>
-            <label class="checkbox-control">
-              <span>复用该设备编译缓存</span>
-              <input id="reuse-cache" type="checkbox" checked>
-              <small class="muted">开启可减少重复下载和编译时间。</small>
-            </label>
+      <div class="app-content">
+        <section id="overview" class="spa-view overview-view" data-view="overview" aria-labelledby="overview-title">
+          <div class="overview-section">
+            <div class="hero-copy"><div class="eyebrow">OPERATIONS OVERVIEW</div><h1 id="overview-title">今天，构建什么？</h1><p class="muted">从已审核的设备目录发起可追溯构建，实时查看主机资源与队列进度。</p><div class="hero-meta"><span id="source-badge" class="badge">源码准备中</span><span id="source-time" class="muted small">源: --</span></div></div>
+            <div class="overview-cards" aria-label="系统概览"><article class="overview-card accent-card"><span class="card-label">任务总数</span><strong id="overview-total">—</strong><span id="overview-total-note" class="muted small">成功 — · 失败 —</span></article><article class="overview-card"><span class="card-label">进行中</span><strong id="overview-active">—</strong><span class="muted small">排队或构建</span></article><article class="overview-card"><span class="card-label">主机磁盘</span><strong id="overview-disk">—</strong><span id="overview-disk-note" class="muted small">读取中</span></article><article class="overview-card"><span class="card-label">内存占用</span><strong id="overview-memory">—</strong><span id="overview-cpu" class="muted small">CPU —</span></article></div>
           </div>
-
-          <div class="catalog-heading"><h3>选择插件</h3><p class="muted small">内置默认插件会自动勾选；单击插件信息可展开或收起其子选项。</p></div>
-          <div class="catalog-toolbar">
-            <div class="tabs" role="tablist"><button class="tab active" data-category="luci-app">LuCI 应用</button><button class="tab" data-category="luci-theme">主题</button><button class="tab" data-category="other">默认工具</button><button class="tab" data-category="all">全部可选</button></div>
-            <input id="catalog-search" type="search" placeholder="搜索插件或描述" aria-label="搜索插件">
-          </div>
-          <div id="catalog-state" class="muted small">等待源码目录…</div>
-          <div id="catalog-list" class="catalog-list"></div>
-
-          <div id="dependency-feedback" class="feedback"></div>
-          <div class="form-actions"><button id="submit-job" class="primary">提交构建</button></div>
-          <p id="builder-message" class="message" role="status"></p>
         </section>
 
-        <section class="panel jobs-panel">
-          <div class="section-heading"><div><h2>任务队列</h2><p class="muted">任务按提交顺序串行执行。</p></div><button id="reload-jobs" class="ghost">刷新</button></div>
-          <div id="jobs-list" class="jobs-list"><p class="muted">暂无任务。</p></div>
-          <div id="job-detail" class="job-detail" hidden>
-            <div class="section-heading"><div><h3 id="job-title">任务详情</h3><span id="job-status" class="badge"></span></div><button id="close-job" class="ghost">收起</button></div>
-            <pre id="job-log" class="log" aria-live="polite"></pre>
-            <div id="artifacts" class="artifacts"></div>
-            <button id="save-default" class="ghost">将此成功配置保存为设备默认</button>
-            <button id="cancel-job" class="danger">取消任务</button>
-          </div>
+        <section id="jobs" class="spa-view jobs-view" data-view="jobs" hidden aria-labelledby="jobs-title">
+          <section class="panel jobs-panel">
+            <div class="section-heading"><div><div class="eyebrow">BUILD PIPELINE</div><h2 id="jobs-title">任务队列</h2><p class="muted small">最近提交的任务优先显示，历史记录与日志会持续保留。</p></div><div class="heading-actions"><button id="reload-jobs" class="ghost" type="button">刷新</button><button id="new-build" class="primary" type="button" aria-haspopup="dialog" aria-controls="build-dialog">新建构建</button></div></div>
+            <div id="jobs-list" class="jobs-list" aria-live="polite"><p class="muted">暂无任务。</p></div>
+            <div id="job-pagination" class="pagination" aria-label="任务分页" hidden><button id="jobs-prev" class="ghost" type="button">上一页</button><span id="jobs-page-label" class="muted small">第 1 / 1 页 · 共 0 条</span><button id="jobs-next" class="ghost" type="button">下一页</button></div>
+            <div id="job-detail" class="job-detail" hidden aria-labelledby="job-title"><div class="section-heading"><div><h3 id="job-title">任务详情</h3><span id="job-status" class="badge"></span></div><button id="close-job" class="ghost" type="button">收起</button></div><div id="job-summary" class="job-summary" aria-live="polite"></div><pre id="job-log" class="log" aria-live="polite"></pre><div id="artifacts" class="artifacts" aria-label="构建产物"></div><div class="detail-actions"><button id="save-default" class="ghost" type="button">保存为设备默认</button><button id="cancel-job" class="danger" type="button">取消任务</button></div></div>
+          </section>
+        </section>
+
+        <section id="processes" class="spa-view processes-view" data-view="processes" hidden aria-labelledby="system-title">
+          <aside class="panel system-panel"><div class="section-heading"><div><div class="eyebrow">HOST TELEMETRY</div><h2 id="system-title">主机状态</h2><p id="system-collected" class="muted small">每 4 秒刷新</p></div><button id="reload-system" class="ghost" type="button">刷新</button></div><div class="resource-list" aria-label="资源使用情况"><div class="resource-row"><span>磁盘</span><strong id="system-disk-value">—</strong><span id="system-disk-percent" class="muted small">—</span></div><div class="resource-row"><span>内存</span><strong id="system-memory-value">—</strong><span id="system-memory-percent" class="muted small">—</span></div><div class="resource-row"><span>CPU</span><strong id="system-cpu-value">—</strong><span id="system-cpu-load" class="muted small">负载 —</span></div></div><div class="process-heading"><h3>进程</h3><label class="sort-control">排序<select id="process-sort" aria-label="进程排序"><option value="cpu">CPU</option><option value="memory">内存</option></select></label></div><div class="process-table-wrap"><table class="process-table"><caption class="sr-only">主机进程资源占用</caption><thead><tr><th scope="col">PID / 名称</th><th scope="col">状态</th><th scope="col">CPU</th><th scope="col">内存</th><th scope="col">运行时间</th></tr></thead><tbody id="process-list"><tr><td colspan="5" class="muted">读取中…</td></tr></tbody></table></div></aside>
+        </section>
+
+        <section id="settings" class="spa-view settings-view" data-view="settings" hidden aria-labelledby="settings-title">
+          <section id="settings-panel" class="panel settings-panel"><div class="section-heading"><div><div class="eyebrow">PREFERENCES</div><h2 id="settings-title">账户与通知设置</h2><p class="muted small">密码以安全散列保存；PushPlus token 只显示配置状态，不会回显。</p></div><button id="close-settings" class="ghost" type="button">返回概览</button></div><div class="settings-grid"><form id="account-form" autocomplete="off"><h3>管理员账户</h3><label for="settings-username">用户名<input id="settings-username" name="settings-username" autocomplete="username" required></label><label for="current-password">当前密码<input id="current-password" name="current-password" type="password" autocomplete="current-password" required></label><label for="new-password">新密码<input id="new-password" name="new-password" type="password" autocomplete="new-password"></label><button class="primary" type="submit">保存账户</button></form><form id="pushplus-form" autocomplete="off"><h3>PushPlus 通知</h3><p id="pushplus-status" class="muted small">读取中…</p><label for="pushplus-token">Token<input id="pushplus-token" name="pushplus-token" type="password" autocomplete="new-password" placeholder="留空表示清空"></label><div class="form-actions"><button class="primary" type="submit">保存 token</button><button id="clear-pushplus" class="ghost" type="button">清空 token</button></div></form></div>
+            <section class="source-maintenance" aria-labelledby="source-maintenance-title"><div><div class="eyebrow">SOURCE MAINTENANCE</div><h3 id="source-maintenance-title">源码维护</h3><p class="muted small">按需更新已审核的源码与 feeds；更新过程在后台执行。</p><p id="source-maintenance-status" class="message" role="status" aria-live="polite"></p></div><button id="refresh-sources" class="ghost" type="button">更新源</button></section>
+            <section id="cache-cleanup-section" class="danger-zone" aria-labelledby="cache-cleanup-title"><div><div class="eyebrow danger-eyebrow">DANGER ZONE</div><h3 id="cache-cleanup-title">一键清理生成数据</h3><p class="muted small">清理编译缓存、下载缓存、源码快照、构建目录与固件产物；任务记录、日志、数据库及账户配置会保留。</p></div><button id="clear-cache" class="danger" type="button">一键清理所有缓存</button><p id="cache-cleanup-message" class="message" role="status" aria-live="polite"></p><div id="cache-cleanup-result" class="cache-cleanup-result" aria-live="polite"></div></section>
+            <section id="history-cleanup-section" class="danger-zone history-danger-zone" aria-labelledby="history-cleanup-title"><div><div class="eyebrow danger-eyebrow">HISTORY MAINTENANCE</div><h3 id="history-cleanup-title">清理构建记录</h3><p class="muted small">删除所有已结束任务、日志、任务证据与固件目录；缓存、源码、账户、设置、默认配置和插件目录会保留。</p></div><button id="clear-history" class="danger" type="button">清理构建记录</button><p id="history-cleanup-message" class="message" role="status" aria-live="polite"></p><div id="history-cleanup-result" class="cache-cleanup-result" aria-live="polite"></div></section>
+            <p id="settings-message" class="message" role="status" aria-live="polite"></p>
+          </section>
         </section>
       </div>
     </section>
   </main>
+
+  <dialog id="build-dialog" class="build-dialog" aria-labelledby="build-dialog-title" aria-modal="true"><section class="dialog-card builder-panel"><div class="section-heading"><div><div class="eyebrow">NEW BUILD</div><h2 id="build-dialog-title">新建构建</h2><p class="muted small">选择设备、资源与插件；提交时会锁定当前源码快照。</p></div><button id="close-build" class="icon-button ghost" type="button" aria-label="关闭新建构建窗口">×</button></div><label for="device-select">设备<select id="device-select"></select></label><div class="build-controls" aria-label="构建资源设置"><label for="parallel-jobs">并行核心数<input id="parallel-jobs" type="number" min="1" step="1" inputmode="numeric" required><span id="parallel-jobs-hint" class="muted small">读取系统逻辑核心数…</span></label><label class="checkbox-control" for="reuse-cache"><span>复用该设备编译缓存</span><input id="reuse-cache" type="checkbox" checked><small class="muted">开启可减少重复下载和编译时间。</small></label></div><div class="catalog-heading"><h3>选择插件与子选项</h3><p class="muted small">内置默认插件会自动勾选；点击插件名称可展开子选项。</p></div><div class="catalog-toolbar"><div class="tabs" role="tablist" aria-label="插件类别"><button class="tab active" type="button" role="tab" aria-selected="true" data-category="luci-app">LuCI 应用</button><button class="tab" type="button" role="tab" aria-selected="false" data-category="luci-theme">主题</button><button class="tab" type="button" role="tab" aria-selected="false" data-category="other">默认工具</button><button class="tab" type="button" role="tab" aria-selected="false" data-category="all">全部可选</button></div><input id="catalog-search" type="search" placeholder="搜索插件或描述" aria-label="搜索插件"></div><div id="catalog-state" class="muted small" role="status">等待源码目录…</div><div id="catalog-list" class="catalog-list"></div><div id="dependency-feedback" class="feedback" aria-live="polite"></div><div class="form-actions dialog-actions"><button id="cancel-build" class="ghost" type="button">取消</button><button id="submit-job" class="primary" type="button">提交构建</button></div><p id="builder-message" class="message" role="status" aria-live="polite"></p></section></dialog>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

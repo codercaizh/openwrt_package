@@ -53,8 +53,23 @@ jobs:
           name: openwrt-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
           # BuildEngine stores artifacts under the canonical device key, so
           # aliases such as n60pro must not narrow this glob.
-          path: .owrt/artifacts/**/*
+          # Keep the per-build IPK archive in its own downloadable artifact.
+          path: |
+            .owrt/artifacts/**/*
+            !.owrt/artifacts/**/ipk-packages.tar.gz
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload IPK package archive
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-ipk-packages-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          # BuildEngine emits this stable basename inside the canonical
+          # device/task directory.  Upload it independently so users can
+          # download packages without the firmware bundle.
+          path: .owrt/artifacts/**/ipk-packages.tar.gz
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Upload build evidence

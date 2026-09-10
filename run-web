@@ -61,6 +61,7 @@ docker run --detach \
   --env OWRT_REPO_ROOT="$repo_root" \
   --env OWRT_WORKSPACE="$data_root/workspace" \
   --env OWRT_DATA_DIR="$data_root/state" \
+  --env OWRT_HOST_PROC=/host/proc \
   --env OWRT_BIND_HOST=0.0.0.0 \
   --env OWRT_BIND_PORT=8000 \
   --env TZ=Asia/Shanghai \
@@ -72,6 +73,7 @@ docker run --detach \
   --volume "$repo_root:$repo_root:ro" \
   --volume "$repo_root:/opt/owrt-builder:ro" \
   --volume "$data_root:$data_root:rw" \
+  --volume /proc:/host/proc:ro \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --workdir "$repo_root" \
   --publish "$port:8000" \

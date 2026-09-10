@@ -14,10 +14,12 @@ import hashlib
 import inspect
 import json
 import logging
+import math
 import os
 import re
 import shutil
 import sqlite3
+import stat as stat_module
 import subprocess
 import threading
 import time
@@ -26,7 +28,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterable, Iterator, Literal, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -43,17 +45,30 @@ from .auth import (
 )
 from .build import BuildEngine, BuildRequest, logical_cpu_count
 from .catalog import Catalog, scan_catalog
+from .cleanup import (
+    CleanupError,
+    clear_directory,
+    remove_tree,
+    tree_size,
+    workspace_build_lock,
+    workspace_cleanup_lock,
+)
 from .configuration import parse_config
 from .devices import DeviceCatalog, DeviceSpec, load_catalog
 from .notifications import NotificationSettings, PushPlusNotifier
 from .sources import PreparedSource, SourceError, SourceManager
 from .storage import Storage, utc_now
+from .system import SystemMonitor
 
 
 LOGGER = logging.getLogger("owrt_builder.web")
 JOB_STATUSES = {"queued", "running", "succeeded", "failed", "canceled", "interrupted"}
 OPTION_TYPES = {"bool", "boolean", "tristate", "choice", "enum", "string", "int", "integer", "hex"}
 STATIC_ASSETS = ("style.css", "app.js")
+# A normal refresh may wait through the short empty-queue worker poll, but a
+# request made while a real build owns the workspace must fail promptly rather
+# than blocking the HTTP caller for the duration of that build.
+SOURCE_REQUEST_LOCK_TIMEOUT_SECONDS = 0.25
 
 
 def system_logical_cpus() -> int:
@@ -249,16 +264,76 @@ class SourceService:
         state.setdefault("ready", bool(state.get("status") == "ready"))
         return state
 
+    def is_preparing(self) -> bool:
+        """Return whether a refresh is active or persisted as preparing."""
+
+        with self._lock:
+            thread_active = bool(self._thread and self._thread.is_alive())
+        if thread_active:
+            return True
+        try:
+            return str(self.status().get("status", "")).strip().lower() == "preparing"
+        except Exception:
+            # A failed state read is not safe to interpret as idle before a
+            # destructive cleanup.
+            return True
+
+    def _workspace(self) -> Path:
+        return _runtime_workspace(self.runtime, Settings(data_dir=self.storage.db_path.parent))
+
     def request(self, force: bool = False, reason: str = "manual") -> bool:
         with self._lock:
             if self._thread and self._thread.is_alive():
                 return False
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._run, args=(force, reason), name="source-preparation", daemon=True)
-            self._thread.start()
+            # Acquire the cleanup lock before accepting the request and pass
+            # that already-entered guard to the worker.  Releasing it here and
+            # reacquiring inside ``_run`` creates a real lost-request window:
+            # cleanup can win the gap and make an accepted worker return
+            # without ever persisting ``status=preparing``.
+            guard = workspace_cleanup_lock(
+                self._workspace(),
+                timeout=SOURCE_REQUEST_LOCK_TIMEOUT_SECONDS,
+            )
+            try:
+                guard.__enter__()
+            except CleanupError:
+                return False
+            try:
+                self._stop.clear()
+                thread = threading.Thread(
+                    target=self._run,
+                    args=(force, reason, guard),
+                    name="source-preparation",
+                    daemon=True,
+                )
+                self._thread = thread
+                thread.start()
+            except BaseException:
+                # No worker owns the entered guard when thread creation/start
+                # fails.  Release it before propagating the failure.
+                self._thread = None
+                guard.__exit__(None, None, None)
+                raise
             return True
 
-    def _run(self, force: bool, reason: str) -> None:
+    def _run(self, force: bool, reason: str, guard: Any | None = None) -> None:
+        # Requests pass a lock already acquired before the thread was started,
+        # so an accepted request cannot be discarded if cleanup races with
+        # thread scheduling.  Direct callers (CLI/tests) still acquire their
+        # own guard here and safely return when cleanup is already active.
+        owned_guard = guard
+        if owned_guard is None:
+            owned_guard = workspace_cleanup_lock(self._workspace(), timeout=0.0)
+            try:
+                owned_guard.__enter__()
+            except CleanupError:
+                return
+        try:
+            self._run_unlocked(force, reason)
+        finally:
+            owned_guard.__exit__(None, None, None)
+
+    def _run_unlocked(self, force: bool, reason: str) -> None:
         started = utc_now()
         raw_previous = self.storage.get_state("source")
         previous = raw_previous if isinstance(raw_previous, Mapping) else {}
@@ -409,6 +484,9 @@ class QueueWorker:
         self._running: dict[str, threading.Event] = {}
         self._running_lock = threading.RLock()
 
+    def _workspace(self) -> Path:
+        return _runtime_workspace(self.runtime, self.settings)
+
     def start(self) -> None:
         self.reconcile()
         self.thread = threading.Thread(target=self._loop, name="build-worker", daemon=True)
@@ -416,11 +494,22 @@ class QueueWorker:
 
     def _loop(self) -> None:
         while not self.stop_event.is_set():
-            job = self.storage.claim_next_job()
+            job = None
+            try:
+                # A cache cleanup must not observe an empty queue and then
+                # race a worker claiming the next job.  Holding this lock for
+                # the complete build also protects source snapshots and
+                # compiler trees from deletion while a job is running.
+                with workspace_cleanup_lock(self._workspace(), timeout=0.0):
+                    job = self.storage.claim_next_job()
+                    if job is not None:
+                        self._run_job(job)
+            except CleanupError:
+                self.stop_event.wait(self.settings.worker_poll_seconds)
+                continue
             if job is None:
                 self.stop_event.wait(self.settings.worker_poll_seconds)
                 continue
-            self._run_job(job)
 
     def _run_job(self, job: dict[str, Any]) -> None:
         cancel_event = threading.Event()
@@ -643,7 +732,20 @@ class Scheduler:
     def start(self) -> None:
         # Initial preparation is asynchronous and does not delay FastAPI
         # startup or the first login page.
-        self.source_service.request(False, "startup")
+        try:
+            state = self.source_service.status()
+        except Exception:
+            # A failed state read must not permanently suppress preparation;
+            # SourceService will persist a useful failure state if its worker
+            # cannot proceed.
+            state = {}
+        reason = str(state.get("reason", "")).strip().lower() if isinstance(state, Mapping) else ""
+        if not (
+            isinstance(state, Mapping)
+            and not bool(state.get("ready"))
+            and reason in {"cache_cleanup", "manual_cleanup"}
+        ):
+            self.source_service.request(False, "startup")
         self.thread = threading.Thread(target=self._loop, name="source-scheduler", daemon=True)
         self.thread.start()
 
@@ -1007,6 +1109,141 @@ def _public_settings(storage: Storage, user_id: int) -> dict[str, Any]:
     }
 
 
+def _runtime_workspace(runtime: Runtime | None, settings: Settings) -> Path:
+    """Resolve the mutable workspace used by both Web and build workers."""
+
+    build = getattr(runtime, "build", None) if runtime is not None else None
+    configured = getattr(build, "workspace", None)
+    if configured is None and runtime is not None:
+        source_manager = getattr(runtime, "sources", None)
+        source_root = getattr(source_manager, "root", None)
+        if source_root is not None:
+            configured = Path(source_root).parent
+    if configured is None:
+        configured = settings.data_dir / "workspace"
+    # The workspace itself is configuration, not a cleanup target.  Make it
+    # absolute without resolving symlinks: if a caller replaces the
+    # configured workspace with a link, ``clear_directory`` must reject the
+    # redirected parent rather than silently deleting the link target.
+    return Path(os.path.abspath(os.fspath(Path(configured).expanduser())))
+
+
+def _runtime_repo_root(runtime: Runtime | None) -> Path:
+    """Resolve the reviewed repository root without following cleanup roots."""
+
+    build = getattr(runtime, "build", None) if runtime is not None else None
+    configured = getattr(build, "repo_root", None)
+    if configured is None:
+        configured = os.getenv("OWRT_REPO_ROOT") or Path(__file__).resolve().parents[1]
+    # Do not call ``resolve`` here.  The cleanup action must reject a symlink
+    # in the explicit ``.owrt`` path instead of following it into an
+    # unrelated tree.  BuildEngine already resolves its own trusted repo root
+    # during normal runtime construction.
+    return Path(os.path.abspath(os.fspath(Path(configured).expanduser())))
+
+
+def _runtime_source_root(runtime: Runtime | None, workspace: Path) -> Path:
+    """Use an injected SourceManager root when it differs from the default."""
+
+    manager = getattr(runtime, "sources", None) if runtime is not None else None
+    configured = getattr(manager, "root", None)
+    if configured is None:
+        configured = workspace / "sources"
+    return Path(os.path.abspath(os.fspath(Path(configured).expanduser())))
+
+
+def _cleanup_path_overlaps(path: Path, protected: Sequence[Path]) -> bool:
+    """Return whether a generated target could contain protected state."""
+
+    path = Path(os.path.abspath(os.fspath(path)))
+    for item in protected:
+        item = Path(os.path.abspath(os.fspath(item)))
+        if path == item or path in item.parents or item in path.parents:
+            return True
+    return False
+
+
+def _require_cleanup_child(root: Path, target: Path) -> Path:
+    """Validate a generated target as a strict lexical child of its root."""
+
+    root = Path(os.path.abspath(os.fspath(root)))
+    target = Path(os.path.abspath(os.fspath(target)))
+    if root not in target.parents:
+        raise CleanupError(f"清理目标不在允许目录内：{target}")
+    return target
+
+
+def _require_cleanup_child_any(roots: Sequence[Path], target: Path) -> Path:
+    """Validate a target against one of the deployment's artifact roots."""
+
+    for root in roots:
+        try:
+            return _require_cleanup_child(root, target)
+        except CleanupError:
+            continue
+    raise CleanupError(f"固件目录不在允许范围内：{target}")
+
+
+def _real_child_size(parent: Path, name: str) -> int:
+    """Measure a direct child only when its parent is a real directory."""
+
+    try:
+        parent_stat = parent.lstat()
+    except FileNotFoundError:
+        return 0
+    if not stat_module.S_ISDIR(parent_stat.st_mode) or stat_module.S_ISLNK(parent_stat.st_mode):
+        return 0
+    return tree_size(parent / name)
+
+
+def _source_service_preparing(service: SourceService | None, storage: Storage | None = None) -> bool:
+    if service is None:
+        if storage is None:
+            return False
+        try:
+            state = storage.get_state("source")
+        except Exception:
+            return True
+        return isinstance(state, Mapping) and str(state.get("status", "")).strip().lower() == "preparing"
+    checker = getattr(service, "is_preparing", None)
+    if callable(checker):
+        try:
+            if bool(checker()):
+                return True
+        except Exception:
+            # Fall through to the persisted state.  A broken status helper
+            # must not make a destructive action assume preparation is idle.
+            return True
+    try:
+        state = service.status()
+    except Exception:
+        return True
+    return str(state.get("status", "")).strip().lower() == "preparing"
+
+
+def _active_builds(storage: Storage) -> list[dict[str, Any]]:
+    getter = getattr(storage, "active_jobs", None)
+    if callable(getter):
+        return list(getter())
+    # Compatibility for small injected Storage fakes used by integrations.
+    return [
+        job
+        for job in storage.list_jobs(200, 0)
+        if str(job.get("status", "")).lower() in {"queued", "running"}
+    ]
+
+
+def _cleanup_busy_detail(code: str, message: str, *, jobs: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
+    return {
+        "code": code,
+        "message": message,
+        "jobs": [
+            {"id": str(job.get("id", "")), "status": str(job.get("status", ""))}
+            for job in jobs
+        ],
+    }
+
+
 def _config_symbol(value: str) -> str:
     value = str(value).strip()
     return value if value.startswith("CONFIG_") else f"CONFIG_{value}"
@@ -1247,7 +1484,12 @@ def _device_info(runtime: Runtime, storage: Storage, key: str, source_service: S
     return info
 
 
-def create_app(runtime: Runtime | None = None, settings: Settings | None = None, notifier: PushPlusNotifier | None = None) -> FastAPI:
+def create_app(
+    runtime: Runtime | None = None,
+    settings: Settings | None = None,
+    notifier: PushPlusNotifier | None = None,
+    system_monitor: SystemMonitor | None = None,
+) -> FastAPI:
     settings = settings or Settings()
     storage = Storage(settings.db_path, settings.log_dir, settings.artifact_dir)
     auth = AuthManager(storage, settings_from_env())
@@ -1282,10 +1524,15 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
         storage.ensure_default_admin("admin", hash_password("admin"))
         if app_runtime is not None:
             source_service = SourceService(app_runtime, storage)
-            worker = QueueWorker(app_runtime, storage, settings, app_notifier)
-            worker.start()
+            app.state.source_service = source_service
             scheduler = Scheduler(source_service)
             scheduler.start()
+            # Start source preparation before the idle queue poller.  The
+            # source request owns the cleanup lock before its worker thread is
+            # launched, so this ordering also makes first-start deterministic
+            # when the queue is empty.
+            worker = QueueWorker(app_runtime, storage, settings, app_notifier)
+            worker.start()
         yield
         if scheduler:
             scheduler.stop()
@@ -1300,6 +1547,13 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
     app.state.storage = storage
     app.state.settings = settings
     app.state.auth = auth
+    app.state.runtime = app_runtime
+    app.state.source_service = None
+    # ``OWRT_HOST_PROC`` is an optional read-only host mount in container
+    # deployments.  SystemMonitor falls back to the process namespace for
+    # local development and tests, while preserving a single injection point
+    # for deterministic probes.
+    app.state.system_monitor = system_monitor or SystemMonitor()
     if runtime_error:
         app.state.runtime_error = runtime_error
 
@@ -1411,6 +1665,234 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
             "settings": _public_settings(storage, user_id),
         }
 
+    @app.post("/api/cache/clear")
+    async def clear_all_cache(_session: dict[str, Any] = Depends(get_mutation_auth)):
+        """Clear generated compiler/download/source state only.
+
+        The operation is intentionally independent of runtime readiness so an
+        installation whose first source preparation failed can still recover
+        through the Web UI.  Authentication/CSRF and the workspace lock are
+        the only prerequisites before the filesystem checks begin.
+        """
+
+        runtime_for_paths = app_runtime or getattr(app.state, "runtime", None)
+        workspace = _runtime_workspace(runtime_for_paths, settings)
+        service = source_service or getattr(app.state, "source_service", None)
+        try:
+            with workspace_cleanup_lock(workspace, timeout=0.0):
+                active = _active_builds(storage)
+                if active:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=_cleanup_busy_detail(
+                            "builds_active",
+                            "存在正在运行或排队中的构建任务，无法清理缓存",
+                            jobs=active,
+                        ),
+                    )
+                if _source_service_preparing(service, storage):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=_cleanup_busy_detail(
+                            "source_preparing",
+                            "源码正在准备中，暂不能清理缓存",
+                        ),
+                    )
+
+                # BuildEngine holds this lock for the complete direct/Docker
+                # build.  Holding it across the deletion closes the race with
+                # a CLI build that has no persisted Web queue row.
+                with workspace_build_lock(workspace, timeout=0.0):
+                    # A worker may have claimed a queue row between the first
+                    # check and acquiring the build lock.  Re-check under both
+                    # locks before touching either generated root.
+                    active = _active_builds(storage)
+                    if active:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=_cleanup_busy_detail(
+                                "builds_active",
+                                "存在正在运行或排队中的构建任务，无法清理缓存",
+                                jobs=active,
+                            ),
+                        )
+                    if _source_service_preparing(service, storage):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=_cleanup_busy_detail(
+                                "source_preparing",
+                                "源码正在准备中，暂不能清理缓存",
+                            ),
+                        )
+
+                    repo_root = _runtime_repo_root(runtime_for_paths)
+                    source_root = workspace / "sources"
+                    configured_source_root = _runtime_source_root(runtime_for_paths, workspace)
+                    cache_root = workspace / "cache"
+                    legacy_build_root = workspace / "builds"
+                    workspace_artifact_root = workspace / "artifacts"
+                    artifact_root = Path(settings.artifact_dir)
+                    repo_cache_root = repo_root / ".owrt" / "cache"
+
+                    # Logs, task request/result records, the SQLite database,
+                    # and account settings are evidence and must survive a
+                    # cleanup.  Refuse an accidentally broad configuration
+                    # (for example ``artifact_dir=/var/lib/owrt``) instead of
+                    # allowing a generated root to contain those files.
+                    protected = (
+                        Path(settings.db_path),
+                        Path(settings.log_dir),
+                        workspace / "tasks",
+                    )
+                    target_specs_list = [
+                        ("workspace_cache", cache_root),
+                        ("workspace_sources", source_root),
+                        ("workspace_builds", legacy_build_root),
+                        ("workspace_artifacts", workspace_artifact_root),
+                        ("artifact_dir", artifact_root),
+                        ("repo_owrt_cache", repo_cache_root),
+                    ]
+                    if os.path.normcase(os.path.abspath(os.fspath(configured_source_root))) != os.path.normcase(os.path.abspath(os.fspath(source_root))):
+                        target_specs_list.append(("source_manager_root", configured_source_root))
+                    target_specs = tuple(target_specs_list)
+                    for _name, target in target_specs:
+                        if _cleanup_path_overlaps(target, protected):
+                            raise CleanupError(f"清理目标包含需要保留的数据：{target}")
+
+                    # ``workspace`` commonly equals ``repo/.owrt``.  In that
+                    # setup ``workspace/cache`` and the explicit repository
+                    # cache are the same target; count and remove it once.
+                    seen_targets: set[str] = set()
+                    before: dict[str, int] = {}
+                    released_by_target: dict[str, int] = {}
+                    compile_parts = {
+                        "workspace_cache": _real_child_size(cache_root, "builds"),
+                        "workspace_builds": tree_size(legacy_build_root),
+                        "repo_owrt_cache": _real_child_size(repo_cache_root, "builds"),
+                    }
+                    download_parts = {
+                        "workspace_cache": _real_child_size(cache_root, "dl"),
+                        "repo_owrt_cache": _real_child_size(repo_cache_root, "dl"),
+                    }
+                    # Preflight every target before deleting any of them.  A
+                    # symlinked/abnormal parent later in the list must fail
+                    # safely without leaving a partially cleaned workspace.
+                    for name, target in target_specs:
+                        key = os.path.normcase(os.path.abspath(os.fspath(target)))
+                        if key in seen_targets:
+                            before[name] = 0
+                            continue
+                        seen_targets.add(key)
+                        before[name] = tree_size(target)
+                    seen_targets.clear()
+                    for name, target in target_specs:
+                        key = os.path.normcase(os.path.abspath(os.fspath(target)))
+                        if key in seen_targets:
+                            released_by_target[name] = 0
+                            continue
+                        seen_targets.add(key)
+                        released_by_target[name] = clear_directory(target)
+
+                    # Artifact files and their metadata are one logical unit:
+                    # only clear the rows after every filesystem target above
+                    # has been cleaned successfully.  Jobs, request evidence
+                    # and JSONL logs intentionally remain available.
+                    artifact_metadata_rows = storage.clear_artifacts()
+                    catalog_metadata_rows = storage.clear_catalogs()
+
+                    released_cache = released_by_target["workspace_cache"]
+                    released_legacy = released_by_target["workspace_builds"]
+                    released_workspace_artifacts = released_by_target["workspace_artifacts"]
+                    released_source = released_by_target["workspace_sources"]
+                    released_source_manager = released_by_target.get("source_manager_root", 0)
+                    released_artifacts = released_by_target["artifact_dir"]
+                    released_repo_cache = released_by_target["repo_owrt_cache"]
+                    total = sum(released_by_target.values())
+
+                    compile_before = (
+                        compile_parts["workspace_cache"]
+                        + compile_parts["workspace_builds"]
+                        + compile_parts["repo_owrt_cache"]
+                    )
+                    downloads_before = (
+                        download_parts["workspace_cache"]
+                        + download_parts["repo_owrt_cache"]
+                    )
+                    categories = {
+                        # Stable high-level names used by the Web UI and
+                        # integrations.
+                        "workspace_cache": released_cache,
+                        "workspace_sources": released_source,
+                        "workspace_builds": released_legacy,
+                        "workspace_artifacts": released_workspace_artifacts,
+                        "source_manager_root": released_source_manager,
+                        "artifact_dir": released_artifacts,
+                        "repo_owrt_cache": released_repo_cache,
+                        # Semantic aliases retained for older clients.
+                        "compile_cache": max(0, min(total, compile_before)),
+                        "download_cache": max(0, min(total, downloads_before)),
+                        "source_cache": max(0, released_source + released_source_manager),
+                    }
+                    categories["firmware_artifacts"] = released_artifacts + released_workspace_artifacts
+                    categories["other_cache"] = max(
+                        0,
+                        total
+                        - categories["compile_cache"]
+                        - categories["download_cache"]
+                        - categories["source_cache"]
+                        - categories["firmware_artifacts"],
+                    )
+                    items = {
+                        name: {
+                            "path": str(target),
+                            "measured_bytes": before[name],
+                            "released_bytes": released_by_target[name],
+                        }
+                        for name, target in target_specs
+                    }
+                    source_state = {
+                        "status": "not_ready",
+                        "ready": False,
+                        "reason": "cache_cleanup",
+                        "message": "缓存已清理，请重新更新源",
+                        "cleanup_at": utc_now(),
+                    }
+                    storage.set_state("source", source_state)
+
+                    return {
+                        "ok": True,
+                        "status": "completed",
+                        "message": "缓存清理完成，请重新更新源",
+                        "items": items,
+                        "categories": categories,
+                        "breakdown": dict(categories),
+                        "cache_bytes": released_cache + released_legacy,
+                        "source_bytes": released_source + released_source_manager,
+                        "artifact_bytes": released_artifacts,
+                        "workspace_artifact_bytes": released_workspace_artifacts,
+                        "repo_cache_bytes": released_repo_cache,
+                        "artifact_metadata_rows": artifact_metadata_rows,
+                        "catalog_metadata_rows": catalog_metadata_rows,
+                        "released_bytes": total,
+                        "total_released_bytes": total,
+                        "total_bytes": total,
+                        "source": _public_source_state(source_state),
+                        # These fields make diagnostics explicit when a
+                        # filesystem changed during the deletion walk.
+                        "measured_bytes": sum(before.values()),
+                    }
+        except HTTPException:
+            raise
+        except CleanupError as exc:
+            detail = str(exc)
+            if "清理操作正在进行" in detail:
+                raise HTTPException(
+                    status_code=409,
+                    detail=_cleanup_busy_detail("cleanup_busy", "已有缓存清理或构建操作正在进行"),
+                ) from exc
+            LOGGER.exception("cache cleanup failed")
+            raise HTTPException(status_code=503, detail=f"缓存清理失败：{_safe_error(exc)}") from exc
+
     @app.get("/api/health")
     async def health(session: dict[str, Any] = Depends(get_auth)):
         runtime_ready = app_runtime is not None
@@ -1421,6 +1903,25 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
             "runtime": _runtime_info(),
             "source": _public_source_state(source_status),
         }
+
+    @app.get("/api/system/status")
+    async def system_status(_session: dict[str, Any] = Depends(get_auth)):
+        """Return host disk, memory and CPU telemetry for the console."""
+
+        monitor: SystemMonitor = app.state.system_monitor
+        return monitor.status(settings.data_dir)
+
+    @app.get("/api/system/processes")
+    async def system_processes(
+        limit: int = Query(default=50, ge=1, le=100),
+        sort: Literal["cpu", "memory"] = Query(default="cpu"),
+        order: Literal["asc", "desc"] = Query(default="desc"),
+        _session: dict[str, Any] = Depends(get_auth),
+    ):
+        """Return a bounded process table without command lines or env data."""
+
+        monitor: SystemMonitor = app.state.system_monitor
+        return monitor.processes(limit=limit, sort=sort, order=order)
 
     @app.get("/api/devices")
     async def devices(_session: dict[str, Any] = Depends(get_auth), rt: Runtime = Depends(require_runtime)):
@@ -1617,13 +2118,157 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None,
             "output_dir": str(output),
             "owner_user_id": int(request.state.user_id),
         }
-        storage.create_job(job)
-        storage.append_log(job_id, f"任务已排队：{canonical}")
+        try:
+            # Serialize queue insertion with cache cleanup.  Without this
+            # final gate a request validated just before cleanup could enqueue
+            # a job after the destructive operation's initial status check.
+            with workspace_cleanup_lock(_runtime_workspace(rt, settings), timeout=0.0):
+                if _source_service_preparing(source_service, storage):
+                    raise HTTPException(status_code=409, detail="源码正在准备中，暂不能提交构建")
+                storage.create_job(job)
+                storage.append_log(job_id, f"任务已排队：{canonical}")
+        except HTTPException:
+            raise
+        except CleanupError as exc:
+            if "清理操作正在进行" in str(exc):
+                raise HTTPException(status_code=409, detail="已有缓存清理或源码准备操作正在进行") from exc
+            raise HTTPException(status_code=503, detail=f"无法锁定工作区：{_safe_error(exc)}") from exc
         return {"ok": True, "job": _public_job(storage.get_job(job_id) or job), "issues": issues}
 
     @app.get("/api/jobs")
-    async def list_jobs(limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0), _session: dict[str, Any] = Depends(get_auth)):
-        return {"items": [_public_job(job) for job in storage.list_jobs(limit, offset)], "limit": limit, "offset": offset}
+    async def list_jobs(
+        page: int = Query(default=1, ge=1),
+        per_page: int = Query(default=5, ge=1, le=100),
+        # ``limit``/``offset`` remain accepted for older API clients.  New
+        # callers should use the explicit page contract above; both forms
+        # still execute one SQL LIMIT/OFFSET query.
+        limit: int | None = Query(default=None, ge=1, le=200),
+        offset: int | None = Query(default=None, ge=0),
+        _session: dict[str, Any] = Depends(get_auth),
+    ):
+        if limit is not None or offset is not None:
+            effective_per_page = int(limit if limit is not None else per_page)
+            effective_offset = int(offset or 0)
+            requested_page = (effective_offset // effective_per_page) + 1
+        else:
+            effective_per_page = int(per_page)
+            requested_page = int(page)
+            effective_offset = (requested_page - 1) * effective_per_page
+
+        total = storage.count_jobs()
+        status_counts = storage.job_status_counts()
+        active_total = status_counts.get("queued", 0) + status_counts.get("running", 0)
+        pages = max(1, math.ceil(total / effective_per_page))
+        # A page can become stale after a task is removed by an operator or a
+        # fresh browser opens an old URL.  Return the nearest valid page so
+        # clients can refresh without rendering a permanently empty queue.
+        effective_page = min(max(1, requested_page), pages)
+        if limit is None and offset is None:
+            effective_offset = (effective_page - 1) * effective_per_page
+        items = storage.list_jobs(effective_per_page, effective_offset)
+        return {
+            "items": [_public_job(job) for job in items],
+            "total": total,
+            "active_total": active_total,
+            "status_counts": {
+                name: int(status_counts.get(name, 0))
+                for name in ("queued", "running", "succeeded", "failed", "canceled", "interrupted")
+            },
+            "page": effective_page,
+            "per_page": effective_per_page,
+            "pages": pages,
+            # Legacy aliases help older clients migrate without changing the
+            # semantics of their existing request parameters.
+            "limit": effective_per_page,
+            "offset": effective_offset,
+        }
+
+    @app.post("/api/jobs/history/clear")
+    async def clear_job_history(_session: dict[str, Any] = Depends(get_mutation_auth)):
+        """Delete completed build history and its generated evidence safely."""
+
+        workspace = _runtime_workspace(app_runtime or getattr(app.state, "runtime", None), settings)
+        try:
+            with workspace_cleanup_lock(workspace, timeout=0.0):
+                with workspace_build_lock(workspace, timeout=0.0):
+                    active = _active_builds(storage)
+                    if active:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=_cleanup_busy_detail(
+                                "builds_active",
+                                "存在正在运行或排队中的构建任务，无法清理构建记录",
+                                jobs=active,
+                            ),
+                        )
+                    jobs = storage.terminal_jobs()
+                    artifact_root = Path(settings.artifact_dir)
+                    workspace_artifact_root = workspace / "artifacts"
+                    task_root = workspace / "tasks"
+                    log_root = Path(settings.log_dir)
+                    targets: list[tuple[str, Path]] = []
+                    artifact_rows = 0
+                    for job in jobs:
+                        job_id = str(job["id"])
+                        log_path = storage.log_path(job_id)
+                        task_path = task_root / job_id
+                        output_path = Path(str(job.get("output_dir") or ""))
+                        _require_cleanup_child(log_root, log_path)
+                        _require_cleanup_child(task_root, task_path)
+                        _require_cleanup_child_any(
+                            (artifact_root, workspace_artifact_root),
+                            output_path,
+                        )
+                        targets.extend((
+                            ("logs", log_path),
+                            ("task_data", task_path),
+                            ("artifacts", output_path),
+                        ))
+                        artifact_rows += len(storage.list_artifacts(job_id))
+
+                    seen: set[str] = set()
+                    measured = {"logs": 0, "task_data": 0, "artifacts": 0}
+                    existing = {"logs": 0, "task_data": 0, "artifacts": 0}
+                    for kind, target in targets:
+                        key = os.path.normcase(os.path.abspath(os.fspath(target)))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        measured[kind] += tree_size(target)
+                        if os.path.lexists(target):
+                            existing[kind] += 1
+                    seen.clear()
+                    for _kind, target in targets:
+                        key = os.path.normcase(os.path.abspath(os.fspath(target)))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        remove_tree(target)
+
+                    deleted_jobs = storage.delete_terminal_jobs([str(job["id"]) for job in jobs])
+                    return {
+                        "ok": True,
+                        "status": "completed",
+                        "message": "构建记录已清理",
+                        "jobs": deleted_jobs,
+                        "logs": existing["logs"],
+                        "task_data": existing["task_data"],
+                        "artifact_directories": existing["artifacts"],
+                        "artifact_records": artifact_rows,
+                        "released_bytes": sum(measured.values()),
+                        "breakdown": measured,
+                    }
+        except HTTPException:
+            raise
+        except (CleanupError, ValueError, RuntimeError) as exc:
+            detail = str(exc)
+            if "清理操作正在进行" in detail or "active jobs exist" in detail:
+                raise HTTPException(
+                    status_code=409,
+                    detail=_cleanup_busy_detail("cleanup_busy", "已有构建或清理操作正在进行"),
+                ) from exc
+            LOGGER.exception("job history cleanup failed")
+            raise HTTPException(status_code=503, detail=f"清理构建记录失败：{_safe_error(exc)}") from exc
 
     @app.get("/api/jobs/{job_id}")
     async def get_job(job_id: str, _session: dict[str, Any] = Depends(get_auth)):

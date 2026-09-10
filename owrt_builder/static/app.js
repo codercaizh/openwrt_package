@@ -14,8 +14,17 @@
     eventSource: null,
     cancelingJobs: new Set(),
     cancelPolls: new Map(),
+    clearingCache: false,
+    clearingHistory: false,
+    currentView: "overview",
     lastSeq: 0,
     sourcePoll: null,
+    systemPoll: null,
+    jobsPage: 1,
+    jobsPerPage: 5,
+    jobsPages: 1,
+    jobsTotal: 0,
+    buildDialogReturnFocus: null,
     runtime: { logical_cpus: 1, max_parallel_jobs: 1, default_parallel_jobs: 1 },
   };
   const statusLabel = {
@@ -100,6 +109,29 @@
     if (node) node.addEventListener(eventName, listener);
   }
 
+  const validViews = new Set(["overview", "jobs", "processes", "settings"]);
+
+  function routeFromHash() {
+    const value = window.location.hash.replace(/^#/, "");
+    return validViews.has(value) ? value : "overview";
+  }
+
+  async function activateView(view = routeFromHash()) {
+    const selected = validViews.has(view) ? view : "overview";
+    state.currentView = selected;
+    document.querySelectorAll("[data-view]").forEach((node) => {
+      node.hidden = node.dataset.view !== selected;
+    });
+    document.querySelectorAll("[data-route]").forEach((link) => {
+      if (link.dataset.route === selected) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+    if (selected === "settings") await loadSettings();
+    if (selected === "jobs") await loadJobs();
+    if (selected === "processes") await loadSystem();
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
   function activeDevice() {
     return state.devices.find((item) => item.key === $("device-select").value);
   }
@@ -157,19 +189,12 @@
   }
 
   async function openSettings() {
-    const panel = $("settings-panel");
-    if (!panel) return;
-    panel.hidden = false;
-    try {
-      await loadSettings();
-    } catch (error) {
-      show($("settings-message"), error.message, "error");
-    }
+    window.location.hash = "settings";
+    await activateView("settings");
   }
 
   function closeSettings() {
-    const panel = $("settings-panel");
-    if (panel) panel.hidden = true;
+    window.location.hash = "overview";
   }
 
   async function saveAccount(event) {
@@ -218,10 +243,147 @@
     }
   }
 
+  function formatBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let amount = bytes;
+    let unit = "B";
+    for (const candidate of units) {
+      amount /= 1024;
+      unit = candidate;
+      if (amount < 1024 || candidate === units[units.length - 1]) break;
+    }
+    return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
+  }
+
+  function renderCacheCleanup(result) {
+    const box = $("cache-cleanup-result");
+    if (!box) return;
+    box.replaceChildren();
+    const labels = {
+      compile_cache: "编译缓存",
+      download_cache: "下载缓存",
+      source_cache: "源码快照",
+      artifact_dir: "固件产物",
+      repo_owrt_cache: "仓库 .owrt 缓存",
+      other_cache: "其他缓存",
+    };
+    const categories = result?.categories || result?.breakdown || {};
+    Object.entries(labels).forEach(([key, label]) => {
+      const row = document.createElement("div");
+      row.className = "cache-cleanup-row";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const amount = document.createElement("span");
+      amount.className = "muted";
+      amount.textContent = formatBytes(categories[key]);
+      row.append(name, amount);
+      box.appendChild(row);
+    });
+    const total = document.createElement("div");
+    total.className = "cache-cleanup-total";
+    total.textContent = `总释放：${formatBytes(result?.total_bytes ?? result?.released_bytes)}`;
+    box.appendChild(total);
+  }
+
+  async function clearCache() {
+    if (state.clearingCache) return;
+    if (!window.confirm("确定清理所有缓存吗？编译缓存、下载缓存、源码快照和固件产物都会被删除。")) return;
+    state.clearingCache = true;
+    const button = $("clear-cache");
+    if (button) button.disabled = true;
+    show($("cache-cleanup-message"), "正在清理缓存，请稍候…", "message");
+    try {
+      const result = await api("/api/cache/clear", { method: "POST", body: {} });
+      renderCacheCleanup(result);
+      const total = result?.total_bytes ?? result?.released_bytes ?? 0;
+      show(
+        $("cache-cleanup-message"),
+        `缓存清理完成，共释放 ${formatBytes(total)}。请重新更新源。`,
+        "message",
+      );
+      state.catalogBase = [];
+      state.catalog = [];
+      $("catalog-list")?.replaceChildren();
+      $("artifacts")?.replaceChildren();
+      await loadSource();
+    } catch (error) {
+      show($("cache-cleanup-message"), error.message, "error");
+    } finally {
+      state.clearingCache = false;
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function clearHistory() {
+    if (state.clearingHistory) return;
+    if (!window.confirm("确定清理所有已结束的构建记录吗？对应日志、任务证据和固件也会删除。")) return;
+    state.clearingHistory = true;
+    const button = $("clear-history");
+    if (button) button.disabled = true;
+    show($("history-cleanup-message"), "正在清理构建记录，请稍候…", "message");
+    try {
+      const result = await api("/api/jobs/history/clear", { method: "POST", body: {} });
+      const box = $("history-cleanup-result");
+      if (box) {
+        box.textContent = `已删除 ${result.jobs || 0} 个任务、${result.logs || 0} 个日志、${result.artifact_records || 0} 条产物记录，释放 ${formatBytes(result.released_bytes)}。`;
+      }
+      show($("history-cleanup-message"), "构建记录清理完成。", "message");
+      state.activeJob = null;
+      stopEvents();
+      if ($("job-detail")) $("job-detail").hidden = true;
+      state.jobsPage = 1;
+      await loadJobs(1);
+    } catch (error) {
+      show($("history-cleanup-message"), error.message, "error");
+    } finally {
+      state.clearingHistory = false;
+      if (button) button.disabled = false;
+    }
+  }
+
+  function openBuildDialog() {
+    const dialog = $("build-dialog");
+    if (!dialog) return;
+    state.buildDialogReturnFocus = document.activeElement;
+    renderIssues([]);
+    show($("builder-message"), "");
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+    // The device list and its catalog are loaded while the dialog is open so
+    // opening it remains instant even when the source refresh is still
+    // running.  Focus the first control for keyboard and screen-reader users.
+    window.setTimeout(() => $("device-select")?.focus(), 0);
+  }
+
+  function closeBuildDialog() {
+    const dialog = $("build-dialog");
+    if (!dialog) return;
+    if (typeof dialog.close === "function" && dialog.open) dialog.close();
+    else dialog.removeAttribute("open");
+    const returnFocus = state.buildDialogReturnFocus;
+    state.buildDialogReturnFocus = null;
+    if (returnFocus && typeof returnFocus.focus === "function") returnFocus.focus();
+  }
+
+  function handleBuildDialogCancel(event) {
+    // Native <dialog> dispatches ``cancel`` for Escape.  Explicitly closing
+    // it also covers browsers that expose dialog markup without the method.
+    event?.preventDefault?.();
+    closeBuildDialog();
+  }
+
+  function handleBuildDialogBackdrop(event) {
+    if (event.target === $("build-dialog")) closeBuildDialog();
+  }
+
   async function load() {
     await loadDevices();
-    await Promise.all([loadJobs(), loadSource()]);
+    await Promise.all([loadJobs(), loadSource(), loadSystem()]);
     await loadCatalog();
+    startSystemPolling();
+    await activateView();
   }
 
   async function loadDevices() {
@@ -261,6 +423,7 @@
       const badge = $("source-badge");
       badge.textContent = formatSourceUpdateTime(result);
       badge.className = `badge ${ready ? "ready" : ""}`;
+      show($("source-time"), ready ? "源码可用于构建" : (result.status === "preparing" ? "准备中 · 目录暂不可用" : "等待源码快照"), "muted small");
       if (result.status === "preparing" && !state.sourcePoll) {
         state.sourcePoll = window.setInterval(async () => {
           try {
@@ -282,6 +445,101 @@
     } catch (_) {
       $("source-badge").textContent = "源: --";
     }
+  }
+
+  function formatPercent(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number.toFixed(1)}%` : "—";
+  }
+
+  function formatDuration(seconds) {
+    const value = Math.max(0, Math.round(Number(seconds) || 0));
+    if (value < 60) return `${value}s`;
+    const minutes = Math.floor(value / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ${minutes % 60}m`;
+    return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  }
+
+  function renderSystemStatus(result) {
+    const disk = result?.disk || {};
+    const memory = result?.memory || {};
+    const cpu = result?.cpu || {};
+    const diskUsage = formatPercent(disk.usage_percent);
+    const memoryUsage = formatPercent(memory.usage_percent);
+    const cpuUsage = formatPercent(cpu.usage_percent);
+    show($("system-disk-value"), `${formatBytes(disk.used_bytes)} / ${formatBytes(disk.total_bytes)}`);
+    show($("system-disk-percent"), diskUsage, "muted small");
+    show($("system-memory-value"), `${formatBytes(memory.used_bytes)} / ${formatBytes(memory.total_bytes)}`);
+    show($("system-memory-percent"), memoryUsage, "muted small");
+    show($("system-cpu-value"), `${cpu.logical_cpus || 0} 核 · ${cpuUsage}`);
+    show($("system-cpu-load"), `负载 ${(Number(cpu.load_1m) || 0).toFixed(2)} / ${(Number(cpu.load_5m) || 0).toFixed(2)}`, "muted small");
+    show($("overview-disk"), diskUsage);
+    show($("overview-disk-note"), `${formatBytes(disk.available_bytes)} 可用`, "muted small");
+    show($("overview-memory"), memoryUsage);
+    show($("overview-cpu"), `CPU ${cpuUsage} · ${cpu.logical_cpus || 0} 核`, "muted small");
+    show($("system-collected"), result?.collected_at ? `更新于 ${formatBeijingTime(result.collected_at)}` : "每 4 秒刷新", "muted small");
+  }
+
+  function renderProcesses(result) {
+    const list = $("process-list");
+    if (!list) return;
+    list.replaceChildren();
+    const items = result?.items || [];
+    if (!items.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.className = "muted";
+      cell.textContent = "暂无可见进程";
+      row.appendChild(cell);
+      list.appendChild(row);
+      return;
+    }
+    const stateLabels = { R: "运行", S: "休眠", D: "等待", Z: "僵尸", T: "停止", I: "空闲" };
+    items.forEach((item) => {
+      const row = document.createElement("tr");
+      const nameCell = document.createElement("td");
+      const name = document.createElement("span");
+      name.className = "process-name";
+      const title = document.createElement("strong");
+      title.textContent = item.name || "未知进程";
+      const pid = document.createElement("small");
+      pid.textContent = `PID ${item.pid}`;
+      name.append(title, pid);
+      nameCell.appendChild(name);
+      const state = document.createElement("td");
+      state.textContent = stateLabels[item.state] || item.state || "—";
+      const cpu = document.createElement("td");
+      cpu.textContent = formatPercent(item.cpu_percent);
+      const memory = document.createElement("td");
+      memory.textContent = `${formatBytes(item.memory_bytes)} (${formatPercent(item.memory_percent)})`;
+      const elapsed = document.createElement("td");
+      elapsed.textContent = formatDuration(item.elapsed_seconds ?? item.runtime_seconds);
+      row.append(nameCell, state, cpu, memory, elapsed);
+      list.appendChild(row);
+    });
+  }
+
+  async function loadSystem() {
+    try {
+      const sort = $("process-sort")?.value || "cpu";
+      const [status, processes] = await Promise.all([
+        api("/api/system/status"),
+        api(`/api/system/processes?limit=20&sort=${encodeURIComponent(sort)}`),
+      ]);
+      renderSystemStatus(status);
+      renderProcesses(processes);
+    } catch (_) {
+      // Keep the last good telemetry visible during a transient probe or
+      // session failure.  Individual cells already use an em dash fallback.
+    }
+  }
+
+  function startSystemPolling() {
+    if (state.systemPoll) return;
+    state.systemPoll = window.setInterval(loadSystem, 4000);
   }
 
   async function loadCatalog() {
@@ -517,6 +775,7 @@
       const result = await api("/api/jobs", { method: "POST", body: configurationBody() });
       renderIssues(result.issues || []);
       show($("builder-message"), `任务已提交：${result.job.id}`, "message");
+      closeBuildDialog();
       await loadJobs();
       await openJob(result.job.id);
     } catch (error) {
@@ -542,20 +801,58 @@
     return isCancelingJob(job) ? "canceling" : job.status;
   }
 
-  async function loadJobs() {
+  function updateOverviewJobs(result) {
+    const total = Number(result?.total);
+    const items = result?.items || [];
+    const active = Number.isFinite(Number(result?.active_total))
+      ? Number(result.active_total)
+      : items.filter((job) => ["queued", "running"].includes(job.status)).length;
+    show($("overview-total"), Number.isFinite(total) ? String(total) : "—");
+    // The API page only contains five rows.  Keep the card useful even when
+    // an active task sits on a different page by using the persisted page
+    // metadata when available; a later refresh updates it again.
+    show($("overview-active"), Number.isFinite(active) ? String(active) : "—");
+    const counts = result?.status_counts || {};
+    show(
+      $("overview-total-note"),
+      Number.isFinite(total) ? `成功 ${Number(counts.succeeded) || 0} · 失败 ${Number(counts.failed) || 0}` : "成功 — · 失败 —",
+      "muted small",
+    );
+  }
+
+  function updateJobPagination(result) {
+    const pagination = $("job-pagination");
+    if (!pagination) return;
+    state.jobsPage = Math.max(1, Number(result?.page) || 1);
+    state.jobsPages = Math.max(1, Number(result?.pages) || 1);
+    state.jobsTotal = Math.max(0, Number(result?.total) || 0);
+    state.jobsPerPage = Math.max(1, Number(result?.per_page) || 5);
+    pagination.hidden = state.jobsTotal === 0;
+    show($("jobs-page-label"), `第 ${state.jobsPage} / ${state.jobsPages} 页 · 共 ${state.jobsTotal} 条`, "muted small");
+    const previous = $("jobs-prev");
+    const next = $("jobs-next");
+    if (previous) previous.disabled = state.jobsPage <= 1;
+    if (next) next.disabled = state.jobsPage >= state.jobsPages;
+  }
+
+  async function loadJobs(requestedPage = state.jobsPage) {
+    const page = Math.max(1, Number(requestedPage) || 1);
     try {
-      const result = await api("/api/jobs?limit=80");
+      const result = await api(`/api/jobs?page=${page}&per_page=5`);
+      updateJobPagination(result);
+      updateOverviewJobs(result);
       const list = $("jobs-list");
       list.replaceChildren();
       if (!result.items?.length) {
         const empty = document.createElement("p");
         empty.className = "muted";
-        empty.textContent = "暂无任务。";
+        empty.textContent = state.jobsTotal ? "这一页暂无任务。" : "暂无任务。";
         list.appendChild(empty);
         return;
       }
       result.items.forEach((job) => {
         const button = document.createElement("button");
+        button.type = "button";
         button.className = `job-card ${state.activeJob === job.id ? "selected" : ""}`;
         const top = document.createElement("span");
         top.className = "job-card-top";
@@ -568,8 +865,9 @@
         top.append(title, badge);
         const meta = document.createElement("span");
         meta.className = "job-meta";
-        meta.textContent = `${formatBeijingTime(job.created_at)} · ${job.packages?.length || 0} 个插件`;
+        meta.textContent = `${formatBeijingTime(job.created_at)} · ${job.packages?.length || 0} 个插件 · ${job.parallel_jobs || 1} 核`;
         button.append(top, meta);
+        button.setAttribute("aria-label", `查看任务 ${job.device} ${job.id.slice(0, 10)}`);
         button.addEventListener("click", () => openJob(job.id));
         list.appendChild(button);
       });
@@ -607,6 +905,10 @@
     $("cancel-job").hidden = canceling || !["queued", "running"].includes(job.status);
     $("cancel-job").disabled = canceling;
     $("save-default").hidden = job.status !== "succeeded";
+    const summary = $("job-summary");
+    if (summary) {
+      summary.textContent = `${job.device || "—"} · ${job.parallel_jobs || 1} 核 · 缓存${job.reuse_cache ? "复用" : "不复用"} · ${job.packages?.length || 0} 个插件`;
+    }
   }
 
   function stopCancelPolling(id) {
@@ -768,19 +1070,25 @@
   async function refreshSources() {
     try {
       await api("/api/sources/refresh", { method: "POST", body: {} });
-      show($("builder-message"), "源码/feeds 更新已在后台开始。", "message");
+      show($("source-maintenance-status"), "源码/feeds 更新已在后台开始。", "message");
       await loadSource();
     } catch (error) {
-      show($("builder-message"), error.message, "error");
+      show($("source-maintenance-status"), error.message, "error");
     }
   }
 
   bindEvent("login-form", "submit", login);
-  bindEvent("open-settings", "click", openSettings);
   bindEvent("close-settings", "click", closeSettings);
   bindEvent("account-form", "submit", saveAccount);
   bindEvent("pushplus-form", "submit", savePushplus);
   bindEvent("clear-pushplus", "click", clearPushplus);
+  bindEvent("clear-cache", "click", clearCache);
+  bindEvent("clear-history", "click", clearHistory);
+  bindEvent("new-build", "click", openBuildDialog);
+  bindEvent("close-build", "click", closeBuildDialog);
+  bindEvent("cancel-build", "click", closeBuildDialog);
+  bindEvent("build-dialog", "cancel", handleBuildDialogCancel);
+  bindEvent("build-dialog", "click", handleBuildDialogBackdrop);
   bindEvent("logout", "click", async () => {
     try { await api("/api/auth/logout", { method: "POST", body: {} }); } finally { window.location.reload(); }
   });
@@ -795,9 +1103,19 @@
   }));
   bindEvent("submit-job", "click", submitJob);
   bindEvent("reload-jobs", "click", loadJobs);
+  bindEvent("jobs-prev", "click", () => loadJobs(state.jobsPage - 1));
+  bindEvent("jobs-next", "click", () => loadJobs(state.jobsPage + 1));
+  bindEvent("reload-system", "click", loadSystem);
+  bindEvent("process-sort", "change", loadSystem);
   bindEvent("refresh-sources", "click", refreshSources);
   bindEvent("cancel-job", "click", cancelJob);
   bindEvent("save-default", "click", saveDefault);
   bindEvent("close-job", "click", () => { stopEvents(); $("job-detail").hidden = true; });
+  window.addEventListener("hashchange", () => {
+    activateView().catch((error) => show($("builder-message"), error.message, "error"));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && $("build-dialog")?.open) closeBuildDialog();
+  });
   boot();
 })();

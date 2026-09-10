@@ -21,6 +21,7 @@ import selectors
 import shutil
 import signal
 import subprocess
+import tarfile
 import time
 import traceback
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -48,6 +49,10 @@ LogCallback = Callable[[str], None]
 CONTAINER_HEARTBEAT_SECONDS = 10 * 60
 COMMAND_HEARTBEAT_SECONDS = 3 * 60
 MIN_HEARTBEAT_SECONDS = 5.0
+# Keep this basename stable across the CLI, Web and GitHub Actions.  The
+# containing task/device directory already provides isolation, while the
+# stable name lets Actions upload this one file as its own artifact.
+IPK_ARCHIVE_NAME = "ipk-packages.tar.gz"
 
 
 def _format_heartbeat(label: str, elapsed_seconds: float) -> str:
@@ -948,6 +953,11 @@ class BuildEngine:
                         config_sha256=config_sha256,
                         ready=False,
                     )
+                    # A reused compiler tree can retain package outputs from
+                    # an earlier task.  Record the exact state immediately
+                    # before this build's pipeline so the later archive only
+                    # contains packages created or changed by this task.
+                    ipk_before = self._snapshot_ipk_outputs(openwrt_dir)
                     self._run_pipeline(
                         spec,
                         source_result,
@@ -966,6 +976,15 @@ class BuildEngine:
                         cancel_event,
                         started_at,
                     )
+                    ipk_archive = self._package_ipk_archive(
+                        openwrt_dir,
+                        artifact_dir,
+                        ipk_before,
+                        callback,
+                        cancel_event,
+                    )
+                    if ipk_archive is not None:
+                        artifacts.append(ipk_archive)
                     cache_manager.update_source(
                         cache_lease,
                         source_id=source_result.source_id,
@@ -1550,6 +1569,112 @@ class BuildEngine:
             raise
         finally:
             self._emit(callback, "========== 详细诊断结束；首次并行编译日志已保留 ==========")
+
+    @staticmethod
+    def _snapshot_ipk_outputs(openwrt_dir: Path) -> dict[str, tuple[int, int, str]]:
+        """Return the current package-output state below ``openwrt/bin``.
+
+        OpenWrt compiler caches retain ``bin`` between builds.  A directory
+        glob after compilation would therefore mix this task's packages with
+        packages left by an earlier task.  Keep a content-aware baseline for
+        every regular ``.ipk`` file and compare it with the post-build state.
+        The relative path is the stable identity, while size/mtime/hash make
+        the comparison robust to a package being replaced in place.
+        """
+
+        bin_dir = openwrt_dir / "bin"
+        if not bin_dir.is_dir() or bin_dir.is_symlink():
+            return {}
+        try:
+            bin_root = bin_dir.resolve(strict=True)
+        except OSError:
+            return {}
+        state: dict[str, tuple[int, int, str]] = {}
+        try:
+            candidates = sorted(bin_dir.rglob("*.ipk"))
+        except OSError:
+            return {}
+        for path in candidates:
+            # Do not follow generated symlinks.  Besides keeping the archive
+            # self-contained, this prevents a contaminated cache from
+            # redirecting the package collection outside ``bin``.
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                relative = path.relative_to(bin_dir)
+                current = bin_dir
+                unsafe = False
+                for part in relative.parts:
+                    current = current / part
+                    if current.is_symlink():
+                        unsafe = True
+                        break
+                if unsafe:
+                    continue
+                resolved = path.resolve(strict=True)
+                resolved.relative_to(bin_root)
+                stat = path.stat()
+                if stat.st_size <= 0:
+                    continue
+                state[relative.as_posix()] = (stat.st_size, stat.st_mtime_ns, _sha256(path))
+            except (OSError, ValueError):
+                continue
+        return state
+
+    def _package_ipk_archive(
+        self,
+        openwrt_dir: Path,
+        artifact_dir: Path,
+        before: Mapping[str, tuple[int, int, str]],
+        callback: LogCallback,
+        cancel_event: Any,
+    ) -> Path | None:
+        """Archive only the ``.ipk`` outputs created or changed by this task.
+
+        Package members retain their path relative to the OpenWrt ``bin``
+        directory (for example ``packages/aarch64_cortex-a53/base/foo.ipk``),
+        so similarly named packages from different feeds cannot collide.  A
+        successful firmware build with no new package output simply has no
+        package archive; stale cache files are never exposed as new output.
+        """
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise BuildCancelled()
+        after = self._snapshot_ipk_outputs(openwrt_dir)
+        changed = sorted(relative for relative, state in after.items() if before.get(relative) != state)
+        if not changed:
+            self._emit(callback, "本次编译未生成新的 .ipk 包，不创建 IPK 归档")
+            return None
+
+        bin_dir = openwrt_dir / "bin"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        archive = artifact_dir / IPK_ARCHIVE_NAME
+        temporary = artifact_dir / f".{IPK_ARCHIVE_NAME}.{os.getpid()}.tmp"
+        temporary.unlink(missing_ok=True)
+        try:
+            with tarfile.open(temporary, mode="w:gz") as output:
+                for relative in changed:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise BuildCancelled()
+                    path = bin_dir / Path(relative)
+                    # Recheck the path just before adding it.  The build lock
+                    # prevents another task from mutating this tree, but a
+                    # malformed worker output must not become an archive
+                    # symlink or an out-of-tree path.
+                    if path.is_symlink() or not path.is_file():
+                        continue
+                    try:
+                        resolved = path.resolve(strict=True)
+                        resolved.relative_to(bin_dir.resolve(strict=True))
+                    except (OSError, ValueError):
+                        continue
+                    output.add(path, arcname=relative, recursive=False)
+            os.replace(temporary, archive)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+        self._emit(callback, f"IPK 产物归档: {len(changed)} 个包 -> {archive.name}")
+        return archive
 
     def _package(
         self,
@@ -2200,6 +2325,7 @@ __all__ = [
     "BuildRequest",
     "BuildResult",
     "CommandFailed",
+    "IPK_ARCHIVE_NAME",
     "logical_cpu_count",
     "PreparedSource",
     "WorkspaceBusy",

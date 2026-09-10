@@ -334,10 +334,100 @@ class Storage:
             row = self._row_dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
         return self._decode_job(row)
 
-    def list_jobs(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+    def count_jobs(self) -> int:
+        """Return the number of persisted jobs without loading their payloads."""
+
         with self.connect() as db:
-            rows = db.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+            return int(db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+
+    # ``job_count`` is kept as a small compatibility alias for API adapters
+    # that used the noun-first spelling while pagination was introduced.
+    def job_count(self) -> int:
+        return self.count_jobs()
+
+    def count_active_jobs(self) -> int:
+        """Return queued/running jobs for dashboard counters."""
+
+        with self.connect() as db:
+            return int(
+                db.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')"
+                ).fetchone()[0]
+            )
+
+    def job_status_counts(self) -> dict[str, int]:
+        """Return compact queue statistics without loading job payloads."""
+
+        with self.connect() as db:
+            rows = db.execute("SELECT status, COUNT(*) AS total FROM jobs GROUP BY status").fetchall()
+        return {str(row["status"]): int(row["total"]) for row in rows}
+
+    def list_jobs(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        """Read one bounded page, ordered newest first.
+
+        Keep the LIMIT/OFFSET in SQL.  Job results and options can be large,
+        so fetching every historical row and slicing in Python would make a
+        page request grow with the lifetime of the builder.
+        """
+
+        limit = max(1, int(limit))
+        offset = max(0, int(offset))
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM jobs ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
         return [self._decode_job(self._row_dict(row)) for row in rows]
+
+    def active_jobs(self) -> list[dict[str, Any]]:
+        """Return queued/running jobs for destructive-operation guards."""
+
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM jobs WHERE status IN ('queued','running') ORDER BY created_at ASC"
+            ).fetchall()
+        return [self._decode_job(self._row_dict(row)) for row in rows]
+
+    def terminal_jobs(self) -> list[dict[str, Any]]:
+        """Return completed jobs selected for an explicit history cleanup."""
+
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT * FROM jobs
+                   WHERE status IN ('succeeded','failed','canceled','interrupted')
+                   ORDER BY created_at ASC"""
+            ).fetchall()
+        return [self._decode_job(self._row_dict(row)) for row in rows]
+
+    def delete_terminal_jobs(self, job_ids: list[str]) -> int:
+        """Delete the selected terminal rows and their cascading metadata."""
+
+        ids = list(dict.fromkeys(str(job_id) for job_id in job_ids))
+        if not ids:
+            return 0
+        if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", job_id) for job_id in ids):
+            raise ValueError("invalid job id")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            active = int(
+                db.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')"
+                ).fetchone()[0]
+            )
+            if active:
+                raise RuntimeError("active jobs exist")
+            deleted = 0
+            for job_id in ids:
+                cursor = db.execute(
+                    """DELETE FROM jobs WHERE id=?
+                       AND status IN ('succeeded','failed','canceled','interrupted')""",
+                    (job_id,),
+                )
+                deleted += max(0, int(cursor.rowcount))
+        with self._log_lock:
+            for job_id in ids:
+                self._log_state.pop(job_id, None)
+        return deleted
 
     def _decode_job(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
         if row is None:
@@ -547,6 +637,31 @@ class Storage:
         with self.connect() as db:
             return [dict(row) for row in db.execute("SELECT * FROM artifacts WHERE job_id=? ORDER BY name", (job_id,)).fetchall()]
 
+    def delete_artifact(self, artifact_id: str) -> bool:
+        """Delete one persisted artifact metadata row.
+
+        The generated file is owned by the caller; this method only removes
+        its database record.  Returning whether a row was deleted makes
+        idempotent cleanup and API callers easy to reason about.
+        """
+
+        with self.connect() as db:
+            cursor = db.execute("DELETE FROM artifacts WHERE id=?", (artifact_id,))
+            return cursor.rowcount > 0
+
+    def clear_artifacts(self) -> int:
+        """Delete all artifact metadata while retaining jobs and logs."""
+
+        with self.connect() as db:
+            cursor = db.execute("DELETE FROM artifacts")
+            return max(0, int(cursor.rowcount))
+
+    # Destructive cleanup callers may use the explicit all-rows spelling.
+    # Keep one implementation so both names have identical transaction
+    # semantics.
+    def clear_all_artifacts(self) -> int:
+        return self.clear_artifacts()
+
     # -- defaults, source and catalog -------------------------------------
 
     def save_defaults(self, device: str, packages: list[str], options: dict[str, Any], user_id: int | None) -> None:
@@ -611,6 +726,13 @@ class Storage:
         row["items"] = _loads(row.pop("items_json", None), [])
         row["metadata"] = _loads(row.pop("metadata_json", None), {})
         return row
+
+    def clear_catalogs(self) -> int:
+        """Delete derived catalog rows while retaining source/job evidence."""
+
+        with self.connect() as db:
+            cursor = db.execute("DELETE FROM catalog_snapshots")
+            return max(0, int(cursor.rowcount))
 
     # -- application settings ---------------------------------------------
 

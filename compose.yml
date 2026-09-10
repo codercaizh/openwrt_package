@@ -14,6 +14,10 @@ services:
       OWRT_REPO_ROOT: ${OWRT_REPO_HOST_PATH:-${PWD}}
       OWRT_WORKSPACE: ${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/workspace
       OWRT_DATA_DIR: ${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state
+      # The web process is isolated in its own PID namespace by default.  A
+      # read-only host /proc view lets the operations dashboard show the
+      # machine that actually runs the builder workers.
+      OWRT_HOST_PROC: /host/proc
       OWRT_BIND_HOST: 0.0.0.0
       OWRT_BIND_PORT: 8000
       OWRT_PUBLIC_ORIGIN: ${OWRT_PUBLIC_ORIGIN:-http://127.0.0.1:${OWRT_WEB_PORT:-8000}}
@@ -26,6 +30,7 @@ services:
       - ${OWRT_REPO_HOST_PATH:-${PWD}}:${OWRT_REPO_HOST_PATH:-${PWD}}:ro
       - ${OWRT_REPO_HOST_PATH:-${PWD}}:/opt/owrt-builder:ro
       - ${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}:${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}:rw
+      - /proc:/host/proc:ro
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: ${OWRT_REPO_HOST_PATH:-${PWD}}
     ports:
