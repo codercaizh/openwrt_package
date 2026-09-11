@@ -68,3 +68,9 @@ first-build fallback. Other caches are removed in creation-time FIFO order
 under their device flock, with each deletion logged. Legacy task trees are
 adopted by in-place move only after result/manifest and symlink provenance
 checks pass.
+
+Package outputs are collected from the OpenWrt `bin` directory after the build.
+Both `.apk` and `.ipk` files that are new or changed for the task are stored in
+`packages.tar.gz`, preserving their paths relative to `bin`. An unchanged cache
+does not produce an empty package archive. The previous `ipk-packages.tar.gz`
+name remains readable for historical artifacts only.

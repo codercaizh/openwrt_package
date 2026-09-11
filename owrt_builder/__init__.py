@@ -6,7 +6,8 @@ and the worker use the same core implementation.
 """
 
 from .build import BuildEngine, BuildRequest, BuildResult
-from .devices import DeviceSpec, SourceSpec, load_catalog, resolve_device
+from .devices import DeviceCatalog, DeviceSpec, SourceSpec, load_catalog, resolve_device
+from .paths import catalog_path, repository_root
 from .sources import PreparedSource
 
 __all__ = [
@@ -15,8 +16,11 @@ __all__ = [
     "BuildRequest",
     "BuildResult",
     "PreparedSource",
+    "DeviceCatalog",
     "DeviceSpec",
     "SourceSpec",
+    "catalog_path",
     "load_catalog",
+    "repository_root",
     "resolve_device",
 ]

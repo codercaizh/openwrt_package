@@ -25,17 +25,14 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Literal, Mapping, Sequence
+from typing import Any, Callable, Iterator, Literal, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator
-
 from .auth import (
     AuthManager,
     hash_password,
@@ -56,9 +53,34 @@ from .cleanup import (
 from .configuration import parse_config
 from .devices import DeviceCatalog, DeviceSpec, load_catalog
 from .notifications import NotificationSettings, PushPlusNotifier
+from .paths import repository_root, static_path
 from .sources import PreparedSource, SourceError, SourceManager
 from .storage import Storage, utc_now
 from .system import SystemMonitor
+from .web_support.catalog import (
+    _json_safe,
+    canonical_package_names,
+    filter_catalog,
+    normalize_catalog,
+    public_catalog,
+    validate_options,
+)
+from .web_support.models import (
+    DefaultsBody,
+    JobBody,
+    LoginBody,
+    PackageOptionsBody,
+    SettingsBody,
+    StrictBody,
+    ValidateBody,
+)
+from .web_support.runtime import (
+    Runtime,
+    RuntimeNotReady,
+    Settings,
+    SourceSnapshotUnavailable,
+    load_runtime,
+)
 
 
 LOGGER = logging.getLogger("owrt_builder.web")
@@ -72,7 +94,12 @@ SOURCE_REQUEST_LOCK_TIMEOUT_SECONDS = 0.25
 
 
 def system_logical_cpus() -> int:
-    """Return the logical CPU ceiling used by both UI and API validation."""
+    """Return the logical CPU ceiling used by both UI and API validation.
+
+    Keep this adapter in the public Web module so existing callers can
+    continue to monkeypatch the Web-level probe in tests and deployments.
+    """
+
     return logical_cpu_count()
 
 
@@ -91,161 +118,6 @@ def _static_asset_version(static_dir: Path) -> str:
             # instead of failing app construction while computing a version.
             digest.update(b"<missing>")
     return digest.hexdigest()[:16]
-
-
-class RuntimeNotReady(RuntimeError):
-    """The typed core modules are unavailable or have no prepared source."""
-
-
-class SourceSnapshotUnavailable(RuntimeError):
-    """A persisted source snapshot cannot be consumed by a build worker."""
-
-    def __init__(self, kind: str, message: str):
-        self.kind = kind
-        super().__init__(message)
-
-
-@dataclass
-class Runtime:
-    """Typed integration points used by the web worker.
-
-    The concrete classes/functions are imported from the fixed modules named
-    in ``docs/architecture.md``.  The build engine exposes
-    ``build(request, on_log=..., cancel_event=...)`` and ``request_type`` is
-    the core ``BuildRequest`` DTO.
-    """
-
-    devices: DeviceCatalog
-    sources: SourceManager
-    build: BuildEngine
-    scan_catalog: Callable[[str | Path], Catalog] = scan_catalog
-    request_type: type[BuildRequest] = BuildRequest
-
-
-def load_runtime(settings: Settings | None = None) -> Runtime:
-    """Load the explicitly agreed core modules; never fabricate catalog data."""
-    settings = settings or Settings()
-    repo_root = Path(os.getenv("OWRT_REPO_ROOT", str(Path(__file__).resolve().parents[1]))).expanduser().resolve()
-    device_catalog = load_catalog(repo_root / "configs" / "devices.toml")
-    workspace = Path(os.getenv("OWRT_WORKSPACE", str(settings.data_dir / "workspace")))
-    return Runtime(
-        devices=device_catalog,
-        # BuildEngine resolves prepared snapshots from ``workspace/sources``;
-        # use the same root for Web preparation so the pinned snapshot id is
-        # consumable by the worker process and by CLI builds.
-        sources=SourceManager(workspace / "sources", source_specs=device_catalog.sources),
-        build=BuildEngine(repo_root, workspace, catalog=device_catalog),
-        scan_catalog=scan_catalog,
-        request_type=BuildRequest,
-    )
-
-
-@dataclass
-class Settings:
-    data_dir: Path = field(default_factory=lambda: Path(os.getenv("OWRT_DATA_DIR", "data")))
-    db_path: Path | None = None
-    log_dir: Path | None = None
-    artifact_dir: Path | None = None
-    config_dir: Path = field(default_factory=lambda: Path(os.getenv("OWRT_CONFIG_DIR", "configs")))
-    bind_host: str = field(default_factory=lambda: os.getenv("OWRT_BIND_HOST", "127.0.0.1"))
-    bind_port: int = field(default_factory=lambda: int(os.getenv("OWRT_BIND_PORT", "8000")))
-    worker_poll_seconds: float = 0.5
-    source_refresh_timeout_seconds: int = 6 * 60 * 60
-
-    def __post_init__(self) -> None:
-        self.data_dir = Path(self.data_dir)
-        self.db_path = Path(self.db_path or os.getenv("OWRT_DB_PATH", str(self.data_dir / "state.sqlite3")))
-        self.log_dir = Path(self.log_dir or os.getenv("OWRT_LOG_DIR", str(self.data_dir / "logs")))
-        self.artifact_dir = Path(self.artifact_dir or os.getenv("OWRT_ARTIFACT_DIR", str(self.data_dir / "artifacts")))
-        self.config_dir = Path(self.config_dir)
-
-
-class StrictBody(BaseModel):
-    """Reject client supplied build/runtime knobs that the server owns."""
-
-    model_config = {"extra": "forbid"}
-
-
-class LoginBody(StrictBody):
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
-
-
-class SettingsBody(StrictBody):
-    """Account and PushPlus updates accepted by the settings page.
-
-    Optional fields are inspected through ``model_fields_set`` so changing a
-    username does not accidentally clear an existing notification token.
-    """
-
-    username: str | None = Field(default=None, min_length=1)
-    current_password: str | None = Field(default=None, min_length=1)
-    new_password: str | None = Field(default=None, min_length=1)
-    pushplus_token: str | None = Field(default=None, max_length=512)
-    clear_pushplus: StrictBool = False
-
-
-class JobBody(StrictBody):
-    device: str = Field(min_length=1, max_length=80)
-    packages: list[str] = Field(default_factory=list, max_length=512)
-    options: dict[str, Any] = Field(default_factory=dict)
-    # ``StrictInt`` rejects bools and numeric strings before the dynamic CPU
-    # ceiling is checked below.
-    parallel_jobs: StrictInt | None = Field(default=None, ge=1)
-    reuse_cache: StrictBool = True
-
-    @field_validator("packages")
-    @classmethod
-    def package_names(cls, values: list[str]) -> list[str]:
-        for value in values:
-            if not re.fullmatch(r"[A-Za-z0-9_.+@-]{1,180}", value):
-                raise ValueError("包名包含非法字符")
-        return list(dict.fromkeys(values))
-
-    @field_validator("options")
-    @classmethod
-    def option_names(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if len(values) > 1024:
-            raise ValueError("子选项数量过多")
-        for key in values:
-            if not re.fullmatch(r"[A-Za-z0-9_.+@-]{1,220}", str(key)):
-                raise ValueError("子选项名称包含非法字符")
-            if not isinstance(values[key], (type(None), bool, int, float, str)):
-                raise ValueError("子选项值必须是标量")
-            if isinstance(values[key], str) and len(values[key]) > 4096:
-                raise ValueError("子选项字符串过长")
-        return values
-
-
-class DefaultsBody(StrictBody):
-    packages: list[str] = Field(default_factory=list, max_length=512)
-    options: dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("packages")
-    @classmethod
-    def package_names(cls, values: list[str]) -> list[str]:
-        for value in values:
-            if not re.fullmatch(r"[A-Za-z0-9_.+@-]{1,180}", value):
-                raise ValueError("包名包含非法字符")
-        return list(dict.fromkeys(values))
-
-    @field_validator("options")
-    @classmethod
-    def option_names(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if len(values) > 1024:
-            raise ValueError("子选项数量过多")
-        for key in values:
-            if not re.fullmatch(r"[A-Za-z0-9_.+@-]{1,220}", str(key)):
-                raise ValueError("子选项名称包含非法字符")
-            if not isinstance(values[key], (type(None), bool, int, float, str)):
-                raise ValueError("子选项值必须是标量")
-            if isinstance(values[key], str) and len(values[key]) > 4096:
-                raise ValueError("子选项字符串过长")
-        return values
-
-
-class ValidateBody(JobBody):
-    pass
 
 
 class SourceService:
@@ -766,216 +638,6 @@ class Scheduler:
         self.stop_event.set()
 
 
-def normalize_catalog(value: Any) -> list[dict[str, Any]]:
-    if hasattr(value, "to_dict") and callable(value.to_dict):
-        value = value.to_dict()
-    if isinstance(value, Mapping):
-        value = value.get("items") or value.get("packages") or value.get("catalog") or []
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        return []
-    result: list[dict[str, Any]] = []
-    for raw in value:
-        if not isinstance(raw, Mapping):
-            continue
-        item = {str(key): _json_safe(val) for key, val in raw.items()}
-        symbol = str(item.get("symbol") or item.get("name") or item.get("package") or "").strip()
-        if not symbol:
-            continue
-        item["symbol"] = symbol
-        item.setdefault("name", symbol)
-        item.setdefault("title", item.get("prompt") or symbol)
-        if not item.get("category"):
-            package_name = str(item.get("name") or symbol.removeprefix("CONFIG_PACKAGE_"))
-            item["category"] = "luci-app" if package_name.startswith("luci-app-") else ("luci-theme" if package_name.startswith("luci-theme-") else "other")
-        item.setdefault("type", "bool")
-        item.setdefault("default", False if item["type"] in {"bool", "boolean"} else "")
-        item.setdefault("depends", item.get("depends_on") or [])
-        item.setdefault("options", item.get("suboptions") or [])
-        result.append(item)
-    return sorted(result, key=lambda item: (str(item.get("category")), str(item.get("title")), item["symbol"]))
-
-
-def filter_catalog(items: Iterable[dict[str, Any]], query: str, category: str) -> list[dict[str, Any]]:
-    query = query.strip().casefold()
-    category = category.strip().casefold()
-    result = []
-    for item in items:
-        item_category = str(item.get("category", "other")).casefold()
-        if category and category != "all" and item_category != category:
-            continue
-        haystack = " ".join(str(item.get(key, "")) for key in ("symbol", "name", "title", "description")).casefold()
-        if query and query not in haystack:
-            continue
-        result.append(item)
-    return result
-
-
-def canonical_package_names(items: Sequence[dict[str, Any]], packages: Sequence[str]) -> list[str]:
-    """Resolve accepted package names/symbols to package names.
-
-    The browser always submits names, but accepting ``CONFIG_PACKAGE_*`` here
-    keeps the API compatible with small scripts while ensuring the build core
-    never receives a Kconfig symbol where it expects a package name.
-    Unknown values are intentionally omitted; callers use ``validate_options``
-    to return the corresponding structured errors before persisting a job.
-    """
-
-    aliases: dict[str, str] = {}
-    for item in items:
-        name = str(item.get("name") or "").strip()
-        symbol = str(item.get("symbol") or "").strip()
-        if not name and symbol.startswith("CONFIG_PACKAGE_"):
-            name = symbol.removeprefix("CONFIG_PACKAGE_")
-        if not name:
-            continue
-        aliases[name] = name
-        if symbol:
-            aliases[symbol] = name
-        aliases[f"CONFIG_PACKAGE_{name}"] = name
-    result: list[str] = []
-    for package in packages:
-        canonical = aliases.get(str(package))
-        if canonical and canonical not in result:
-            result.append(canonical)
-    return result
-
-
-def validate_options(items: Sequence[dict[str, Any]], packages: Sequence[str], options: Mapping[str, Any]) -> list[dict[str, Any]]:
-    by_symbol: dict[str, dict[str, Any]] = {}
-    package_aliases: dict[str, str] = {}
-    for item in items:
-        symbol = str(item.get("symbol") or "")
-        name = str(item.get("name") or symbol.removeprefix("CONFIG_PACKAGE_") or "")
-        if symbol:
-            by_symbol[symbol] = item
-        if name:
-            by_symbol[name] = item
-            package_aliases[name] = name
-        if symbol.startswith("CONFIG_PACKAGE_"):
-            package_aliases[symbol] = name
-            package_aliases[symbol.removeprefix("CONFIG_PACKAGE_")] = name
-    issues: list[dict[str, Any]] = []
-    selected: set[str] = set()
-    for raw_package in packages:
-        symbol = str(raw_package)
-        item = by_symbol.get(symbol)
-        canonical = package_aliases.get(symbol)
-        if item is None or canonical is None:
-            issues.append({"kind": "unknown_package", "symbol": symbol, "message": f"目录中不存在包 {symbol}"})
-            continue
-        selected.add(canonical)
-    # Keep the owning package with every option.  A package-local Kconfig
-    # symbol is not necessarily prefixed with CONFIG_PACKAGE_<name> (feed
-    # metadata can expose symbols such as CONFIG_NODEJS_20), so deriving the
-    # owner from the symbol alone would allow an option for an unselected
-    # package to pass the HTTP-side checks and fail later in BuildEngine.
-    known_options: dict[str, tuple[dict[str, Any], str | None]] = {}
-    for item in items:
-        for raw in item.get("options", []) or []:
-            if not isinstance(raw, Mapping):
-                continue
-            option = {str(k): _json_safe(v) for k, v in raw.items()}
-            key = str(option.get("symbol") or option.get("name") or "")
-            if key:
-                owner = option.get("package") or option.get("owner") or item.get("name")
-                # Accept the native CONFIG_ spelling as well as the short
-                # spelling used by a few older clients.  The value sent to
-                # BuildEngine is still rendered with the canonical CONFIG_
-                # prefix.
-                known_options[key] = (option, str(owner) if owner else None)
-                if key.startswith("CONFIG_"):
-                    known_options[key.removeprefix("CONFIG_")] = (option, str(owner) if owner else None)
-    for key, value in options.items():
-        option_record = known_options.get(str(key))
-        if option_record is None:
-            issues.append({"kind": "unknown_option", "symbol": key, "message": f"目录中不存在子选项 {key}"})
-            continue
-        option, owner = option_record
-        if owner:
-            owner_name = package_aliases.get(owner, owner.removeprefix("CONFIG_PACKAGE_").removeprefix("PACKAGE_"))
-            if owner_name not in selected:
-                issues.append({
-                    "kind": "option_unselected_package",
-                    "symbol": key,
-                    "package": owner_name,
-                    "message": f"子选项 {key} 属于未选中的包 {owner_name}",
-                })
-                continue
-        type_name = str(option.get("type") or option.get("kind") or "string").lower()
-        valid = True
-        if type_name in {"bool", "boolean"}:
-            valid = isinstance(value, bool)
-        elif type_name in {"int", "integer"}:
-            valid = isinstance(value, int) and not isinstance(value, bool)
-        elif type_name in {"choice", "enum"}:
-            choices = option.get("choices") or option.get("values") or []
-            allowed = {str(x.get("value") if isinstance(x, Mapping) else x) for x in choices}
-            valid = isinstance(value, str) and (not allowed or value in allowed)
-        elif type_name == "hex":
-            valid = isinstance(value, str) and bool(re.fullmatch(r"0[xX][0-9a-fA-F]+", value))
-        elif type_name == "tristate":
-            valid = isinstance(value, str) and value in {"y", "m", "n"}
-        elif type_name == "string":
-            valid = isinstance(value, str)
-        if not valid:
-            issues.append({"kind": "invalid_value", "symbol": key, "message": f"子选项 {key} 的值类型不正确"})
-    # Static dependency feedback is intentionally advisory; authoritative
-    # auto-dependency/cannot-remove results come from core defconfig.
-    for symbol in selected:
-        item = by_symbol.get(symbol)
-        for dependency in _dependencies(item.get("depends") if item else None):
-            if dependency not in selected and dependency in by_symbol:
-                issues.append({"kind": "dependency", "symbol": symbol, "depends_on": dependency, "message": f"{symbol} 依赖 {dependency}，defconfig 可能自动加入"})
-    return issues
-
-
-def public_catalog(items: Sequence[dict[str, Any]], default_packages: Iterable[str] = ()) -> list[dict[str, Any]]:
-    """Return selectable UI entries without leaking thousands of internals.
-
-    The authoritative full catalog stays in the snapshot and is used by
-    validation/build composition.  The browser receives LuCI apps/themes plus
-    the non-LuCI packages present in the reviewed (or saved) device defaults,
-    so tools such as tailscale/lsof/iperf3 remain editable without rendering
-    every kernel module and library in the feed.
-    """
-
-    defaults = {str(name) for name in default_packages}
-    result: list[dict[str, Any]] = []
-    for raw in items:
-        name = str(raw.get("name") or raw.get("symbol") or "")
-        if not name:
-            continue
-        is_plugin = bool(raw.get("is_plugin")) or name.startswith(("luci-app-", "luci-theme-"))
-        if not is_plugin and name not in defaults:
-            continue
-        item = dict(raw)
-        item["category"] = "luci-app" if name.startswith("luci-app-") else (
-            "luci-theme" if name.startswith("luci-theme-") else "other"
-        )
-        result.append(item)
-    return result
-
-
-def _dependencies(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [part for part in re.findall(r"[A-Za-z0-9_.+/-]+", value) if part not in {"y", "m", "n", "and", "or", "not"}]
-    if isinstance(value, Sequence):
-        return [str(item) for item in value if isinstance(item, (str, int))]
-    return []
-
-
-def _json_safe(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, Mapping):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return [_json_safe(v) for v in value]
-    return str(value)
-
-
 def _result_dict(result: Any) -> dict[str, Any]:
     if result is None:
         return {}
@@ -1134,7 +796,7 @@ def _runtime_repo_root(runtime: Runtime | None) -> Path:
     build = getattr(runtime, "build", None) if runtime is not None else None
     configured = getattr(build, "repo_root", None)
     if configured is None:
-        configured = os.getenv("OWRT_REPO_ROOT") or Path(__file__).resolve().parents[1]
+        configured = os.getenv("OWRT_REPO_ROOT") or repository_root()
     # Do not call ``resolve`` here.  The cleanup action must reject a symlink
     # in the explicit ``.owrt`` path instead of following it into an
     # unrelated tree.  BuildEngine already resolves its own trusted repo root
@@ -1557,7 +1219,7 @@ def create_app(
     if runtime_error:
         app.state.runtime_error = runtime_error
 
-    static_dir = Path(__file__).parent / "static"
+    static_dir = static_path()
     static_version = _static_asset_version(static_dir)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 

@@ -17,6 +17,12 @@ feeds、编译环境和产物都由工具管理。
 接受用户输入 commit；工具会检出配置中声明的分支，记录实际源码和 feed
 提交，并将准备好的不可变快照用于本次构建。
 
+项目结构、模块边界和扩展约定见
+[docs/architecture.md](docs/architecture.md#项目结构)。运行时数据按入口分开保存：
+CLI 默认写入 `.owrt/`，`run-web` 默认写入 `.owrt-web/`；直接运行管理命令时默认
+使用 `data/`。这些路径都可通过对应环境变量覆盖，不会混入源码、配置和包内静态
+资源。
+
 ## 命令行和 GitHub Actions
 
 最简单的本地构建命令是：
@@ -49,7 +55,10 @@ builder 镜像中执行。可用命令：
 
 编译结果、manifest、配置和日志默认写入 `.owrt/`。manifest 记录源快照、配置
 SHA256、产物大小和每个产物的 SHA256；设备别名和规范名使用同一个规范设备
-目录，便于 Action 上传。
+目录，便于 Action 上传。构建期间在 `bin/` 中新建或变更的 `.apk` 和 `.ipk`
+会合并归档为 `packages.tar.gz`；GitHub Actions 会把这个软件包归档单独作为
+`openwrt-packages-*` 制品上传。旧版本生成的 `ipk-packages.tar.gz` 仍可下载，
+但新构建不再使用这个仅表示 IPK 的文件名。
 
 `.github/workflows/build.yml` 的 `workflow_dispatch` 只需要选择 `device`。
 GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传

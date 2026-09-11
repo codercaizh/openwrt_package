@@ -53,22 +53,29 @@ jobs:
           name: openwrt-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
           # BuildEngine stores artifacts under the canonical device key, so
           # aliases such as n60pro must not narrow this glob.
-          # Keep the per-build IPK archive in its own downloadable artifact.
+          # Keep the per-build APK/IPK archive in its own downloadable artifact.
+          # Exclude the old basename too if a reused workspace contains a
+          # legacy archive from a build before the neutral naming change.
           path: |
             .owrt/artifacts/**/*
+            !.owrt/artifacts/**/packages.tar.gz
             !.owrt/artifacts/**/ipk-packages.tar.gz
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload IPK package archive
+      - name: Upload APK/IPK package archive
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-ipk-packages-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          name: openwrt-packages-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
           # BuildEngine emits this stable basename inside the canonical
           # device/task directory.  Upload it independently so users can
-          # download packages without the firmware bundle.
-          path: .owrt/artifacts/**/ipk-packages.tar.gz
+          # download APK/IPK packages without the firmware bundle.
+          # A pre-existing task directory may still contain the legacy
+          # archive. Keep it downloadable without generating that name.
+          path: |
+            .owrt/artifacts/**/packages.tar.gz
+            .owrt/artifacts/**/ipk-packages.tar.gz
           if-no-files-found: warn
           retention-days: 7
 

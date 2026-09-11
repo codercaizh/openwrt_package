@@ -2,6 +2,23 @@
 
 本文档是 `owrt_builder` 与 Web/build worker 之间的最小接口约定。源码准备和目录扫描都是同步函数；Web 层负责在线程/任务队列中调用它们，并把状态回调转成 SSE 或任务日志。
 
+## 项目结构
+
+仓库按运行边界分为以下几组，新增功能应优先放到拥有它的层中：
+
+| 目录 | 职责 | 约束 |
+| --- | --- | --- |
+| `owrt_builder/` | CLI、Web 和构建核心 | 保持现有模块导入路径稳定；`paths.py` 统一定位仓库资源 |
+| `owrt_builder/web_support/` | Web 的 DTO、catalog 适配和 Runtime 装配 | 保持 FastAPI 入口在 `web.py`；只依赖核心模块，不反向依赖路由 |
+| `owrt_builder/static/` | Web 页面资源 | 通过 Python 包数据随 wheel 和 Web 镜像发布 |
+| `configs/` | 设备目录和配置片段 | 只放审查过的设备/构建输入，不写入运行时状态 |
+| `scripts/`、`docker/`、`deploy/` | 启动、构建镜像和部署 | 只负责环境边界，不复制构建业务逻辑 |
+| `tests/` | CLI、Web、核心和部署契约 | 优先通过公开入口和注入依赖测试，避免依赖真实 Docker 或网络 |
+
+`devices.py`、`sources.py`、`feeds.py`、`catalog.py` 和 `configuration.py` 组成源码/配置核心；`build.py` 和 `cache.py` 负责构建生命周期；`storage.py`、`auth.py`、`notifications.py` 和 `system.py` 提供 Web 所需的持久化与宿主能力；`web.py` 负责 API、队列和页面适配，`web_support/` 提供可独立测试的输入模型、目录 shaping 和运行时装配。仓库路径、设备目录、静态资源和固定补丁由 `paths.py` 提供，运行时工作区仍由 CLI/Web 自己管理。
+
+构建核心仍保留平铺的 Python 模块名，是为了兼容 `owrt_builder.build`、`owrt_builder.web` 等已有 CLI、集成和外部脚本入口；Web 内部的新增边界放在 `web_support/` 子包中。只有当一个边界能在不增加兼容包装层的情况下独立演进时，才应进一步拆成子包。
+
 ## 设备与源码
 
 | key | aliases | source | config fragment | 说明 |
@@ -47,6 +64,12 @@ PreparedSource(source_id, snapshot_id, path, catalog_path, source_commit, feed_c
 BuildRequest(task_id, device, snapshot_id, packages, options, jobs, reuse_cache)
 BuildResult(artifacts, config_path, manifest)
 ```
+
+构建缓存可能保留上一任务的软件包，因此构建开始前会记录
+`openwrt/bin` 下所有 `.apk` 和 `.ipk` 的内容状态。编译结束后只将新建或内容
+发生变化的包按其相对 `bin` 路径写入 `packages.tar.gz`；没有变化时不创建归档。
+旧的 `IPK_ARCHIVE_NAME` 常量和 `ipk-packages.tar.gz` 文件名只用于读取历史产物，
+新构建统一使用中性的 `PACKAGE_ARCHIVE_NAME`。
 
 `jobs` 是服务端校验后的正整数，范围为 1 到运行 Web/worker 的有效逻辑核心数；
 实现优先读取进程 affinity，再按 cgroup CPU quota 限制，最后回退到

@@ -15,6 +15,7 @@ import shutil
 import subprocess
 from typing import Callable, Mapping, Sequence
 
+from .paths import rust_patch_path
 from .sources import StatusCallback, _emit
 
 
@@ -476,7 +477,7 @@ def _patch_rust(source_root: Path, status: StatusCallback | None) -> None:
     content = makefile.read_text(encoding="utf-8", errors="replace")
     if "PKG_VERSION:=1.90.0" not in content:
         return
-    fix = Path(__file__).resolve().parents[1] / "scripts/fix_bugs/rust_Makefile"
+    fix = rust_patch_path()
     if not fix.exists():
         raise FeedError(f"rust 1.90.0 requires missing patch: {fix}")
     replacement = fix.read_text(encoding="utf-8", errors="replace")

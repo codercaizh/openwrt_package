@@ -14,6 +14,8 @@ import re
 import tomllib
 from typing import Any, Mapping
 
+from .paths import catalog_path as default_catalog_path
+
 
 class CatalogError(ValueError):
     """Raised when the device catalog is malformed or a device is unknown."""
@@ -178,15 +180,15 @@ def load_catalog(path: str | Path | None = None) -> DeviceCatalog:
     is accepted by this function; snapshots are part of the reviewed catalog.
     """
 
-    catalog_path = Path(path) if path is not None else Path(__file__).resolve().parents[1] / "configs" / "devices.toml"
-    catalog_path = catalog_path.expanduser().resolve()
+    catalog_file = Path(path) if path is not None else default_catalog_path()
+    catalog_file = catalog_file.expanduser().resolve()
     try:
-        with catalog_path.open("rb") as handle:
+        with catalog_file.open("rb") as handle:
             raw = tomllib.load(handle)
     except FileNotFoundError as exc:
-        raise CatalogError(f"device catalog not found: {catalog_path}") from exc
+        raise CatalogError(f"device catalog not found: {catalog_file}") from exc
     except tomllib.TOMLDecodeError as exc:
-        raise CatalogError(f"invalid device catalog {catalog_path}: {exc}") from exc
+        raise CatalogError(f"invalid device catalog {catalog_file}: {exc}") from exc
 
     default_config = raw.get("default_config", "armv8.config")
     if not isinstance(default_config, str) or not default_config.endswith(".config"):
@@ -246,7 +248,7 @@ def load_catalog(path: str | Path | None = None) -> DeviceCatalog:
             raise CatalogError(
                 f"device {spec.key!r} platform does not match source {spec.source_id!r}"
             )
-        config_path = catalog_path.parent / spec.config
+        config_path = catalog_file.parent / spec.config
         if not config_path.is_file():
             raise CatalogError(f"device {spec.key!r} config not found: {config_path}")
         for alias in spec.all_aliases:
@@ -256,11 +258,11 @@ def load_catalog(path: str | Path | None = None) -> DeviceCatalog:
             aliases[alias] = spec.key
         devices[spec.key] = spec
 
-    default_path = catalog_path.parent / default_config
+    default_path = catalog_file.parent / default_config
     if not default_path.is_file():
         raise CatalogError(f"default config not found: {default_path}")
     return DeviceCatalog(
-        path=catalog_path,
+        path=catalog_file,
         default_config=default_config,
         sources=sources,
         devices=devices,

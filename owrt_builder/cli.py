@@ -15,10 +15,11 @@ from typing import Any
 
 from .build import BuildEngine, BuildError, BuildRequest, BuildResult, WorkspaceBusy, logical_cpu_count
 from .devices import CatalogError, load_catalog
+from .paths import catalog_path, repository_root
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return repository_root()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -170,7 +171,7 @@ def _run_worker(args: argparse.Namespace) -> int:
 
 
 def _run_devices(args: argparse.Namespace) -> int:
-    catalog = load_catalog(_repo_root() / "configs" / "devices.toml")
+    catalog = load_catalog(catalog_path(_repo_root()))
     if args.json:
         print(json.dumps(catalog.to_dict(), ensure_ascii=False, indent=2))
         return 0
@@ -182,7 +183,7 @@ def _run_devices(args: argparse.Namespace) -> int:
 
 def _run_doctor(args: argparse.Namespace) -> int:
     root = _repo_root()
-    catalog = load_catalog(root / "configs" / "devices.toml")
+    catalog = load_catalog(catalog_path(root))
     report: dict[str, Any] = {
         "catalog": str(catalog.path),
         "devices": sorted(catalog.devices),

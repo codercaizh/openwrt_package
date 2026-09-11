@@ -38,6 +38,7 @@ from .configuration import (
 from .devices import CatalogError, DeviceCatalog, DeviceSpec, SourceSpec, load_catalog
 from .arm_packager import ArmPackagerError, package_arm
 from .cache import BuildCacheError, BuildCacheManager
+from .paths import catalog_path, repository_root
 from .sources import PreparedSource, SourceError, SourceManager, stage_download_seeds
 
 
@@ -49,10 +50,15 @@ LogCallback = Callable[[str], None]
 CONTAINER_HEARTBEAT_SECONDS = 10 * 60
 COMMAND_HEARTBEAT_SECONDS = 3 * 60
 MIN_HEARTBEAT_SECONDS = 5.0
-# Keep this basename stable across the CLI, Web and GitHub Actions.  The
-# containing task/device directory already provides isolation, while the
-# stable name lets Actions upload this one file as its own artifact.
+# Keep this basename stable across the CLI, Web and GitHub Actions.  OpenWrt
+# 25.12 defaults to APK output while older trees still emit IPK files, so the
+# archive name deliberately describes the contents rather than one format.
+PACKAGE_ARCHIVE_NAME = "packages.tar.gz"
+# Preserve the old value for callers that still use the legacy basename when
+# reading an archive produced by an earlier build.  New builds always use the
+# neutral PACKAGE_ARCHIVE_NAME below; the legacy file is never generated.
 IPK_ARCHIVE_NAME = "ipk-packages.tar.gz"
+PACKAGE_SUFFIXES = frozenset({".apk", ".ipk"})
 
 
 def _format_heartbeat(label: str, elapsed_seconds: float) -> str:
@@ -499,13 +505,13 @@ class BuildEngine:
         use_docker: bool | None = None,
         image: str | None = None,
     ) -> None:
-        self.repo_root = Path(repo_root or Path(__file__).resolve().parents[1]).resolve()
+        self.repo_root = Path(repo_root or repository_root()).resolve()
         self.workspace = Path(
             workspace
             or os.environ.get("OWRT_WORKSPACE")
             or (self.repo_root / ".owrt")
         ).expanduser().resolve()
-        self.catalog = catalog or load_catalog(self.repo_root / "configs" / "devices.toml")
+        self.catalog = catalog or load_catalog(catalog_path(self.repo_root))
         self.image = image or os.environ.get("OWRT_BUILDER_IMAGE", "owrt-builder:local")
         if use_docker is None:
             # ``OWRT_BUILDER_WORKER`` is reserved for a request-file worker
@@ -957,7 +963,7 @@ class BuildEngine:
                     # an earlier task.  Record the exact state immediately
                     # before this build's pipeline so the later archive only
                     # contains packages created or changed by this task.
-                    ipk_before = self._snapshot_ipk_outputs(openwrt_dir)
+                    package_before = self._snapshot_package_outputs(openwrt_dir)
                     self._run_pipeline(
                         spec,
                         source_result,
@@ -976,15 +982,15 @@ class BuildEngine:
                         cancel_event,
                         started_at,
                     )
-                    ipk_archive = self._package_ipk_archive(
+                    package_archive = self._package_archive(
                         openwrt_dir,
                         artifact_dir,
-                        ipk_before,
+                        package_before,
                         callback,
                         cancel_event,
                     )
-                    if ipk_archive is not None:
-                        artifacts.append(ipk_archive)
+                    if package_archive is not None:
+                        artifacts.append(package_archive)
                     cache_manager.update_source(
                         cache_lease,
                         source_id=source_result.source_id,
@@ -1571,15 +1577,15 @@ class BuildEngine:
             self._emit(callback, "========== 详细诊断结束；首次并行编译日志已保留 ==========")
 
     @staticmethod
-    def _snapshot_ipk_outputs(openwrt_dir: Path) -> dict[str, tuple[int, int, str]]:
-        """Return the current package-output state below ``openwrt/bin``.
+    def _snapshot_package_outputs(openwrt_dir: Path) -> dict[str, tuple[int, int, str]]:
+        """Return the current APK/IPK output state below ``openwrt/bin``.
 
         OpenWrt compiler caches retain ``bin`` between builds.  A directory
         glob after compilation would therefore mix this task's packages with
         packages left by an earlier task.  Keep a content-aware baseline for
-        every regular ``.ipk`` file and compare it with the post-build state.
-        The relative path is the stable identity, while size/mtime/hash make
-        the comparison robust to a package being replaced in place.
+        every regular APK or IPK file and compare it with the post-build state.
+        The single traversal handles both formats, while the relative path is
+        the stable identity and size/mtime/hash detect replacement in place.
         """
 
         bin_dir = openwrt_dir / "bin"
@@ -1591,7 +1597,11 @@ class BuildEngine:
             return {}
         state: dict[str, tuple[int, int, str]] = {}
         try:
-            candidates = sorted(bin_dir.rglob("*.ipk"))
+            candidates = sorted(
+                path
+                for path in bin_dir.rglob("*")
+                if path.is_file() and path.suffix.lower() in PACKAGE_SUFFIXES
+            )
         except OSError:
             return {}
         for path in candidates:
@@ -1621,7 +1631,11 @@ class BuildEngine:
                 continue
         return state
 
-    def _package_ipk_archive(
+    # Keep the original helper as a compatibility shim for integrations that
+    # exercised the old private method in tests or maintenance scripts.
+    _snapshot_ipk_outputs = _snapshot_package_outputs
+
+    def _package_archive(
         self,
         openwrt_dir: Path,
         artifact_dir: Path,
@@ -1629,27 +1643,28 @@ class BuildEngine:
         callback: LogCallback,
         cancel_event: Any,
     ) -> Path | None:
-        """Archive only the ``.ipk`` outputs created or changed by this task.
+        """Archive only APK/IPK outputs created or changed by this task.
 
         Package members retain their path relative to the OpenWrt ``bin``
-        directory (for example ``packages/aarch64_cortex-a53/base/foo.ipk``),
+        directory (for example ``packages/aarch64_cortex-a53/base/foo.apk``),
         so similarly named packages from different feeds cannot collide.  A
-        successful firmware build with no new package output simply has no
-        package archive; stale cache files are never exposed as new output.
+        successful firmware build with no new software package output simply
+        has no package archive; stale cache files are never exposed as new
+        output.
         """
 
         if cancel_event is not None and cancel_event.is_set():
             raise BuildCancelled()
-        after = self._snapshot_ipk_outputs(openwrt_dir)
+        after = self._snapshot_package_outputs(openwrt_dir)
         changed = sorted(relative for relative, state in after.items() if before.get(relative) != state)
         if not changed:
-            self._emit(callback, "本次编译未生成新的 .ipk 包，不创建 IPK 归档")
+            self._emit(callback, "本次编译未生成新的软件包，不创建软件包归档")
             return None
 
         bin_dir = openwrt_dir / "bin"
         artifact_dir.mkdir(parents=True, exist_ok=True)
-        archive = artifact_dir / IPK_ARCHIVE_NAME
-        temporary = artifact_dir / f".{IPK_ARCHIVE_NAME}.{os.getpid()}.tmp"
+        archive = artifact_dir / PACKAGE_ARCHIVE_NAME
+        temporary = artifact_dir / f".{PACKAGE_ARCHIVE_NAME}.{os.getpid()}.tmp"
         temporary.unlink(missing_ok=True)
         try:
             with tarfile.open(temporary, mode="w:gz") as output:
@@ -1673,8 +1688,26 @@ class BuildEngine:
         except Exception:
             temporary.unlink(missing_ok=True)
             raise
-        self._emit(callback, f"IPK 产物归档: {len(changed)} 个包 -> {archive.name}")
+        self._emit(callback, f"软件包产物归档: {len(changed)} 个包 -> {archive.name}")
         return archive
+
+    def _package_ipk_archive(
+        self,
+        openwrt_dir: Path,
+        artifact_dir: Path,
+        before: Mapping[str, tuple[int, int, str]],
+        callback: LogCallback,
+        cancel_event: Any,
+    ) -> Path | None:
+        """Compatibility alias for the old APK/IPK archive helper name."""
+
+        return self._package_archive(
+            openwrt_dir,
+            artifact_dir,
+            before,
+            callback,
+            cancel_event,
+        )
 
     def _package(
         self,
@@ -2326,6 +2359,7 @@ __all__ = [
     "BuildResult",
     "CommandFailed",
     "IPK_ARCHIVE_NAME",
+    "PACKAGE_ARCHIVE_NAME",
     "logical_cpu_count",
     "PreparedSource",
     "WorkspaceBusy",
