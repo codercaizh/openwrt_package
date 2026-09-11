@@ -19,9 +19,16 @@ feeds、编译环境和产物都由工具管理。
 
 项目结构、模块边界和扩展约定见
 [docs/architecture.md](docs/architecture.md#项目结构)。运行时数据按入口分开保存：
-CLI 默认写入 `.owrt/`，`run-web` 默认写入 `.owrt-web/`；直接运行管理命令时默认
-使用 `data/`。这些路径都可通过对应环境变量覆盖，不会混入源码、配置和包内静态
-资源。
+CLI 默认写入 `.owrt/`，`run-web` 默认把 state、workspace 和固件产物分别放在
+`.owrt-web/state`、`.owrt-web/workspace` 和 `.owrt-web/state/artifacts`；直接运行
+管理命令时默认使用 `data/`。这些路径都可通过对应环境变量覆盖，不会混入源码、配置
+和包内静态资源。
+
+大缓存部署可以设置 `OWRT_STATE_HOST_PATH`、`OWRT_WORKSPACE_HOST_PATH`、
+`OWRT_ARTIFACT_HOST_PATH` 和 `OWRT_CLI_WORKSPACE_HOST_PATH`，分别指定 Web 状态、
+Web 工作区、Web 固件产物和 CLI 工作区。旧的 `OWRT_DATA_HOST_PATH` 仍被支持，作为
+Web 路径的分组根目录回退；新变量优先。`run-web` 会安全读取项目 `.env` 中的路径变量，
+但不会执行其中的 token 或其他配置。
 
 ## 命令行和 GitHub Actions
 
@@ -53,7 +60,7 @@ builder 镜像中执行。可用命令：
 `make defconfig` 和 `make download` 保持串行，只有最终编译阶段使用 `make -jN`，
 因此命令行和 GitHub Actions 不需要设置 `OWRT_JOBS`。
 
-编译结果、manifest、配置和日志默认写入 `.owrt/`。manifest 记录源快照、配置
+编译结果、manifest、配置和日志默认写入 CLI 工作区（便携模式为 `.owrt/`）。manifest 记录源快照、配置
 SHA256、产物大小和每个产物的 SHA256；设备别名和规范名使用同一个规范设备
 目录，便于 Action 上传。构建期间在 `bin/` 中新建或变更的 `.apk` 和 `.ipk`
 会合并归档为 `packages.tar.gz`；GitHub Actions 会把这个软件包归档单独作为
@@ -67,8 +74,8 @@ GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传
 ## Web 控制面
 
 Web 控制面由一个容器直接提供静态页面和 API。启动器会自动构建 Web 镜像、挂载
-Docker socket，并把仓库和 `.owrt-web` 持久化目录以宿主机绝对路径映射给 Web 及其
-编译 worker。启动时唯一的业务参数是端口，默认 `8000`：
+Docker socket，并把仓库、state、workspace 和固件产物目录以宿主机绝对路径映射给
+Web 及其编译 worker。启动时唯一的业务参数是端口，默认 `8000`：
 
 ```bash
 ./run-web              # http://127.0.0.1:8000
@@ -79,8 +86,8 @@ Docker socket，并把仓库和 `.owrt-web` 持久化目录以宿主机绝对路
 修改用户名和密码；修改账户后所有旧会话都会失效并要求重新登录。密码只保存为
 PBKDF2 散列，页面不会回显密码。
 
-如需直接使用 Compose，单容器配置也支持 `OWRT_WEB_PORT`、`OWRT_REPO_HOST_PATH` 和
-`OWRT_DATA_HOST_PATH` 覆盖默认值：
+如需直接使用 Compose，单容器配置也支持 `OWRT_WEB_PORT`、`OWRT_REPO_HOST_PATH`、
+`OWRT_STATE_HOST_PATH`、`OWRT_WORKSPACE_HOST_PATH` 和 `OWRT_ARTIFACT_HOST_PATH`：
 
 ```bash
 OWRT_WEB_PORT=18000 docker compose up --build -d web
@@ -144,17 +151,18 @@ prepare/刷新都会重新获取官方 master 的最新 HEAD。准备阶段会�
 在隔离目录运行原生 `make defconfig`。
 
 编译下载使用 `https://sources.cdn.openwrt.org`，可通过
-`OWRT_DOWNLOAD_MIRROR` 覆盖；下载缓存位于 `.owrt/cache/dl`，避免每次构建重复
+`OWRT_DOWNLOAD_MIRROR` 覆盖；下载缓存位于 CLI 工作区的 `cache/dl`（便携模式为
+`.owrt/cache/dl`），避免每次构建重复
 拉取。构建日志默认采用 OpenWrt 详细模式，长时间没有 stdout 时会产生阶段心跳，
 所以 Web 页面不会把正在工作的 host 工具误判为无响应。
 
-编译工作树按规范设备持久化在 `.owrt/cache/builds/<device>`，任务日志、配置、
+编译工作树按规范设备持久化在 CLI 工作区的 `cache/builds/<device>`，任务日志、配置、
 manifest 和固件仍按 task-id 分开保存。默认复用同设备缓存；源码快照变化时只替换
 源码文件并保留 `build_dir`、`staging_dir` 和下载目录。缓存元数据使用原子写入和设备
 锁，失败或取消的任务不会把缓存标记为可复用。首次没有样本时按 8 GiB 保守估算，
 随后优先使用同设备历史占用；空间不足时按创建时间 FIFO 删除其他已完成的编译缓存，
 逐次记录路径、大小、删除前后可用空间和估算需求。下载缓存、源快照、日志与产物
-永远不参与淘汰。升级时可识别的旧 `.owrt/builds/<task-id>/openwrt` 会在安全校验
+永远不参与淘汰。升级时可识别的旧 CLI 工作区 `builds/<task-id>/openwrt` 会在安全校验
 通过后原地迁移，绝对路径链接会改成相对链接；无完成证据或含未知绝对链接的目录
 会跳过并记录原因。
 

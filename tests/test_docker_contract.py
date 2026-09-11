@@ -33,6 +33,10 @@ def test_web_compose_mounts_host_docker_socket() -> None:
     assert "caddy" not in compose
     assert "${OWRT_WEB_PORT:-8000}:8000" in compose
     assert "TZ: Asia/Shanghai" in web
+    assert "OWRT_STATE_HOST_PATH" in web
+    assert "OWRT_WORKSPACE_HOST_PATH" in web
+    assert "OWRT_ARTIFACT_HOST_PATH" in web
+    assert "OWRT_DATA_HOST_PATH" in web
 
 
 def test_single_container_launcher_preserves_host_paths_for_worker_mounts() -> None:
@@ -42,19 +46,31 @@ def test_single_container_launcher_preserves_host_paths_for_worker_mounts() -> N
     result = __import__("subprocess").run(
         [str(launcher), "18000"],
         cwd=ROOT,
-        env={"PATH": __import__("os").environ["PATH"], "OWRT_START_WEB_DRY_RUN": "1"},
+        env={
+            "PATH": __import__("os").environ["PATH"],
+            "OWRT_START_WEB_DRY_RUN": "1",
+            "OWRT_REPO_HOST_PATH": str(ROOT),
+            "OWRT_STATE_HOST_PATH": str(ROOT / ".owrt-web" / "state"),
+            "OWRT_WORKSPACE_HOST_PATH": str(ROOT / ".owrt-web" / "workspace"),
+            "OWRT_ARTIFACT_HOST_PATH": str(ROOT / ".owrt-web" / "state" / "artifacts"),
+        },
         text=True,
         capture_output=True,
         check=True,
     )
     assert "repo_root=" + str(ROOT) in result.stdout
     assert "data_root=" + str(ROOT / ".owrt-web") in result.stdout
+    assert "state_root=" + str(ROOT / ".owrt-web" / "state") in result.stdout
+    assert "workspace_root=" + str(ROOT / ".owrt-web" / "workspace") in result.stdout
+    assert "artifact_root=" + str(ROOT / ".owrt-web" / "state" / "artifacts") in result.stdout
     assert "port=18000" in result.stdout
     assert "docker_socket=/var/run/docker.sock" in result.stdout
 
     source = launcher.read_text(encoding="utf-8")
     assert '"$repo_root:$repo_root:ro"' in source
-    assert '"$data_root:$data_root:rw"' in source
+    assert '"$state_root:$state_root:rw"' in source
+    assert '"$workspace_root:$workspace_root:rw"' in source
+    assert '"$artifact_root:$artifact_root:rw"' in source
     assert '--volume /var/run/docker.sock:/var/run/docker.sock' in source
     assert '--env TZ=Asia/Shanghai' in source
 
@@ -76,7 +92,11 @@ def test_single_container_launcher_passes_same_host_paths_to_docker(tmp_path: Pa
         {
             "PATH": f"{fake_bin}:{env['PATH']}",
             "DOCKER_ARGS_LOG": str(log),
+            "OWRT_REPO_HOST_PATH": str(ROOT),
             "OWRT_DATA_HOST_PATH": str(tmp_path / "persistent"),
+            "OWRT_STATE_HOST_PATH": "",
+            "OWRT_WORKSPACE_HOST_PATH": "",
+            "OWRT_ARTIFACT_HOST_PATH": "",
             "OWRT_WEB_CONTAINER_NAME": "contract-web",
         }
     )
@@ -85,7 +105,9 @@ def test_single_container_launcher_passes_same_host_paths_to_docker(tmp_path: Pa
     calls = log.read_text(encoding="utf-8")
     assert f"build --target web --file {ROOT}/docker/Dockerfile" in calls
     assert f"--volume {ROOT}:{ROOT}:ro" in calls
-    assert f"--volume {tmp_path / 'persistent'}:{tmp_path / 'persistent'}:rw" in calls
+    assert f"--volume {tmp_path / 'persistent' / 'state'}:{tmp_path / 'persistent' / 'state'}:rw" in calls
+    assert f"--volume {tmp_path / 'persistent' / 'workspace'}:{tmp_path / 'persistent' / 'workspace'}:rw" in calls
+    assert f"--volume {tmp_path / 'persistent' / 'state' / 'artifacts'}:{tmp_path / 'persistent' / 'state' / 'artifacts'}:rw" in calls
     assert "--volume /var/run/docker.sock:/var/run/docker.sock" in calls
     assert "--publish 18001:8000" in calls
 
@@ -114,6 +136,7 @@ def test_dependency_free_launcher_mounts_host_dev_only_for_arm_builds(tmp_path: 
             "PATH": f"{fake_bin}:{env['PATH']}",
             "DOCKER_ARGS_LOG": str(log),
             "OWRT_BUILDER_IMAGE": "contract-builder:local",
+            "OWRT_CLI_WORKSPACE_HOST_PATH": str(tmp_path / "cli-workspace"),
         }
     )
 
@@ -147,3 +170,29 @@ def test_dependency_free_launcher_mounts_host_dev_only_for_arm_builds(tmp_path: 
     assert non_arm_runs
     assert all("--privileged" not in line for line in non_arm_runs)
     assert all("--volume /dev:/dev" not in line for line in non_arm_runs)
+
+
+def test_dependency_free_launcher_maps_cli_workspace_for_host_python(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    capture = tmp_path / "workspace-path"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then exit 0; fi\n"
+        "printf '%s' \"$OWRT_WORKSPACE\" > \"$OWRT_CAPTURE\"\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "OWRT_CLI_WORKSPACE_HOST_PATH": str(tmp_path / "cli-workspace"),
+            "OWRT_CAPTURE": str(capture),
+        }
+    )
+    result = subprocess.run([str(ROOT / "owrt"), "devices"], cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text(encoding="utf-8") == str(tmp_path / "cli-workspace")

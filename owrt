@@ -4,16 +4,48 @@ set -Eeuo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 cd "$ROOT_DIR"
 
+# Read only host-path keys from the optional local .env file.  Compose loads
+# this file itself, but the dependency-free CLI also needs the CLI workspace
+# path when Python is available.  Never source .env: it may contain tokens.
+load_path_env() {
+    local env_file="$ROOT_DIR/.env"
+    local line key value
+    [[ -f "$env_file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" =~ ^(OWRT_REPO_HOST_PATH|OWRT_DATA_HOST_PATH|OWRT_STATE_HOST_PATH|OWRT_WORKSPACE_HOST_PATH|OWRT_ARTIFACT_HOST_PATH|OWRT_CLI_WORKSPACE_HOST_PATH)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+            if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+                value="${value:1:${#value}-2}"
+            elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+                value="${value:1:${#value}-2}"
+            fi
+            if [[ ! -v "$key" ]]; then
+                printf -v "$key" '%s' "$value"
+                export "$key"
+            fi
+        fi
+    done < "$env_file"
+}
+
+load_path_env
+
 # The host only needs Docker and Compose.  This fast path keeps the normal
 # launcher pleasant on development hosts that already have Python 3; the
 # fallback runs the dependency-free CLI in the complete builder image.  It is
 # a direct build inside that one container; the worker marker is reserved for
 # request-file invocations started by a host-side BuildEngine.
 if [[ "${1:-}" == "web" ]]; then
-    export OWRT_REPO_HOST_PATH="${OWRT_REPO_HOST_PATH:-$ROOT_DIR}"
-    export OWRT_DATA_HOST_PATH="${OWRT_DATA_HOST_PATH:-$ROOT_DIR/.owrt-web}"
     exec docker compose up --build "${@:2}"
 fi
+
+cli_workspace="${OWRT_WORKSPACE:-${OWRT_CLI_WORKSPACE_HOST_PATH:-$ROOT_DIR/.owrt}}"
+cli_workspace="$(realpath -m -- "$cli_workspace")"
+export OWRT_WORKSPACE="$cli_workspace"
 
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
     exec python3 -m owrt_builder.cli "$@"
@@ -47,7 +79,7 @@ if [[ "$IMAGE_FINGERPRINT" != "$CONTEXT_FINGERPRINT" ]]; then
         --tag "$IMAGE" "$ROOT_DIR"
 fi
 
-mkdir -p "$ROOT_DIR/.owrt"
+mkdir -p "$cli_workspace"
 DOCKER_EXTRA_ARGS=()
 DOCKER_USER_ARGS=(--user "$(id -u):$(id -g)")
 ARM_PACKAGING=0
@@ -92,7 +124,7 @@ DOCKER_RUN=(docker run --rm --init "${DOCKER_EXTRA_ARGS[@]}" "${DOCKER_USER_ARGS
     --env OWRT_CLI_CONTAINER=1 \
     --env OWRT_WORKSPACE=/workspace/work \
     --volume "$ROOT_DIR:/workspace/repo:ro" \
-    --volume "$ROOT_DIR/.owrt:/workspace/work:rw" \
+    --volume "$cli_workspace:/workspace/work:rw" \
     --workdir /workspace/repo \
     "$IMAGE" python3 -m owrt_builder.cli "$@"
 )
@@ -105,7 +137,7 @@ if [[ "$ARM_PACKAGING" == 1 ]]; then
     status=$?
     if [[ "$(id -u)" != "0" ]]; then
         if ! docker run --rm --init --user 0:0 \
-            --volume "$ROOT_DIR/.owrt:/workspace/work:rw" \
+            --volume "$cli_workspace:/workspace/work:rw" \
             "$IMAGE" sh -ec 'uid="$1"; gid="$2"; for path in /workspace/work/tasks /workspace/work/artifacts; do [ -e "$path" ] && chown -R "$uid:$gid" "$path"; done' \
             sh "$(id -u)" "$(id -g)"; then
             status=1

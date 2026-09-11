@@ -12,8 +12,12 @@ services:
       # The host paths are intentionally identical inside this container:
       # BuildEngine passes them to the host Docker daemon for worker mounts.
       OWRT_REPO_ROOT: ${OWRT_REPO_HOST_PATH:-${PWD}}
-      OWRT_WORKSPACE: ${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/workspace
-      OWRT_DATA_DIR: ${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state
+      # The four explicit paths keep large mutable trees away from the
+      # checked-out project while retaining OWRT_DATA_HOST_PATH as a grouped
+      # legacy fallback for older deployments.
+      OWRT_WORKSPACE: ${OWRT_WORKSPACE_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/workspace}
+      OWRT_DATA_DIR: ${OWRT_STATE_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state}
+      OWRT_ARTIFACT_DIR: ${OWRT_ARTIFACT_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state/artifacts}
       # The web process is isolated in its own PID namespace by default.  A
       # read-only host /proc view lets the operations dashboard show the
       # machine that actually runs the builder workers.
@@ -29,7 +33,9 @@ services:
     volumes:
       - ${OWRT_REPO_HOST_PATH:-${PWD}}:${OWRT_REPO_HOST_PATH:-${PWD}}:ro
       - ${OWRT_REPO_HOST_PATH:-${PWD}}:/opt/owrt-builder:ro
-      - ${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}:${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}:rw
+      - ${OWRT_STATE_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state}:${OWRT_STATE_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state}:rw
+      - ${OWRT_WORKSPACE_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/workspace}:${OWRT_WORKSPACE_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/workspace}:rw
+      - ${OWRT_ARTIFACT_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state/artifacts}:${OWRT_ARTIFACT_HOST_PATH:-${OWRT_DATA_HOST_PATH:-${PWD}/.owrt-web}/state/artifacts}:rw
       - /proc:/host/proc:ro
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: ${OWRT_REPO_HOST_PATH:-${PWD}}

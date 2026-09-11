@@ -29,6 +29,30 @@ def test_mobile_catalog_has_all_category_contracts() -> None:
     assert "@media (max-width:560px)" in style
 
 
+def test_overview_contains_host_monitor_and_has_no_processes_route() -> None:
+    html = (ROOT / "owrt_builder/static/index.html").read_text(encoding="utf-8")
+    script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")
+    style = (ROOT / "owrt_builder/static/style.css").read_text(encoding="utf-8")
+
+    nav = html[html.index("<nav ") : html.index("</nav>")]
+    overview = html[html.index('data-view="overview"') : html.index('data-view="jobs"')]
+    assert 'data-route="processes"' not in nav
+    assert 'data-view="processes"' not in html
+    assert 'id="processes"' not in html
+    assert 'class="panel system-panel overview-system-panel"' in overview
+    for element_id in ("reload-system", "process-sort", "process-list", "system-title"):
+        assert f'id="{element_id}"' in overview
+    assert 'const validViews = new Set(["overview", "jobs", "settings"]);' in script
+    assert 'if (selected === "overview") await loadSystem();' in script
+    assert 'document.visibilityState === "visible"' in script
+    assert 'loadSystem().finally(syncSystemPolling);' in script
+    assert ".overview-system-panel { width:100%; margin-top:0; }" in style
+    assert ".processes-view" not in style
+    assert ".top-nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }" in style
+    assert "登录后管理源码、构建任务与固件产物。" not in html
+    assert "首次启动使用 admin/admin，请登录后立即修改。" not in html
+
+
 def test_build_form_submits_directly_without_frontend_validation_button() -> None:
     html = (ROOT / "owrt_builder/static/index.html").read_text(encoding="utf-8")
     script = (ROOT / "owrt_builder/static/app.js").read_text(encoding="utf-8")

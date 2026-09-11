@@ -109,7 +109,7 @@
     if (node) node.addEventListener(eventName, listener);
   }
 
-  const validViews = new Set(["overview", "jobs", "processes", "settings"]);
+  const validViews = new Set(["overview", "jobs", "settings"]);
 
   function routeFromHash() {
     const value = window.location.hash.replace(/^#/, "");
@@ -128,7 +128,8 @@
     });
     if (selected === "settings") await loadSettings();
     if (selected === "jobs") await loadJobs();
-    if (selected === "processes") await loadSystem();
+    if (selected === "overview") await loadSystem();
+    syncSystemPolling();
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
@@ -380,9 +381,8 @@
 
   async function load() {
     await loadDevices();
-    await Promise.all([loadJobs(), loadSource(), loadSystem()]);
+    await Promise.all([loadJobs(), loadSource()]);
     await loadCatalog();
-    startSystemPolling();
     await activateView();
   }
 
@@ -537,9 +537,29 @@
     }
   }
 
-  function startSystemPolling() {
-    if (state.systemPoll) return;
-    state.systemPoll = window.setInterval(loadSystem, 4000);
+  function systemPollingAllowed() {
+    return state.currentView === "overview" && !$("app-panel")?.hidden && document.visibilityState === "visible";
+  }
+
+  function stopSystemPolling() {
+    if (state.systemPoll === null) return;
+    window.clearInterval(state.systemPoll);
+    state.systemPoll = null;
+  }
+
+  function syncSystemPolling() {
+    if (!systemPollingAllowed()) {
+      stopSystemPolling();
+      return;
+    }
+    if (state.systemPoll !== null) return;
+    state.systemPoll = window.setInterval(() => {
+      if (!systemPollingAllowed()) {
+        stopSystemPolling();
+        return;
+      }
+      loadSystem();
+    }, 4000);
   }
 
   async function loadCatalog() {
@@ -1113,6 +1133,13 @@
   bindEvent("close-job", "click", () => { stopEvents(); $("job-detail").hidden = true; });
   window.addEventListener("hashchange", () => {
     activateView().catch((error) => show($("builder-message"), error.message, "error"));
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!systemPollingAllowed()) {
+      stopSystemPolling();
+      return;
+    }
+    loadSystem().finally(syncSystemPolling);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && $("build-dialog")?.open) closeBuildDialog();

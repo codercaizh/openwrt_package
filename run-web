@@ -5,8 +5,11 @@ usage() {
   cat <<'EOF'
 用法：./run-web [端口]
 
-启动单个 OpenWrt Builder Web 容器。默认端口为 8000；源码目录旁的
-.owrt-web 目录用于保存数据库、任务日志、源码快照和构建缓存。
+启动单个 OpenWrt Builder Web 容器。默认端口为 8000；便携模式下源码目录旁的
+.owrt-web 目录用于保存数据库、任务日志、源码快照和构建缓存。可用
+OWRT_STATE_HOST_PATH、OWRT_WORKSPACE_HOST_PATH 和 OWRT_ARTIFACT_HOST_PATH
+分别指定 state、workspace 和固件产物目录；OWRT_DATA_HOST_PATH 仍作为旧版
+分组目录变量兼容。
 EOF
 }
 
@@ -26,22 +29,56 @@ if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
 fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-data_root="${OWRT_DATA_HOST_PATH:-$repo_root/.owrt-web}"
-data_root="$(realpath -m -- "$data_root")"
+
+# Compose reads .env automatically, while this direct launcher must resolve
+# the same host paths without sourcing secrets or unrelated settings.
+load_path_env() {
+  local env_file="$repo_root/.env"
+  local line key value
+  [[ -f "$env_file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ "$line" =~ ^(OWRT_REPO_HOST_PATH|OWRT_DATA_HOST_PATH|OWRT_STATE_HOST_PATH|OWRT_WORKSPACE_HOST_PATH|OWRT_ARTIFACT_HOST_PATH|OWRT_CLI_WORKSPACE_HOST_PATH)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+      if [[ ! -v "$key" ]]; then
+        printf -v "$key" '%s' "$value"
+        export "$key"
+      fi
+    fi
+  done < "$env_file"
+}
+
+load_path_env
+repo_root="${OWRT_REPO_HOST_PATH:-$repo_root}"
+repo_root="$(realpath -m -- "$repo_root")"
+legacy_data_root="${OWRT_DATA_HOST_PATH:-$repo_root/.owrt-web}"
+legacy_data_root="$(realpath -m -- "$legacy_data_root")"
+state_root="$(realpath -m -- "${OWRT_STATE_HOST_PATH:-$legacy_data_root/state}")"
+workspace_root="$(realpath -m -- "${OWRT_WORKSPACE_HOST_PATH:-$legacy_data_root/workspace}")"
+artifact_root="$(realpath -m -- "${OWRT_ARTIFACT_HOST_PATH:-$legacy_data_root/state/artifacts}")"
 image="${OWRT_BUILDER_IMAGE:-owrt-builder:local}"
 container_name="${OWRT_WEB_CONTAINER_NAME:-owrt-builder-web}"
 
 # This mode is used by the offline contract test and prints the resolved
 # host paths without touching Docker or the current deployment.
 if [[ "${OWRT_START_WEB_DRY_RUN:-0}" == "1" ]]; then
-  printf 'repo_root=%s\ndata_root=%s\nport=%s\ndocker_socket=/var/run/docker.sock\n' \
-    "$repo_root" "$data_root" "$port"
+  printf 'repo_root=%s\ndata_root=%s\nstate_root=%s\nworkspace_root=%s\nartifact_root=%s\nport=%s\ndocker_socket=/var/run/docker.sock\n' \
+    "$repo_root" "$legacy_data_root" "$state_root" "$workspace_root" "$artifact_root" "$port"
   exit 0
 fi
 
 command -v docker >/dev/null 2>&1 || { echo "未找到 docker" >&2; exit 1; }
 [[ -S /var/run/docker.sock ]] || { echo "未找到 /var/run/docker.sock" >&2; exit 1; }
-mkdir -p "$data_root"
+mkdir -p "$state_root" "$workspace_root" "$artifact_root"
 
 if docker ps --format '{{.Names}}' | grep -Fxq "$container_name"; then
   echo "容器已运行：$container_name（不会重启）"
@@ -51,7 +88,6 @@ if docker ps -a --format '{{.Names}}' | grep -Fxq "$container_name"; then
   docker rm "$container_name" >/dev/null
 fi
 
-mkdir -p "$data_root/workspace" "$data_root/state" "$data_root/state/logs" "$data_root/state/artifacts"
 echo "构建单容器 Web 镜像：$image"
 docker build --target web --file "$repo_root/docker/Dockerfile" --tag "$image" "$repo_root"
 
@@ -59,8 +95,9 @@ docker run --detach \
   --name "$container_name" \
   --restart unless-stopped \
   --env OWRT_REPO_ROOT="$repo_root" \
-  --env OWRT_WORKSPACE="$data_root/workspace" \
-  --env OWRT_DATA_DIR="$data_root/state" \
+  --env OWRT_WORKSPACE="$workspace_root" \
+  --env OWRT_DATA_DIR="$state_root" \
+  --env OWRT_ARTIFACT_DIR="$artifact_root" \
   --env OWRT_HOST_PROC=/host/proc \
   --env OWRT_BIND_HOST=0.0.0.0 \
   --env OWRT_BIND_PORT=8000 \
@@ -72,7 +109,9 @@ docker run --detach \
   --env PUSHPLUS_ENDPOINT="${PUSHPLUS_ENDPOINT:-https://www.pushplus.plus/send}" \
   --volume "$repo_root:$repo_root:ro" \
   --volume "$repo_root:/opt/owrt-builder:ro" \
-  --volume "$data_root:$data_root:rw" \
+  --volume "$state_root:$state_root:rw" \
+  --volume "$workspace_root:$workspace_root:rw" \
+  --volume "$artifact_root:$artifact_root:rw" \
   --volume /proc:/host/proc:ro \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --workdir "$repo_root" \

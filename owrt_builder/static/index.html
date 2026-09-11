@@ -13,7 +13,6 @@
     <section id="login-panel" class="panel login-panel" aria-labelledby="login-title">
       <div class="eyebrow">LOCAL BUILD CONTROL</div>
       <h1 id="login-title">OpenWrt 固件构建</h1>
-      <p class="muted">登录后管理源码、构建任务与固件产物。首次启动使用 admin/admin，请登录后立即修改。</p>
       <form id="login-form" autocomplete="on">
         <label for="username">用户名<input id="username" name="username" autocomplete="username" required></label>
         <label for="password">密码<input id="password" name="password" type="password" autocomplete="current-password" required></label>
@@ -25,7 +24,7 @@
     <section id="app-panel" hidden>
       <header class="topbar" role="banner">
         <a class="brand" href="#overview" aria-label="返回概览"><span class="brand-mark" aria-hidden="true">◒</span><span><span class="eyebrow">OPENWRT BUILDER</span><strong>构建控制台</strong></span></a>
-        <nav class="top-nav" aria-label="主导航"><a data-route="overview" href="#overview" aria-current="page">概览</a><a data-route="jobs" href="#jobs">任务</a><a data-route="processes" href="#processes">进程</a><a id="open-settings" data-route="settings" href="#settings" aria-controls="settings-panel">设置</a><button id="logout" class="ghost" type="button">退出</button></nav>
+        <nav class="top-nav" aria-label="主导航"><a data-route="overview" href="#overview" aria-current="page">概览</a><a data-route="jobs" href="#jobs">任务</a><a id="open-settings" data-route="settings" href="#settings" aria-controls="settings-panel">设置</a><button id="logout" class="ghost" type="button">退出</button></nav>
       </header>
 
       <div class="app-content">
@@ -34,6 +33,7 @@
             <div class="hero-copy"><div class="eyebrow">OPERATIONS OVERVIEW</div><h1 id="overview-title">今天，构建什么？</h1><p class="muted">从已审核的设备目录发起可追溯构建，实时查看主机资源与队列进度。</p><div class="hero-meta"><span id="source-badge" class="badge">源码准备中</span><span id="source-time" class="muted small">源: --</span></div></div>
             <div class="overview-cards" aria-label="系统概览"><article class="overview-card accent-card"><span class="card-label">任务总数</span><strong id="overview-total">—</strong><span id="overview-total-note" class="muted small">成功 — · 失败 —</span></article><article class="overview-card"><span class="card-label">进行中</span><strong id="overview-active">—</strong><span class="muted small">排队或构建</span></article><article class="overview-card"><span class="card-label">主机磁盘</span><strong id="overview-disk">—</strong><span id="overview-disk-note" class="muted small">读取中</span></article><article class="overview-card"><span class="card-label">内存占用</span><strong id="overview-memory">—</strong><span id="overview-cpu" class="muted small">CPU —</span></article></div>
           </div>
+          <aside class="panel system-panel overview-system-panel"><div class="section-heading"><div><div class="eyebrow">HOST TELEMETRY</div><h2 id="system-title">主机状态</h2><p id="system-collected" class="muted small">每 4 秒刷新</p></div><button id="reload-system" class="ghost" type="button">刷新</button></div><div class="resource-list" aria-label="资源使用情况"><div class="resource-row"><span>磁盘</span><strong id="system-disk-value">—</strong><span id="system-disk-percent" class="muted small">—</span></div><div class="resource-row"><span>内存</span><strong id="system-memory-value">—</strong><span id="system-memory-percent" class="muted small">—</span></div><div class="resource-row"><span>CPU</span><strong id="system-cpu-value">—</strong><span id="system-cpu-load" class="muted small">负载 —</span></div></div><div class="process-heading"><h3>进程</h3><label class="sort-control">排序<select id="process-sort" aria-label="进程排序"><option value="cpu">CPU</option><option value="memory">内存</option></select></label></div><div class="process-table-wrap"><table class="process-table"><caption class="sr-only">主机进程资源占用</caption><thead><tr><th scope="col">PID / 名称</th><th scope="col">状态</th><th scope="col">CPU</th><th scope="col">内存</th><th scope="col">运行时间</th></tr></thead><tbody id="process-list"><tr><td colspan="5" class="muted">读取中…</td></tr></tbody></table></div></aside>
         </section>
 
         <section id="jobs" class="spa-view jobs-view" data-view="jobs" hidden aria-labelledby="jobs-title">
@@ -43,10 +43,6 @@
             <div id="job-pagination" class="pagination" aria-label="任务分页" hidden><button id="jobs-prev" class="ghost" type="button">上一页</button><span id="jobs-page-label" class="muted small">第 1 / 1 页 · 共 0 条</span><button id="jobs-next" class="ghost" type="button">下一页</button></div>
             <div id="job-detail" class="job-detail" hidden aria-labelledby="job-title"><div class="section-heading"><div><h3 id="job-title">任务详情</h3><span id="job-status" class="badge"></span></div><button id="close-job" class="ghost" type="button">收起</button></div><div id="job-summary" class="job-summary" aria-live="polite"></div><pre id="job-log" class="log" aria-live="polite"></pre><div id="artifacts" class="artifacts" aria-label="构建产物"></div><div class="detail-actions"><button id="save-default" class="ghost" type="button">保存为设备默认</button><button id="cancel-job" class="danger" type="button">取消任务</button></div></div>
           </section>
-        </section>
-
-        <section id="processes" class="spa-view processes-view" data-view="processes" hidden aria-labelledby="system-title">
-          <aside class="panel system-panel"><div class="section-heading"><div><div class="eyebrow">HOST TELEMETRY</div><h2 id="system-title">主机状态</h2><p id="system-collected" class="muted small">每 4 秒刷新</p></div><button id="reload-system" class="ghost" type="button">刷新</button></div><div class="resource-list" aria-label="资源使用情况"><div class="resource-row"><span>磁盘</span><strong id="system-disk-value">—</strong><span id="system-disk-percent" class="muted small">—</span></div><div class="resource-row"><span>内存</span><strong id="system-memory-value">—</strong><span id="system-memory-percent" class="muted small">—</span></div><div class="resource-row"><span>CPU</span><strong id="system-cpu-value">—</strong><span id="system-cpu-load" class="muted small">负载 —</span></div></div><div class="process-heading"><h3>进程</h3><label class="sort-control">排序<select id="process-sort" aria-label="进程排序"><option value="cpu">CPU</option><option value="memory">内存</option></select></label></div><div class="process-table-wrap"><table class="process-table"><caption class="sr-only">主机进程资源占用</caption><thead><tr><th scope="col">PID / 名称</th><th scope="col">状态</th><th scope="col">CPU</th><th scope="col">内存</th><th scope="col">运行时间</th></tr></thead><tbody id="process-list"><tr><td colspan="5" class="muted">读取中…</td></tr></tbody></table></div></aside>
         </section>
 
         <section id="settings" class="spa-view settings-view" data-view="settings" hidden aria-labelledby="settings-title">

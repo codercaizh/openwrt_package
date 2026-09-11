@@ -92,6 +92,7 @@ body { background:linear-gradient(145deg,#0b192b 0%,var(--bg) 45%,#080d18 100%);
 .overview-card.accent-card { border-color:rgba(98,213,164,.36); background:linear-gradient(160deg,rgba(31,59,62,.95),rgba(15,32,43,.88)); }
 .card-label { color:var(--muted); font-size:12px; }
 .overview-card strong { font-size:clamp(24px,3vw,32px); letter-spacing:-.03em; }
+.overview-system-panel { width:100%; margin-top:0; }
 .dashboard-grid { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(420px,.9fr); gap:18px; align-items:start; }
 .jobs-panel,.system-panel { padding:24px; }
 .heading-actions,.detail-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -134,7 +135,6 @@ body { background:linear-gradient(145deg,#0b192b 0%,var(--bg) 45%,#080d18 100%);
   .overview-section { grid-template-columns:1fr; }
   .hero-copy { padding-bottom:0; }
   .dashboard-grid { grid-template-columns:1fr; }
-  .system-panel { order:-1; }
 }
 @media (max-width:760px) {
   .top-actions { flex:1 1 100%; justify-content:flex-start; }
@@ -173,8 +173,8 @@ html,body { width:100%; max-width:100%; overflow-x:hidden; overflow-x:clip; }
 }
 .spa-view[hidden] { display:none !important; }
 .spa-view { width:100%; }
-.jobs-view,.processes-view,.settings-view { max-width:1120px; margin:0 auto; }
-.jobs-view .jobs-panel,.processes-view .system-panel { width:100%; }
+.jobs-view,.settings-view { max-width:1120px; margin:0 auto; }
+.jobs-view .jobs-panel,.overview-system-panel { width:100%; }
 .top-nav { flex-wrap:wrap; }
 .top-nav a[aria-current="page"] { color:var(--text); border-color:rgba(98,213,164,.38); background:rgba(98,213,164,.09); }
 .source-maintenance { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px 22px; align-items:center; margin-top:26px; padding:18px; border:1px solid var(--line-soft); border-radius:13px; background:rgba(10,20,35,.55); }
@@ -200,7 +200,7 @@ html,body { width:100%; max-width:100%; overflow-x:hidden; overflow-x:clip; }
 
 @media (max-width:430px) {
   .shell { width:100%; padding-left:10px; padding-right:10px; }
-  .top-nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); }
+  .top-nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }
   .top-nav a,.top-nav button { width:100%; padding:7px 3px; font-size:13px; }
   .overview-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .overview-card { padding:12px 11px; }

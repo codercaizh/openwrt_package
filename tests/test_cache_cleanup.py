@@ -346,11 +346,15 @@ def test_routed_mobile_console_static_contract() -> None:
     script = (root / "app.js").read_text(encoding="utf-8")
     style = (root / "style.css").read_text(encoding="utf-8")
 
-    for route in ("overview", "jobs", "processes", "settings"):
+    for route in ("overview", "jobs", "settings"):
         assert f'data-route="{route}"' in html
         assert f'data-view="{route}"' in html
+    assert 'data-route="processes"' not in html
+    assert 'data-view="processes"' not in html
     overview = html[html.index('data-view="overview"'):html.index('data-view="jobs"')]
     settings_view = html[html.index('data-view="settings"'):html.index("</main>")]
+    assert 'id="reload-system"' in overview
+    assert 'id="process-list"' in overview
     assert 'id="refresh-sources"' not in overview
     assert 'id="refresh-sources"' in settings_view
     assert 'id="clear-history"' in settings_view
@@ -360,4 +364,4 @@ def test_routed_mobile_console_static_contract() -> None:
     assert ".spa-view[hidden] { display:none !important; }" in style
     assert "overflow-x:hidden; overflow-x:clip" in style
     assert "@media (max-width:430px)" in style
-    assert ".top-nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); }" in style
+    assert ".top-nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }" in style
