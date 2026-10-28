@@ -49,7 +49,8 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # Version 12 includes the reviewed local IPTV kernel patch bundle in snapshots.
 # Version 13 switches to official ImmortalWrt v25.12.2.  Version 14 replaces
 # the incompatible moving Tailscale recipe with its Go 1.26-compatible pin.
-PREPARATION_VERSION = 14
+# Version 15 restores the Go 1.27 upgrade and tracks latest stable Tailscale.
+PREPARATION_VERSION = 15
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 

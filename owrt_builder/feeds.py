@@ -102,6 +102,14 @@ FEED_SPECS: tuple[FeedSpec, ...] = (
         "https://github.com/Openwrt-Passwall/openwrt-passwall.git",
         "package/passwall-luci",
     ),
+    # Restore the original builder's Go upgrade path.  This branch follows
+    # current Go 1.27 patches instead of ImmortalWrt 25.12's Go 1.26 default.
+    FeedSpec(
+        "golang",
+        "https://github.com/sbwml/packages_lang_golang.git",
+        "feeds/packages/lang/golang",
+        branch="27.x",
+    ),
     # Plugins come from their actual upstream maintainers, rather than
     # bundled copies in ImmortalWrt or the catch-all community package feed.
     FeedSpec(
@@ -142,9 +150,6 @@ FEED_SPECS: tuple[FeedSpec, ...] = (
         depth=1,
         source_subdir="net/tailscale",
         clone_destination="staging/upstream/openwrt-packages",
-        # Tailscale 1.104.1 needs Go 1.27.1; official 25.12 uses Go 1.26.8.
-        # This upstream recipe selects 1.102.3, whose go.mod needs Go 1.26.6.
-        commit="8de0abeb462df4b2ec0634abce8119fd20da659a",
     ),
     FeedSpec(
         "openwrt-luci-tailscale-community",
@@ -445,8 +450,8 @@ def _go_toolchain_version(source_root: Path) -> tuple[int, int, int] | None:
             context=str(makefile.relative_to(source_root)),
         )
     # Official ImmortalWrt 25.12 uses a versioned Go toolchain and declares
-    # GO_DEFAULT_VERSION in the sibling golang-values.mk.  Do not replace the
-    # official recipe with sbwml's moving 27.x tree.
+    # GO_DEFAULT_VERSION in the sibling golang-values.mk.  Retain support for
+    # that format when inspecting trees without the project's Go upgrade.
     values_file = makefile.parent.parent / "golang-values.mk"
     if values_file.is_file():
         content = values_file.read_text(encoding="utf-8", errors="replace")
@@ -765,6 +770,17 @@ def prepare_feeds_sync(
                 upstream_clone_destinations.append(
                     _safe_destination(root, feed.clone_destination)
                 )
+        if any(feed.name == "openwrt-packages-tailscale" for feed in feed_specs):
+            from .upstream_versions import sync_latest_tailscale
+
+            release = sync_latest_tailscale(root, go_version=_go_toolchain_version(root))
+            cloned_commits["tailscale-source"] = release["commit"]
+            _emit(
+                status, "feed",
+                f"Tailscale {release['version']} (requires Go {release['go_required']}); "
+                f"selected Go {release['go_toolchain']}",
+                upstream_release=release,
+            )
         # The selected package directories have already been copied into the
         # source feed tree.  Do not publish the full upstream repositories or
         # their .git metadata in the immutable source snapshot.

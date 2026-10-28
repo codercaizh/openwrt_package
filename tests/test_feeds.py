@@ -46,8 +46,11 @@ def _write_go_package(root: Path, relative: str, requirement: str) -> Path:
     return module
 
 
-def test_no_third_party_golang_feed_override() -> None:
-    assert not any(feed.name == "golang" for feed in FEED_SPECS)
+def test_golang_feed_restores_original_upgrade_path() -> None:
+    golang = next(feed for feed in FEED_SPECS if feed.name == "golang")
+    assert golang.url == "https://github.com/sbwml/packages_lang_golang.git"
+    assert golang.destination == "feeds/packages/lang/golang"
+    assert golang.branch == "27.x"
 
 
 def test_official_go_default_version_format(tmp_path: Path) -> None:
@@ -62,7 +65,7 @@ def test_official_go_default_version_format(tmp_path: Path) -> None:
     assert _go_toolchain_version(tmp_path) == (1, 26, 0)
 
 
-def test_tailscale_recipe_is_pinned_for_official_2512_toolchain() -> None:
+def test_tailscale_recipe_tracks_upstream() -> None:
     tailscale = next(
         feed for feed in FEED_SPECS if feed.name == "openwrt-packages-tailscale"
     )
@@ -76,7 +79,7 @@ def test_tailscale_recipe_is_pinned_for_official_2512_toolchain() -> None:
     assert tailscale.branch == "master"
     assert tailscale.source_subdir == "net/tailscale"
     assert tailscale.clone_destination == "staging/upstream/openwrt-packages"
-    assert tailscale.commit == "8de0abeb462df4b2ec0634abce8119fd20da659a"
+    assert tailscale.commit is None
     assert community.url == "https://github.com/openwrt/luci.git"
     assert community.destination == "feeds/luci/applications/luci-app-tailscale-community"
     assert community.depth == 1

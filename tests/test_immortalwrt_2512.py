@@ -24,8 +24,8 @@ def test_pushbot_in_arm_and_router_configs() -> None:
         assert "CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y" not in config
 
 
-def test_no_legacy_hnat_patch_or_go_overlay_in_selected_feeds() -> None:
-    assert "golang" not in {source.name for source in FEED_SPECS}
+def test_no_legacy_hnat_patch_with_upgraded_go_toolchain() -> None:
+    assert next(source for source in FEED_SPECS if source.name == "golang").branch == "27.x"
     assert not (ROOT / "scripts/iptv-hnat").exists()
 
 

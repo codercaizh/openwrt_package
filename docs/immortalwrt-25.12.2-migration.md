@@ -19,7 +19,7 @@
 
 MediaTek 官方 Filogic N60 Pro 和 360T7 的升级产物为 `*-squashfs-sysupgrade.itb`，打包器已支持收集/校验 `.itb`，不再只查找 `.bin`。不自动刷新 BL2/FIP，不自动部署到路由器。
 
-删除 237 内核 6.6 专用的 IPTV/HNAT overlay、对应 SHA guard、手动 Rust 1.90 配方覆盖、第三方 Go 27.x feed。采用官方 25.12 配套的内核 6.12/Go/Rust；Go 版本校验同时支持新 `golang-values.mk` 和旧 `golang/Makefile` 声明。
+删除 237 内核 6.6 专用的 IPTV/HNAT overlay、对应 SHA guard、手动 Rust 1.90 配方覆盖。采用官方 25.12 配套的内核 6.12/Rust。按用户最新要求恢复原分支的第三方 Go `27.x` feed，使最新 Tailscale 可编译；Go 版本校验同时支持新 `golang-values.mk` 和旧 `golang/Makefile` 声明。
 
 配置片段由 `make defconfig` 补齐派生 symbol：ARM 不再带旧 `CONFIG_TARGET_BOARD=armvirt` / `CONFIG_TARGET_SUBTARGET=64` 等历史生成字段；N60 Pro/360T7 显式声明目标；PassWall 启用 nftables 而不是强制旧 iptables 透明代理；三个配置片段均包含 `luci-app-pushbot`（两个 ARM 盒子共享 `armv8.config`）。
 
@@ -29,7 +29,8 @@ MediaTek 官方 Filogic N60 Pro 和 360T7 的升级产物为 `*-squashfs-sysupgr
 | --- | --- |
 | PassWall LuCI | `Openwrt-Passwall/openwrt-passwall` |
 | PassWall 运行依赖 | `Openwrt-Passwall/openwrt-passwall-packages` |
-| Tailscale 核心 OpenWrt 配方 | `openwrt/packages` 提交 `8de0abeb462df4b2ec0634abce8119fd20da659a`，仅稀疏同步 `net/tailscale`（1.102.3），配方自行从 Tailscale 项目下载源码 |
+| Go 工具链 | `sbwml/packages_lang_golang` `27.x`，跟随最新补丁；本次核验为 1.27.3 |
+| Tailscale 核心 OpenWrt 配方 | `openwrt/packages` master，仅稀疏同步 `net/tailscale`；同步脚本按 Tailscale 官方最新稳定 release 更新版本/SHA256，本次为 1.104.4 |
 | Tailscale 社区 LuCI | `openwrt/luci` master，仅稀疏同步 `luci-app-tailscale-community` |
 | FRP/FRPC 核心配方 | `openwrt/packages` master，稀疏同步 `net/frp`（源码为 fatedier/frp） |
 | FRPC LuCI | `openwrt/luci` master，仅稀疏同步 `luci-app-frpc` |
@@ -39,7 +40,13 @@ MediaTek 官方 Filogic N60 Pro 和 360T7 的升级产物为 `*-squashfs-sysupgr
 | Cloudflare Speed Test LuCI | `stevenjoezhang/luci-app-cloudflarespeedtest` |
 | 其他历史补充插件 | `kenzok8/openwrt-packages`；有同名包时以上特定上游优先 |
 
-除 Tailscale 核心配方外，这些上游 HEAD 会变化。如果某个插件上游升级对 ImmortalWrt 25.12 不兼容，请记录冲突并为该插件单独固定经验证的 commit，**不要无条件修改官方工具链**。
+这些上游 HEAD 会变化。用户要求 Tailscale 保持最新稳定版，Go 通过原分支升级逻辑跟随 27.x 最新补丁；其他插件遇到兼容性问题时单独分析，内核/Rust 继续采用官方版本。
+
+`owrt_builder/upstream_versions.py` 在 feed 克隆后、发布源码快照前同步 Tailscale。
+它保留 OpenWrt 的启动脚本、配置和编译选项，从官方归档读取 `go.mod` 检查 Go 要求；
+不兼容则立即失败。`.owrt-upstream.json` 记录 release/源码 SHA256，`feed_commits` 的
+`tailscale-source` 记录真实 release 提交，因此配方仓库未更新时也能区分新 release。
+已经发布的快照保持固定；需要更新时刷新源码，而不是修改正在使用的快照。
 
 `feeds.py` 使用 OpenWrt 的原生 `scripts/feeds update/install` 以及轻量稀疏获取上游单包；仍保留必要的同名包冲突链接清理，避免错误使用官方收录的旧配方。源快照和发布之间不跟随移动分支。
 
@@ -93,3 +100,5 @@ git status --short --branch
 - 本次 n2 worker 的 1.5 vCPU 限额仅属于临时启动参数，仓库默认 CPU 设置不变。配置阶段通过并不表示完整固件已编译或设备已验证。
 - Actions run `40621979179` 已通过 doctor，但在 `package/feeds/packages/tailscale/compile` 失败：Tailscale `1.104.1` 的 `go.mod` 要求 Go `1.27.1`，而官方配套工具链为 `1.26.8`，报 `GOTOOLCHAIN=local`。固定 OpenWrt 上游配方提交 `8de0abeb462df4b2ec0634abce8119fd20da659a`，提供要求 Go `1.26.6` 的 Tailscale `1.102.3`；其他插件继续跟随原上游。FeedSpec 支持完整提交号并核对实际 HEAD，准备版本升至 14，避免无声复用旧版不兼容快照。旧服务器任务 `d7264d84e2714cb98f0aa8d56f68e56b` 已正常取消，原日志保留。
 - 此次修复验证：全套 Python 测试 `140 passed`；实际从 OpenWrt 上游稀疏拉取固定提交，核对 Tailscale `1.102.3` 源码包与配方的 SHA256 一致，并从该归档中读取 `go.mod` 确认要求 Go `1.26.6`。完整固件编译仍以新任务最终结果为准。
+- 用户随后要求采用最新 Tailscale，上一条降级方案由本条取代：恢复原分支 Go `27.x` feed，撤销 Tailscale 提交固定，加入官方最新稳定 release 同步和归档 Go 版本检查；本次确认 Go `1.27.3` / Tailscale `1.104.4`。准备版本升至 15，使之前固定 1.102.3 的快照失效；旧服务器任务 `e26bdc891d494793b2cdc9ffa9287d9d` 已取消，旧 Actions run `40640471934` 已请求取消。
+- 最新版本方案验证：`143 passed`；实际生成源码快照 `dda90379afb26a2af2465de10690502d4ae7482ec94811c097795bdaede9954e`，Go feed 提交为 `cd8953c31e0f64ea2853f87bb0f32256646a160d`，Tailscale release 提交为 `27047635f237d1f3e0b08c0f487674757f30d2f7`。N60 Pro 原生 `make defconfig` 通过，Tailscale、其社区 LuCI、PassWall、Pushbot、FRPC、Lucky 均保留选中；原生 packageinfo 确认 Tailscale `1.104.4` 和 Go `1.27.3`。完整固件编译仍待新任务完成。

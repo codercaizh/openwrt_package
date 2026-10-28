@@ -122,29 +122,31 @@ PushPlus 可在页面“设置”中填写 token；token 只保存于持久化�
 
 ## feeds、配置和产物
 
-本分支固定 ImmortalWrt 官方 `v25.12.2`，使用其配套 Go/Rust 工具链，并保留
+本分支固定 ImmortalWrt 官方 `v25.12.2`，采用其内核/Rust，保留
 Kenzo、rtp2httpd、cloudflarespeedtest、Passwall packages/LuCI；Passwall 跟随配置的
-默认分支。Tailscale 核心包和 LuCI 应用直接采用 OpenWrt 官方仓库的配方：
-从 `https://github.com/openwrt/packages.git` 浅克隆并稀疏检出 `net/tailscale`，
-固定到提交 `8de0abeb462df4b2ec0634abce8119fd20da659a`，原样同步到
-`feeds/packages/net/tailscale`。该配方提供 Tailscale `1.102.3`，要求 Go `1.26.6`，
-兼容官方工具链 `1.26.8`；更新的 `1.104.1` 要求 Go `1.27.1`，不能直接跟随。
+默认分支。Go 恢复原分支的 `sbwml/packages_lang_golang` `27.x` feed，在源码准备阶段自动替换
+`feeds/packages/lang/golang`，跟随 Go 1.27 最新补丁（本次核验为 `1.27.3`）。
+Tailscale 从 `https://github.com/openwrt/packages.git` 的 `master` 稀疏检出 `net/tailscale`，
+再由 `owrt_builder/upstream_versions.py` 查询 Tailscale 最新稳定 release，下载官方
+源码归档、计算 SHA256、核对实际 `go.mod`，自动更新配方的版本和校验值；保留
+OpenWrt 的启动脚本、配置和编译选项。本次核验为 Tailscale `1.104.4`，要求 Go `1.27.3`。
 从 `https://github.com/openwrt/luci.git` 的 `master` 分支浅克隆并稀疏检出
 `applications/luci-app-tailscale-community`，原样同步到
-`feeds/luci/applications/luci-app-tailscale-community`。除上述兼容性固定外，其他
-feed 仍在 prepare/刷新时获取配置分支的最新 HEAD。准备阶段会删除默认 feed 中仅
+`feeds/luci/applications/luci-app-tailscale-community`。每次 prepare/刷新都会获取
+配置分支的最新 HEAD 和 Tailscale 最新稳定版。准备阶段会删除默认 feed 中仅
 用于旧实现的 `luci-app-tailscale` 链接，但保留官方 `tailscale` 和
 `luci-app-tailscale-community` 链接，确保官方目录被选中；四个设备的默认配置均
 选择 `tailscale` 和 `luci-app-tailscale-community`。每个 source snapshot 会把两个
-官方仓库的实际提交记录到 `feed_commits`。旧准备版本的快照会自动失效，下一次
-编译会重新准备，防止复用不兼容的 Tailscale 配方。feeds 位于工作区的
+官方配方仓库及 Tailscale release 的实际提交记录到 `feed_commits`，并在配方目录的
+`.owrt-upstream.json` 记录版本、SHA256 和 Go 要求。release 变化会改变源码快照 ID。
+旧准备版本的快照会自动失效，下一次编译会重新准备。feeds 位于工作区的
 源快照和缓存目录中，不直接修改仓库源码。
 
 准备 feeds 时会检查 Go 工具链版本与已存在的 OpenWrt Go package `go.mod` 要求。
 检查只覆盖声明 `GO_PKG` 或 `golang/host` 的 package 目录，并跳过 vendor、测试、
 示例和生成目录；发现模块要求更高版本时会拒绝发布新源码快照，同时保留上一份
-可用快照。远程包源码在后续 `make download` 才获取，因此尚未进入快照的模块会在
-编译阶段由 Go 工具链再次检查。
+可用快照。Tailscale 会在准备时额外检查官方源码归档中的 `go.mod`，不兼容时直接
+停止准备；其他远程包源码仍由后续编译阶段的 Go 工具链再次检查。
 
 配置校验优先使用 OpenWrt 原生生成的 `.packageinfo` 和
 `.config-package.in`。插件子选项的符号可能不是 `CONFIG_PACKAGE_` 前缀，工具
