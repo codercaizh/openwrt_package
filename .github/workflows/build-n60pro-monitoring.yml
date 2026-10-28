@@ -1,0 +1,16 @@
+name: N60 Pro monitoring build
+run-name: N60 Pro with monitoring plugins
+
+on:
+  push:
+    branches:
+      - codex/n60pro-monitoring-build-20261029
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro
