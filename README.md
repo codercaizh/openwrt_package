@@ -122,21 +122,22 @@ PushPlus 可在页面“设置”中填写 token；token 只保存于持久化�
 
 ## feeds、配置和产物
 
-本项目保留原有的源码分支选择、Kenzo、rtp2httpd、cloudflarespeedtest、
-Passwall packages/LuCI 和 Go 27 feed；Passwall 跟随配置的默认分支，不再固定
-旧 commit。Tailscale 核心包和 LuCI 应用均直接采用 OpenWrt 官方仓库的审核版本：
-从 `https://github.com/openwrt/packages.git` 的 `master` 分支浅克隆并稀疏检出
-`net/tailscale`，原样同步到 `feeds/packages/net/tailscale`；从
-`https://github.com/openwrt/luci.git` 的 `master` 分支浅克隆并稀疏检出
+本分支固定 ImmortalWrt 官方 `v25.12.2`，使用其配套 Go/Rust 工具链，并保留
+Kenzo、rtp2httpd、cloudflarespeedtest、Passwall packages/LuCI；Passwall 跟随配置的
+默认分支。Tailscale 核心包和 LuCI 应用直接采用 OpenWrt 官方仓库的配方：
+从 `https://github.com/openwrt/packages.git` 浅克隆并稀疏检出 `net/tailscale`，
+固定到提交 `8de0abeb462df4b2ec0634abce8119fd20da659a`，原样同步到
+`feeds/packages/net/tailscale`。该配方提供 Tailscale `1.102.3`，要求 Go `1.26.6`，
+兼容官方工具链 `1.26.8`；更新的 `1.104.1` 要求 Go `1.27.1`，不能直接跟随。
+从 `https://github.com/openwrt/luci.git` 的 `master` 分支浅克隆并稀疏检出
 `applications/luci-app-tailscale-community`，原样同步到
-`feeds/luci/applications/luci-app-tailscale-community`。不使用个人打包仓库，也不
-在本地维护旧版本、配方或脚本。官方包可能略慢于 Tailscale 最新 release；每次
-prepare/刷新都会重新获取官方 master 的最新 HEAD。准备阶段会删除默认 feed 中仅
+`feeds/luci/applications/luci-app-tailscale-community`。除上述兼容性固定外，其他
+feed 仍在 prepare/刷新时获取配置分支的最新 HEAD。准备阶段会删除默认 feed 中仅
 用于旧实现的 `luci-app-tailscale` 链接，但保留官方 `tailscale` 和
 `luci-app-tailscale-community` 链接，确保官方目录被选中；四个设备的默认配置均
 选择 `tailscale` 和 `luci-app-tailscale-community`。每个 source snapshot 会把两个
-官方仓库的实际 HEAD 记录到 `feed_commits`，所以单个已发布快照仍可复现，刷新后则
-会获取官方最新内容。Rust 兼容补丁只在检测到对应版本时应用。feeds 位于工作区的
+官方仓库的实际提交记录到 `feed_commits`。旧准备版本的快照会自动失效，下一次
+编译会重新准备，防止复用不兼容的 Tailscale 配方。feeds 位于工作区的
 源快照和缓存目录中，不直接修改仓库源码。
 
 准备 feeds 时会检查 Go 工具链版本与已存在的 OpenWrt Go package `go.mod` 要求。

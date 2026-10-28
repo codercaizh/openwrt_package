@@ -47,7 +47,9 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # latest contents of third-party default branches.  Version 11 now sources
 # the package directories from OpenWrt's official master branches.
 # Version 12 includes the reviewed local IPTV kernel patch bundle in snapshots.
-PREPARATION_VERSION = 13
+# Version 13 switches to official ImmortalWrt v25.12.2.  Version 14 replaces
+# the incompatible moving Tailscale recipe with its Go 1.26-compatible pin.
+PREPARATION_VERSION = 14
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 

@@ -62,7 +62,7 @@ def test_official_go_default_version_format(tmp_path: Path) -> None:
     assert _go_toolchain_version(tmp_path) == (1, 26, 0)
 
 
-def test_tailscale_feeds_follow_upstream_default_branches() -> None:
+def test_tailscale_recipe_is_pinned_for_official_2512_toolchain() -> None:
     tailscale = next(
         feed for feed in FEED_SPECS if feed.name == "openwrt-packages-tailscale"
     )
@@ -76,13 +76,15 @@ def test_tailscale_feeds_follow_upstream_default_branches() -> None:
     assert tailscale.branch == "master"
     assert tailscale.source_subdir == "net/tailscale"
     assert tailscale.clone_destination == "staging/upstream/openwrt-packages"
+    assert tailscale.commit == "8de0abeb462df4b2ec0634abce8119fd20da659a"
     assert community.url == "https://github.com/openwrt/luci.git"
     assert community.destination == "feeds/luci/applications/luci-app-tailscale-community"
     assert community.depth == 1
     assert community.branch == "master"
     assert community.source_subdir == "applications/luci-app-tailscale-community"
     assert community.clone_destination == "staging/upstream/openwrt-luci"
-    assert "commit" not in FeedSpec.__dataclass_fields__
+    assert community.commit is None
+    assert all(feed.commit is None for feed in FEED_SPECS if feed != tailscale)
 
 
 def test_tailscale_override_removes_legacy_feed_links(tmp_path: Path) -> None:
@@ -193,6 +195,46 @@ def test_sparse_feed_sync_copies_only_source_subdir_and_returns_repo_head(tmp_pa
     assert prepared_commits == {"official-tailscale": expected}
     assert (prepared_root / "feeds/packages/net/tailscale/Makefile").is_file()
     assert not (prepared_root / "staging/upstream/packages").exists()
+
+
+def test_pinned_sparse_feed_ignores_newer_branch_head(tmp_path: Path) -> None:
+    upstream = tmp_path / "upstream"
+    recipe = upstream / "net/tailscale/Makefile"
+    recipe.parent.mkdir(parents=True)
+    recipe.write_text("PKG_VERSION:=1.102.3\n", encoding="utf-8")
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=upstream, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "--quiet", "-b", "master")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "user.name", "Test")
+    git("add", ".")
+    git("commit", "--quiet", "-m", "compatible recipe")
+    pinned = git("rev-parse", "HEAD")
+    recipe.write_text("PKG_VERSION:=1.104.1\n", encoding="utf-8")
+    git("commit", "--quiet", "-am", "requires newer Go")
+    assert git("rev-parse", "HEAD") != pinned
+
+    root = tmp_path / "prepared"
+    root.mkdir()
+    spec = FeedSpec(
+        "tailscale",
+        upstream.as_uri(),  # Use real shallow Git transport, not a local copy.
+        "feeds/packages/net/tailscale",
+        branch="master",
+        source_subdir="net/tailscale",
+        clone_destination="staging/upstream/packages",
+        commit=pinned,
+    )
+    commits = prepare_feeds_sync(
+        root, feed_specs=[spec], require_native=False, require_metadata=False
+    )
+    assert commits == {"tailscale": pinned}
+    assert (root / spec.destination / "Makefile").read_text() == "PKG_VERSION:=1.102.3\n"
+    assert not (root / "staging/upstream/packages").exists()
 
 
 def test_go_compatibility_checks_reviewed_modules_only(tmp_path: Path) -> None:

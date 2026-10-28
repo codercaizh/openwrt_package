@@ -29,7 +29,7 @@ MediaTek 官方 Filogic N60 Pro 和 360T7 的升级产物为 `*-squashfs-sysupgr
 | --- | --- |
 | PassWall LuCI | `Openwrt-Passwall/openwrt-passwall` |
 | PassWall 运行依赖 | `Openwrt-Passwall/openwrt-passwall-packages` |
-| Tailscale 核心 OpenWrt 配方 | `openwrt/packages` master，仅稀疏同步 `net/tailscale`，配方自行从 Tailscale 项目下载源码 |
+| Tailscale 核心 OpenWrt 配方 | `openwrt/packages` 提交 `8de0abeb462df4b2ec0634abce8119fd20da659a`，仅稀疏同步 `net/tailscale`（1.102.3），配方自行从 Tailscale 项目下载源码 |
 | Tailscale 社区 LuCI | `openwrt/luci` master，仅稀疏同步 `luci-app-tailscale-community` |
 | FRP/FRPC 核心配方 | `openwrt/packages` master，稀疏同步 `net/frp`（源码为 fatedier/frp） |
 | FRPC LuCI | `openwrt/luci` master，仅稀疏同步 `luci-app-frpc` |
@@ -39,7 +39,7 @@ MediaTek 官方 Filogic N60 Pro 和 360T7 的升级产物为 `*-squashfs-sysupgr
 | Cloudflare Speed Test LuCI | `stevenjoezhang/luci-app-cloudflarespeedtest` |
 | 其他历史补充插件 | `kenzok8/openwrt-packages`；有同名包时以上特定上游优先 |
 
-这些上游 HEAD 会变化。如果某个插件上游升级对 ImmortalWrt 25.12 不兼容，请记录冲突并为该插件单独固定经验证的 commit，**不要无条件修改官方工具链**。
+除 Tailscale 核心配方外，这些上游 HEAD 会变化。如果某个插件上游升级对 ImmortalWrt 25.12 不兼容，请记录冲突并为该插件单独固定经验证的 commit，**不要无条件修改官方工具链**。
 
 `feeds.py` 使用 OpenWrt 的原生 `scripts/feeds update/install` 以及轻量稀疏获取上游单包；仍保留必要的同名包冲突链接清理，避免错误使用官方收录的旧配方。源快照和发布之间不跟随移动分支。
 
@@ -91,3 +91,5 @@ git status --short --branch
 - n2 首次任务 `114b357cdfe94da38d2ed2a4443fd402` 在配置合成时报缺少 `defconfig/mt7975-ipailna-high-power.config`：这是旧 237 源码的 CONFIG_APPEND，官方 v25.12.2 不提供。提交 `fe20e35` 移除 N60 Pro 和 360T7 的过时引用，并增加回归检查。重试复用了已有源码/feed 快照，日志为 `/data/immortalwrt-25.12.2-build/n60pro-build-retry.log`。
 - GitHub Actions run `40620839038` 的 `build-n60pro` 在 `./owrt doctor --json` 阶段因 `find scripts` 失败，根因是 Git 不保留空目录，Ubuntu 22.04 Python 3.10 走容器后备路径时触发。启动器现在将 scripts 作为可选目录，若目录存在仍纳入镜像指纹；回归测试模拟无该目录的检出。
 - 本次 n2 worker 的 1.5 vCPU 限额仅属于临时启动参数，仓库默认 CPU 设置不变。配置阶段通过并不表示完整固件已编译或设备已验证。
+- Actions run `40621979179` 已通过 doctor，但在 `package/feeds/packages/tailscale/compile` 失败：Tailscale `1.104.1` 的 `go.mod` 要求 Go `1.27.1`，而官方配套工具链为 `1.26.8`，报 `GOTOOLCHAIN=local`。固定 OpenWrt 上游配方提交 `8de0abeb462df4b2ec0634abce8119fd20da659a`，提供要求 Go `1.26.6` 的 Tailscale `1.102.3`；其他插件继续跟随原上游。FeedSpec 支持完整提交号并核对实际 HEAD，准备版本升至 14，避免无声复用旧版不兼容快照。旧服务器任务 `d7264d84e2714cb98f0aa8d56f68e56b` 已正常取消，原日志保留。
+- 此次修复验证：全套 Python 测试 `140 passed`；实际从 OpenWrt 上游稀疏拉取固定提交，核对 Tailscale `1.102.3` 源码包与配方的 SHA256 一致，并从该归档中读取 `go.mod` 确认要求 Go `1.26.6`。完整固件编译仍以新任务最终结果为准。

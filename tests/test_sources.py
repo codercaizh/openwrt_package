@@ -152,6 +152,9 @@ def test_preparation_version_is_part_of_snapshot_identity(tmp_path: Path, monkey
     first = manager.prepare_source("test", feed_preparer=lambda *_: {"feed": "sha"}, catalog_builder=_catalog)
 
     monkeypatch.setattr(sources_module, "PREPARATION_VERSION", sources_module.PREPARATION_VERSION + 1)
+    assert manager.current("test") is None
+    with pytest.raises(SourceError, match="preparation version"):
+        manager.get_snapshot(first.snapshot_id)
     second = manager.prepare_source("test", feed_preparer=lambda *_: {"feed": "sha"}, catalog_builder=_catalog)
     assert second.snapshot_id != first.snapshot_id
     assert manager.current("test").snapshot_id == second.snapshot_id

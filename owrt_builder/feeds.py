@@ -31,6 +31,7 @@ class FeedSpec:
     depth: int | None = 1
     source_subdir: str | None = None
     clone_destination: str | None = None
+    commit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,9 @@ _GO_SCAN_EXCLUDED_DIRS = frozenset(
 # without an explicit branch follows the repository's default branch; the
 # resulting HEAD is recorded when the source snapshot is published.  The two
 # OpenWrt package feeds use ``source_subdir`` so only the selected official
-# package directory is installed into the source tree.
+# package directory is installed into the source tree.  A reviewed commit
+# overrides the moving branch for packages incompatible with the release's
+# toolchain; all other feeds continue following their configured branch.
 FEED_SPECS: tuple[FeedSpec, ...] = (
     FeedSpec("kenzo", "https://github.com/kenzok8/openwrt-packages.git", "package/kenzo"),
     FeedSpec("rtp2httpd", "https://github.com/stackia/rtp2httpd.git", "package/rtp2httpd"),
@@ -139,6 +142,9 @@ FEED_SPECS: tuple[FeedSpec, ...] = (
         depth=1,
         source_subdir="net/tailscale",
         clone_destination="staging/upstream/openwrt-packages",
+        # Tailscale 1.104.1 needs Go 1.27.1; official 25.12 uses Go 1.26.8.
+        # This upstream recipe selects 1.102.3, whose go.mod needs Go 1.26.6.
+        commit="8de0abeb462df4b2ec0634abce8119fd20da659a",
     ),
     FeedSpec(
         "openwrt-luci-tailscale-community",
@@ -267,6 +273,8 @@ def _clone_feed(
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
+    if feed.commit is not None and not re.fullmatch(r"[0-9a-f]{40}", feed.commit):
+        raise FeedError(f"feed {feed.name} commit must be a full lowercase Git SHA")
     clone_destination = _safe_destination(
         source_root, feed.clone_destination or feed.destination
     )
@@ -306,9 +314,24 @@ def _clone_feed(
             cwd=clone_destination,
             runner=runner,
         )
+    if feed.commit is not None:
+        # A shallow branch checkout need not contain the reviewed revision.
+        # Fetch it explicitly and detach before copying the package files.
+        _run_git(
+            ["fetch", "--depth", "1", "origin", feed.commit],
+            cwd=clone_destination,
+            runner=runner,
+        )
+        _run_git(
+            ["checkout", "--detach", feed.commit],
+            cwd=clone_destination,
+            runner=runner,
+        )
     commit = _run_git(["rev-parse", "HEAD"], cwd=clone_destination, runner=runner)
     if not commit or any(ch.isspace() for ch in commit):
         raise FeedError(f"feed {feed.name} did not produce a usable HEAD")
+    if feed.commit is not None and commit != feed.commit:
+        raise FeedError(f"feed {feed.name} HEAD {commit} does not match {feed.commit}")
     if feed.source_subdir:
         source = _feed_source_path(clone_destination, feed.source_subdir)
         if not source.is_dir() or source.is_symlink():
