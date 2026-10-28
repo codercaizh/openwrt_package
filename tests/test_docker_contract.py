@@ -196,3 +196,41 @@ def test_dependency_free_launcher_maps_cli_workspace_for_host_python(tmp_path: P
     result = subprocess.run([str(ROOT / "owrt"), "devices"], cwd=ROOT, env=env, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert capture.read_text(encoding="utf-8") == str(tmp_path / "cli-workspace")
+
+
+def test_fallback_doctor_handles_optional_scripts_in_fresh_checkout(tmp_path: Path) -> None:
+    """A checkout without empty scripts/ still runs and hashes scripts when present."""
+    import shutil
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for name in ("owrt", "requirements.txt", "pyproject.toml"):
+        shutil.copy2(ROOT / name, repo / name)
+    for name in ("docker", "owrt_builder", "configs"):
+        shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    python = fake_bin / "python3"
+    python.write_text("#!/bin/sh\nexit 1\n")
+    python.chmod(0o755)
+    docker = fake_bin / "docker"
+    docker.write_text("#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$DOCKER_ARGS_LOG\"\nexit 0\n")
+    docker.chmod(0o755)
+    log = tmp_path / "docker.log"
+    env = os.environ.copy()
+    env.update(PATH=f"{fake_bin}:{env['PATH']}", DOCKER_ARGS_LOG=str(log),
+               OWRT_CLI_WORKSPACE_HOST_PATH=str(tmp_path / "workspace"))
+
+    def fingerprint() -> str:
+        log.write_text("")
+        result = subprocess.run([str(repo / "owrt"), "doctor", "--json"], env=env,
+                                text=True, capture_output=True)
+        assert result.returncode == 0, result.stderr
+        assert "find:" not in result.stderr
+        build = next(line for line in log.read_text().splitlines() if line.startswith("build "))
+        return next(word for word in build.split() if word.startswith("org.openwrt.builder.context="))
+
+    without_scripts = fingerprint()
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "example.sh").write_text("example\n")
+    assert fingerprint() != without_scripts

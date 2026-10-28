@@ -64,7 +64,9 @@ builder_context_fingerprint() {
         export LC_ALL=C
         {
             printf '%s\0' requirements.txt pyproject.toml
-            find docker owrt_builder configs scripts -type f \
+            local context_dirs=(docker owrt_builder configs)
+            [[ ! -d scripts ]] || context_dirs+=(scripts)
+            find "${context_dirs[@]}" -type f \
                 ! -path '*/__pycache__/*' ! -name '*.pyc' ! -name '*.pyo' -print0
         } | sort -z \
           | while IFS= read -r -d '' file; do sha256sum "$file"; done \

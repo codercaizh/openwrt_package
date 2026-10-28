@@ -85,3 +85,9 @@ git status --short --branch
 若首次编译失败，保留日志并记录**第一次实际失败的 make 步骤**；目前文档中列出的插件被选中不等同于已经在实际 25.12 feed 中通过全量编译。
 
 本分支默认不修改任何正在运行的路由器或 n2 上已存在的服务配置。
+
+## 7. 2026-10-28 构建故障记录
+
+- n2 首次任务 `114b357cdfe94da38d2ed2a4443fd402` 在配置合成时报缺少 `defconfig/mt7975-ipailna-high-power.config`：这是旧 237 源码的 CONFIG_APPEND，官方 v25.12.2 不提供。提交 `fe20e35` 移除 N60 Pro 和 360T7 的过时引用，并增加回归检查。重试复用了已有源码/feed 快照，日志为 `/data/immortalwrt-25.12.2-build/n60pro-build-retry.log`。
+- GitHub Actions run `40620839038` 的 `build-n60pro` 在 `./owrt doctor --json` 阶段因 `find scripts` 失败，根因是 Git 不保留空目录，Ubuntu 22.04 Python 3.10 走容器后备路径时触发。启动器现在将 scripts 作为可选目录，若目录存在仍纳入镜像指纹；回归测试模拟无该目录的检出。
+- 本次 n2 worker 的 1.5 vCPU 限额仅属于临时启动参数，仓库默认 CPU 设置不变。配置阶段通过并不表示完整固件已编译或设备已验证。
