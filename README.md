@@ -173,3 +173,9 @@ MediaTek 编译容器使用默认 Docker 隔离；只有 ARM packit 阶段按设
 UID；编译容器不使用 host network。
 
 更完整的模块边界和任务状态见 [docs/architecture.md](docs/architecture.md)。
+
+## N60 Pro IPTV / HNAT 修复
+
+MediaTek 源码快照现包含逐包清除 `sent_ppd` 残留状态的修复及按需诊断工具。
+正常选择 `n60pro` 构建即可，默认修复开启、诊断采样关闭。
+原因、缓存更新和刷入后的验收命令见 [IPTV / HNAT 诊断说明](docs/iptv-hnat-diagnostics.md)。

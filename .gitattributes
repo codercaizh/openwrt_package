@@ -1,0 +1,2 @@
+# Unified diff context contains the upstream source indentation.
+scripts/iptv-hnat/overlay/**/*.patch -whitespace

@@ -1,0 +1,14 @@
+{
+  "upstream_commit": "ec9ef10efc65da1e6d1de4e2c043c0e13d08eed8",
+  "sha256": {
+    "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c": "c8c64f9069ca73fb66431d9ad5ac13b4449d307d6bdd6e106183af04cb832099",
+    "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h": "b60dc9a9670d8d9b1c426f362f424bb966ef7a8231682bd151f4b3cf79ed3d34",
+    "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c": "b9423455c7cee302d429dd3463f3adb56906563f8d8b667f3e7bb669f370756d",
+    "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c": "b1f9e340015b906bf245f789cb18b50f5708fa6972b00068520cffee946363c4",
+    "target/linux/mediatek/patches-6.6/9999-01-hnat.patch": "21e74e4a3bee83f9a608240299782efe6d561b0cb1ddba38d4e3a404e84c0782",
+    "target/linux/mediatek/patches-6.6/9999-02-mtk_enhance.patch": "0a94b89507477186142ede359f9105f3ea41f8d9c28a1bf68046679c26689337",
+    "target/linux/mediatek/patches-6.6/9999-03-fix-ext-hnat-with-fdb-error.patch": "ff466e908c7d593e89405811a30a0f1f9b059afbae04cfd3247e9fc579e9e1fb",
+    "target/linux/mediatek/patches-6.6/9999-04-fix-eth-mtu-init.patch": "2175c8ecd1a61ff0887f9238f111323f713e681005eb46010b2ddd00224b0086",
+    "target/linux/mediatek/patches-6.6/9999-05-restore-mtk-eth-rx-dma-ring-size.patch": "a5cd88c230d2b5d2c4c58cf811dc0bb97b551f420628147e58a5371118f35216"
+  }
+}
