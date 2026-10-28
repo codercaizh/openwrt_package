@@ -15,6 +15,7 @@ from owrt_builder.feeds import (
     _remove_custom_conflicts,
     prepare_feeds_sync,
     validate_go_compatibility,
+    _go_toolchain_version,
 )
 
 
@@ -45,17 +46,28 @@ def _write_go_package(root: Path, relative: str, requirement: str) -> Path:
     return module
 
 
-def test_golang_feed_tracks_27_x() -> None:
-    golang = next(feed for feed in FEED_SPECS if feed.name == "golang")
-    assert golang.branch == "27.x"
+def test_no_third_party_golang_feed_override() -> None:
+    assert not any(feed.name == "golang" for feed in FEED_SPECS)
+
+
+def test_official_go_default_version_format(tmp_path: Path) -> None:
+    base = tmp_path / "feeds/packages/lang/golang"
+    (base / "golang").mkdir(parents=True)
+    (base / "golang/Makefile").write_text(
+        "PKG_VERSION:=$(GO_DEFAULT_VERSION)\n", encoding="utf-8"
+    )
+    (base / "golang-values.mk").write_text(
+        "GO_DEFAULT_VERSION:=1.26\n", encoding="utf-8"
+    )
+    assert _go_toolchain_version(tmp_path) == (1, 26, 0)
 
 
 def test_tailscale_feeds_follow_upstream_default_branches() -> None:
     tailscale = next(
-        feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/packages.git"
+        feed for feed in FEED_SPECS if feed.name == "openwrt-packages-tailscale"
     )
     community = next(
-        feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/luci.git"
+        feed for feed in FEED_SPECS if feed.name == "openwrt-luci-tailscale-community"
     )
 
     assert tailscale.url == "https://github.com/openwrt/packages.git"
@@ -104,8 +116,8 @@ def test_tailscale_override_removes_legacy_feed_links(tmp_path: Path) -> None:
     _ensure_synced_feed_links(
         tmp_path,
         [
-            next(feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/packages.git"),
-            next(feed for feed in FEED_SPECS if feed.url == "https://github.com/openwrt/luci.git"),
+            next(feed for feed in FEED_SPECS if feed.name == "openwrt-packages-tailscale"),
+            next(feed for feed in FEED_SPECS if feed.name == "openwrt-luci-tailscale-community"),
         ],
     )
 
@@ -220,3 +232,12 @@ def test_go_module_requires_toolchain_metadata(tmp_path: Path) -> None:
 
     with pytest.raises(FeedError, match="Go toolchain metadata is missing"):
         validate_go_compatibility(tmp_path)
+
+
+def test_plugin_repos_are_upstream_not_immortalwrt_bundled() -> None:
+    selected = {spec.name: spec for spec in FEED_SPECS}
+    assert selected["lucky-upstream"].url == "https://github.com/gdy666/luci-app-lucky.git"
+    assert selected["pushbot-upstream"].url == "https://github.com/zzsj0928/luci-app-pushbot.git"
+    assert selected["passwall-luci"].url == "https://github.com/Openwrt-Passwall/openwrt-passwall.git"
+    assert selected["frp-upstream"].source_subdir == "net/frp"
+    assert selected["frpc-luci-upstream"].source_subdir == "applications/luci-app-frpc"

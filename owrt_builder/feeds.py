@@ -15,7 +15,6 @@ import shutil
 import subprocess
 from typing import Callable, Mapping, Sequence
 
-from .paths import rust_patch_path
 from .sources import StatusCallback, _emit
 
 
@@ -100,11 +99,37 @@ FEED_SPECS: tuple[FeedSpec, ...] = (
         "https://github.com/Openwrt-Passwall/openwrt-passwall.git",
         "package/passwall-luci",
     ),
+    # Plugins come from their actual upstream maintainers, rather than
+    # bundled copies in ImmortalWrt or the catch-all community package feed.
     FeedSpec(
-        "golang",
-        "https://github.com/sbwml/packages_lang_golang.git",
-        "feeds/packages/lang/golang",
-        branch="27.x",
+        "lucky-upstream",
+        "https://github.com/gdy666/luci-app-lucky.git",
+        "package/lucky-upstream",
+        branch="main",
+    ),
+    FeedSpec(
+        "pushbot-upstream",
+        "https://github.com/zzsj0928/luci-app-pushbot.git",
+        "package/luci-app-pushbot",
+        branch="master",
+    ),
+    FeedSpec(
+        "frp-upstream",
+        "https://github.com/openwrt/packages.git",
+        "feeds/packages/net/frp",
+        branch="master",
+        depth=1,
+        source_subdir="net/frp",
+        clone_destination="staging/upstream/frp-packages",
+    ),
+    FeedSpec(
+        "frpc-luci-upstream",
+        "https://github.com/openwrt/luci.git",
+        "feeds/luci/applications/luci-app-frpc",
+        branch="master",
+        depth=1,
+        source_subdir="applications/luci-app-frpc",
+        clone_destination="staging/upstream/frpc-luci",
     ),
     FeedSpec(
         "openwrt-packages-tailscale",
@@ -163,6 +188,10 @@ CUSTOM_PACKAGE_OVERRIDES: Mapping[str, tuple[str, ...]] = {
     # Keep the official ``tailscale`` and ``luci-app-tailscale-community``
     # links.  Only the legacy LuCI app can shadow the current official app.
     "tailscale": ("luci-app-tailscale",),
+    "lucky-upstream": ("lucky", "luci-app-lucky"),
+    "pushbot-upstream": ("luci-app-pushbot",),
+    "frp-upstream": ("frpc", "frps"),
+    "frpc-luci-upstream": ("luci-app-frpc",),
 }
 
 
@@ -386,13 +415,22 @@ def _go_toolchain_version(source_root: Path) -> tuple[int, int, int] | None:
         raise FeedError(f"unable to read Go toolchain Makefile: {makefile}: {exc}") from exc
     values = {name: value for name, value in _GO_VERSION_ASSIGNMENT.findall(content)}
     major_minor = values.get("MAJOR_MINOR")
-    if not major_minor:
-        raise FeedError(f"Go toolchain Makefile has no GO_VERSION_MAJOR_MINOR: {makefile}")
-    patch = values.get("PATCH", "")
-    return _parse_go_version(
-        f"{major_minor}.{patch}" if patch else major_minor,
-        context=str(makefile.relative_to(source_root)),
-    )
+    if major_minor:
+        patch = values.get("PATCH", "")
+        return _parse_go_version(
+            f"{major_minor}.{patch}" if patch else major_minor,
+            context=str(makefile.relative_to(source_root)),
+        )
+    # Official ImmortalWrt 25.12 uses a versioned Go toolchain and declares
+    # GO_DEFAULT_VERSION in the sibling golang-values.mk.  Do not replace the
+    # official recipe with sbwml's moving 27.x tree.
+    values_file = makefile.parent.parent / "golang-values.mk"
+    if values_file.is_file():
+        content = values_file.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r"(?m)^\s*GO_DEFAULT_VERSION\s*[:?+]?=\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?)", content)
+        if match:
+            return _parse_go_version(match.group(1), context=str(values_file.relative_to(source_root)))
+    raise FeedError(f"Go toolchain version not found in {makefile} or {values_file}")
 
 
 def _go_module_requirement(module: Path) -> tuple[int, int, int] | None:
@@ -468,23 +506,6 @@ def validate_go_compatibility(
             modules={},
         )
     return GoCompatibilityReport(toolchain=toolchain, modules=modules)
-
-
-def _patch_rust(source_root: Path, status: StatusCallback | None) -> None:
-    makefile = source_root / "package/feeds/packages/rust/Makefile"
-    if not makefile.exists():
-        return
-    content = makefile.read_text(encoding="utf-8", errors="replace")
-    if "PKG_VERSION:=1.90.0" not in content:
-        return
-    fix = rust_patch_path()
-    if not fix.exists():
-        raise FeedError(f"rust 1.90.0 requires missing patch: {fix}")
-    replacement = fix.read_text(encoding="utf-8", errors="replace")
-    if "PKG_VERSION" not in replacement:
-        raise FeedError(f"rust patch has no package metadata: {fix}")
-    makefile.write_text(replacement, encoding="utf-8")
-    _emit(status, "feed", "applied verified rust 1.90.0 patch", feed="rust")
 
 
 def _remove_core_passwall(source_root: Path, status: StatusCallback | None) -> None:
@@ -737,7 +758,6 @@ def prepare_feeds_sync(
                     break
                 parent = parent.parent
         _remove_core_passwall(root, status)
-        _patch_rust(root, status)
         if require_native:
             _native_feed_install(root, status=status, runner=runner)
             _remove_custom_conflicts(root, status)

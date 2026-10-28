@@ -39,16 +39,9 @@ def static_path() -> Path:
     return package_root() / "static"
 
 
-def rust_patch_path(root: str | Path | None = None) -> Path:
-    """Return the optional Rust Makefile patch shipped by the repository."""
-
-    return (Path(root) if root is not None else repository_root()) / "scripts" / "fix_bugs" / "rust_Makefile"
-
-
 __all__ = [
     "catalog_path",
     "package_root",
     "repository_root",
-    "rust_patch_path",
     "static_path",
 ]

@@ -5,22 +5,22 @@ default_config = "armv8.config"
 [[sources]]
 id = "armv8"
 url = "https://github.com/immortalwrt/immortalwrt.git"
-branch = "openwrt-25.12"
-# The worker resolves and records the branch HEAD once per build.
+branch = "v25.12.2"
+# Official immutable release tag, not the moving 25.12 maintenance branch.
 platform = "arm"
 
 [[sources]]
-id = "immortalwrt-mt798x"
-url = "https://github.com/padavanonly/immortalwrt-mt798x-24.10.git"
-branch = "openwrt-24.10-6.6"
-# Both profiles are verified in this branch at prepare time.
+id = "immortalwrt-25.12-mediatek"
+url = "https://github.com/immortalwrt/immortalwrt.git"
+branch = "v25.12.2"
+# Pin the official release tag; both MediaTek profiles exist in v25.12.2.
 platform = "mediatek"
 
 [[devices]]
 key = "360t7"
 aliases = ["360-t7", "qihoo_360t7"]
 platform = "mediatek"
-source = "immortalwrt-mt798x"
+source = "immortalwrt-25.12-mediatek"
 profile = "qihoo_360t7"
 config = "360t7.config"
 packager = "mediatek"
@@ -31,7 +31,7 @@ description = "Qihoo 360T7"
 key = "netcore_n60-pro"
 aliases = ["n60pro", "n60-pro", "netcore-n60-pro", "netcore_n60_pro"]
 platform = "mediatek"
-source = "immortalwrt-mt798x"
+source = "immortalwrt-25.12-mediatek"
 profile = "netcore_n60-pro"
 config = "n60pro.config"
 packager = "mediatek"

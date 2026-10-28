@@ -47,7 +47,7 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # latest contents of third-party default branches.  Version 11 now sources
 # the package directories from OpenWrt's official master branches.
 # Version 12 includes the reviewed local IPTV kernel patch bundle in snapshots.
-PREPARATION_VERSION = 12
+PREPARATION_VERSION = 13
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 
@@ -609,10 +609,6 @@ class SourceManager:
             )
         if manifest.get("local_patch_id", "") != patch_fingerprint(source_id):
             raise SourceError(f"source snapshot has obsolete local kernel patches: {snapshot_dir}")
-        if source_id == "immortalwrt-mt798x":
-            version = source_path / "files/etc/iptv-hnat-diag.version"
-            if not version.is_file() or version.read_text().strip() != patch_fingerprint(source_id):
-                raise SourceError(f"source snapshot has no matching IPTV patch provenance: {snapshot_dir}")
         validate_download_seeds(source_path)
         return PreparedSource(
             source_id=source_id,
@@ -838,8 +834,6 @@ class SourceManager:
             self._clone(spec, source_path)
             source_commit = self._source_commit(source_path)
             local_patch_id = install_local_patches(source_path, source_id)
-            if local_patch_id:
-                _emit(status, "source", f"applied IPTV/HNAT fix + diagnostic bundle {local_patch_id}")
             _emit(status, "source", f"checked out {source_commit}", commit=source_commit)
 
             if feed_preparer is None:

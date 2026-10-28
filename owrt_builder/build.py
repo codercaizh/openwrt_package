@@ -1488,19 +1488,6 @@ class BuildEngine:
             heartbeat_label="make defconfig",
             heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
         )
-        # A changed kernel patch must not reuse an already prepared kernel.
-        # Keep the expensive toolchain and download caches; clean only Linux.
-        diag_version = openwrt_dir / "files/etc/iptv-hnat-diag.version"
-        diag_stamp = openwrt_dir / "build_dir/.iptv-hnat-build-id"
-        diag_id = diag_version.read_text().strip() if diag_version.is_file() else ""
-        if diag_id and (not diag_stamp.is_file() or diag_stamp.read_text().strip() != diag_id):
-            self._emit(callback, "IPTV/HNAT 内核补丁变化，清理旧内核缓存（保留工具链与下载缓存）")
-            self._run_checked(
-                ["make", "target/linux/clean"], cwd=openwrt_dir, env=env,
-                callback=callback, cancel_event=cancel_event,
-                heartbeat_label="make target/linux/clean",
-                heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
-            )
         self._run_checked(
             ["make", "download"],
             cwd=openwrt_dir,
@@ -1518,9 +1505,6 @@ class BuildEngine:
             cancel_event,
             jobs=jobs,
         )
-        if diag_id:
-            diag_stamp.parent.mkdir(parents=True, exist_ok=True)
-            diag_stamp.write_text(diag_id + "\n")
 
     def _run_compile_with_diagnostics(
         self,
@@ -1751,13 +1735,18 @@ class BuildEngine:
         target_dir = openwrt_dir / "bin" / "targets" / "mediatek" / "filogic"
         if not target_dir.is_dir():
             raise BuildError(f"mediatek target directory missing: {target_dir}")
+        # Official Filogic NAND devices produce FIT sysupgrade.itb rather than
+        # the .bin images handled by the former 237-only packager.
         candidates = sorted(
-            path
-            for path in target_dir.glob("*.bin")
-            if spec.profile in path.name and path.stat().st_size > 0
+            path for path in target_dir.iterdir()
+            if path.is_file()
+            and path.suffix in {".itb", ".bin"}
+            and spec.profile in path.name
+            and "sysupgrade" in path.name
+            and path.stat().st_size > 0
         )
         if not candidates:
-            raise BuildError(f"no {spec.profile} firmware found in {target_dir}")
+            raise BuildError(f"no {spec.profile} .itb/.bin sysupgrade firmware found in {target_dir}")
         outputs: list[Path] = []
         for candidate in candidates:
             destination = artifact_dir / candidate.name
@@ -1776,7 +1765,7 @@ class BuildEngine:
                     raise BuildError(
                         f"{output.name} metadata does not contain netcore,n60-pro"
                     )
-        self._emit(callback, f"固件产物: {len(outputs)} 个 mediatek .bin")
+        self._emit(callback, f"固件产物: {len(outputs)} 个 mediatek sysupgrade .itb/.bin")
         return outputs
 
     def _package_arm(

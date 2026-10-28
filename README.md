@@ -174,8 +174,9 @@ UID；编译容器不使用 host network。
 
 更完整的模块边界和任务状态见 [docs/architecture.md](docs/architecture.md)。
 
-## N60 Pro IPTV / HNAT 修复
+## ImmortalWrt v25.12.2 官方版本
 
-MediaTek 源码快照现包含逐包清除 `sent_ppd` 残留状态的修复及按需诊断工具。
-正常选择 `n60pro` 构建即可，默认修复开启、诊断采样关闭。
-原因、缓存更新和刷入后的验收命令见 [IPTV / HNAT 诊断说明](docs/iptv-hnat-diagnostics.md)。
+此分支的全部设备都固定使用官方 `v25.12.2` 发布标签。
+不携带 237 / Linux 6.6 特有的 IPTV/HNAT 内核补丁。
+迁移细节、插件来源、配置验证与 n2 部署见
+[25.12.2 迁移运行手册](docs/immortalwrt-25.12.2-migration.md)。

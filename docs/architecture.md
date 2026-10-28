@@ -23,8 +23,8 @@
 
 | key | aliases | source | config fragment | 说明 |
 | --- | --- | --- | --- | --- |
-| `360t7` | `360-t7`, `qihoo_360t7` | `immortalwrt-mt798x` | `360t7.config` | 路由默认配置 |
-| `netcore_n60-pro` | `n60pro`, `n60-pro`, `netcore-n60-pro`, `netcore_n60_pro` | `immortalwrt-mt798x` | `n60pro.config` | 路由默认配置，N60 Pro 真机验收 |
+| `360t7` | `360-t7`, `qihoo_360t7` | `immortalwrt-25.12-mediatek` | `360t7.config` | 路由默认配置 |
+| `netcore_n60-pro` | `n60pro`, `n60-pro`, `netcore-n60-pro`, `netcore_n60_pro` | `immortalwrt-25.12-mediatek` | `n60pro.config` | 路由默认配置，N60 Pro 真机验收 |
 | `s905d` | `n1` | `armv8` | `armv8.config` | 盒子通用配置；`s905` 是不同设备，不作为别名 |
 | `vplus` | `h6-vplus` | `armv8` | `armv8.config` | 盒子通用配置 |
 
@@ -32,7 +32,7 @@
 
 ## Feed
 
-默认 feed 与原项目来源保持一致：Kenzo、rtp2httpd、luci-app-cloudflarespeedtest、Passwall packages、Passwall LuCI，以及原流程中的 `packages_lang_golang` 27.x 替换。Passwall 跟随仓库默认分支，取消旧的固定 commit。Tailscale 核心包采用 OpenWrt 官方 `https://github.com/openwrt/packages.git` 的 `master` 分支，仅浅克隆/稀疏检出 `net/tailscale`，原样同步到 `feeds/packages/net/tailscale`；LuCI 应用采用 OpenWrt 官方 `https://github.com/openwrt/luci.git` 的 `master` 分支，仅浅克隆/稀疏检出 `applications/luci-app-tailscale-community`，原样同步到 `feeds/luci/applications/luci-app-tailscale-community`。两个官方仓库先克隆到不会被 package scanner 扫描的 `staging/upstream` 临时目录，再在 native feeds install 前覆盖目标目录，因此继续使用当前源码 feed 的 golang/luci 基础设施，也不会把整个官方仓库作为额外 package tree。不使用个人打包仓库，也不复制或维护 Tailscale 的旧版本、配方、init/config 或 LuCI 脚本；官方包可能略慢于 Tailscale 最新 release。每次 prepare/刷新都重新获取官方 master 的最新 HEAD，并在 `feed_commits` 中记录两个官方仓库的实际提交；单个 snapshot 因而可按记录的 HEAD 复现，后续刷新则能获取官方最新内容。准备阶段在 feeds install 后只移除旧的 `luci-app-tailscale` 链接，保留官方 `tailscale` 与 `luci-app-tailscale-community` 链接。Rust 1.90.0 的替换仅在实际 Makefile 版本匹配时执行；替换文件不存在或补丁失败要报告错误。
+默认 feed 包含 Passwall 上游、OpenWrt 官方 Tailscale 及 FRP 配方、luci-app-tailscale-community、Lucky 原作者、Pushbot 原作者、rtp2httpd、CloudflareSpeedTest 及 Kenzo 辅助包。构建使用 ImmortalWrt v25.12.2 自带 Go/Rust 工具链，不覆盖 lang/golang、不再应用 237/6.6 IPTV/HNAT 补丁。历史实现详见迁移文档。
 
 Feed 准备完成后会读取 Go feed 的 `GO_VERSION_MAJOR_MINOR`/`GO_VERSION_PATCH`，并只扫描带有 `GO_PKG` 或 `golang/host` 的 OpenWrt package Makefile 目录下的 `go.mod`。`vendor`、测试、示例和生成目录会被跳过；已存在的模块若声明了高于工具链的 `go` 版本，准备立即失败。检查发生在临时 staging 树切换为 `current` 之前，因此失败时上一份可用快照仍然保留。远程源码压缩包在后续 `make download` 阶段才获取，未出现在准备树中的模块不会被预扫描。
 

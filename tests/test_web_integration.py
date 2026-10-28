@@ -561,7 +561,7 @@ def _ready_job_app(tmp_path: Path):
     catalog_path = tmp_path / "source-catalog.json"
     Catalog(root=source_root, packages=[], authoritative=True).write(catalog_path)
     prepared = PreparedSource(
-        source_id="immortalwrt-mt798x",
+        source_id="immortalwrt-25.12-mediatek",
         snapshot_id="web-controls-snapshot",
         path=source_root,
         catalog_path=catalog_path,
@@ -582,7 +582,7 @@ def _ready_job_app(tmp_path: Path):
     storage = app.state.storage
     storage.create_admin("admin", hash_password("a-strong-test-password"))
     snapshot = {
-        "source_id": "immortalwrt-mt798x",
+        "source_id": "immortalwrt-25.12-mediatek",
         "snapshot_id": "web-controls-snapshot",
         "source_commit": "test-source",
     }
@@ -629,7 +629,7 @@ def test_web_static_validation_is_read_only_and_skips_native_make(tmp_path: Path
         authoritative=True,
     ).write(catalog_path)
     prepared = PreparedSource(
-        source_id="immortalwrt-mt798x",
+        source_id="immortalwrt-25.12-mediatek",
         snapshot_id="isolated-validation-snapshot",
         path=source_root,
         catalog_path=catalog_path,
@@ -725,7 +725,7 @@ def test_job_submission_rejects_invalid_snapshot_before_enqueue(tmp_path: Path) 
     storage = app.state.storage
     storage.create_admin("admin", hash_password("a-strong-test-password"))
     snapshot = {
-        "source_id": "immortalwrt-mt798x",
+        "source_id": "immortalwrt-25.12-mediatek",
         "snapshot_id": "contaminated-snapshot",
         "source_commit": "source-sha",
     }
