@@ -62,3 +62,12 @@ def test_360t7_tag_has_expected_device_profile() -> None:
     catalog = load_catalog(ROOT / "configs/devices.toml")
     assert catalog.resolve("360t7").profile == "qihoo_360t7"
     assert catalog.resolve("n60pro").profile == "netcore_n60-pro"
+
+
+def test_official_2512_does_not_request_237_append_profiles() -> None:
+    from owrt_builder.configuration import compose_fragment
+    # Official release has no vendor defconfig/mt7975-ipailna-high-power.
+    for name in ("n60pro", "360t7"):
+        text = (ROOT / "configs" / f"{name}.config").read_text()
+        assert "#CONFIG_APPEND=" not in text
+        assert compose_fragment(ROOT / "configs" / f"{name}.config") == text
