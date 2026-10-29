@@ -75,6 +75,12 @@ SHA256、产物大小和每个产物的 SHA256；设备别名和规范名使用�
 GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传
 `.owrt/artifacts/**/*` 和构建证据。
 
+`.github/workflows/daily-build.yml` 每天北京时间 **00:00**（GitHub cron 使用 UTC，
+即前一天 `16:00 UTC`）自动启动固件构建矩阵，并行编译当前全部四款设备：
+`360t7`、`n60pro`、`s905d`、`vplus`。矩阵启用 `fail-fast: false`，
+单个固件构建失败不会取消其余任务；同时支持手动触发一次完整矩阵。
+实际启动时间可能受 GitHub Actions 调度延迟影响；定时任务仅从默认分支执行。
+
 ## Web 控制面
 
 Web 控制面由一个容器直接提供静态页面和 API。启动器会自动构建 Web 镜像、挂载
