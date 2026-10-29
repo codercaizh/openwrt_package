@@ -1,0 +1,13 @@
+name: N60 Pro FullCone fix build
+run-name: N60 Pro with official FullCone conntrack fix
+on:
+  push:
+    branches:
+      - codex/n60pro-fullcone-build-20261029
+permissions:
+  contents: read
+jobs:
+  firmware:
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro
