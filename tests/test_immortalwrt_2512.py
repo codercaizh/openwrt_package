@@ -24,6 +24,16 @@ def test_pushbot_in_arm_and_router_configs() -> None:
         assert "CONFIG_PACKAGE_luci-app-passwall_Iptables_Transparent_Proxy=y" not in config
 
 
+def test_lucky_is_not_preinstalled_on_n60pro() -> None:
+    n60 = (ROOT / "configs/n60pro.config").read_text()
+    assert "CONFIG_PACKAGE_luci-app-lucky=y" not in n60
+    assert "CONFIG_PACKAGE_lucky=y" not in n60
+    # Other device profiles still request Lucky from the shared upstream feed.
+    for name in ("360t7", "armv8"):
+        config = (ROOT / "configs" / f"{name}.config").read_text()
+        assert "CONFIG_PACKAGE_luci-app-lucky=y" in config
+
+
 def test_no_legacy_hnat_patch_with_upgraded_go_toolchain() -> None:
     assert next(source for source in FEED_SPECS if source.name == "golang").branch == "27.x"
     assert not (ROOT / "scripts/iptv-hnat").exists()
