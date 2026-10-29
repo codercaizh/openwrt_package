@@ -1372,7 +1372,6 @@ class BuildEngine:
         mediatek_target_lines = [
             "CONFIG_TARGET_mediatek_filogic=y\n",
             f"CONFIG_TARGET_mediatek_filogic_DEVICE_{spec.profile}=y\n",
-            f"CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_{spec.profile}=y\n",
             f'CONFIG_TARGET_PROFILE="DEVICE_{spec.profile}"\n',
         ] if spec.packager == "mediatek" else []
         target_symbols = {

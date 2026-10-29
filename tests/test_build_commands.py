@@ -488,6 +488,8 @@ CONFIG_MAIN_PLUGIN_MODE=n
     )
     text = output.read_text(encoding="utf-8")
 
+    assert text.count("CONFIG_TARGET_mediatek_filogic_DEVICE_n60pro=y") == 1
+    assert "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_n60pro" not in text
     assert "CONFIG_PACKAGE_kmod-mediatek_hnat=y" in text
     assert "CONFIG_PACKAGE_kmod-mt_wifi=y" in text
     assert "CONFIG_PACKAGE_kmod-warp=y" in text

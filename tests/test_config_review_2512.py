@@ -31,6 +31,7 @@ def test_arm_devices_share_packages_but_not_amlogic_ui() -> None:
 def test_360t7_preserves_filogic_profile_and_adds_monitoring() -> None:
     data = parse_config(compose_fragment(CONFIGS / "360t7.config"))
     assert data["CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7"] == "y"
+    assert "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_qihoo_360t7" not in data
     assert data["CONFIG_PACKAGE_luci-app-nlbwmon"] == "y"
     assert data["CONFIG_PACKAGE_luci-app-watchcat"] == "y"
     assert data["CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox"] == "y"
