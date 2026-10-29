@@ -67,6 +67,10 @@ SHA256、产物大小和每个产物的 SHA256；设备别名和规范名使用�
 `openwrt-packages-*` 制品上传。旧版本生成的 `ipk-packages.tar.gz` 仍可下载，
 但新构建不再使用这个仅表示 IPK 的文件名。
 
+`s905d`、`vplus` 以 `#CONFIG_INCLUDE=armv8.config` 包含共享 ARMv8 软件包配置。
+`config-review-build.yml` 在针对默认分支的配置 PR 上先运行单元测试，
+再分别编译 360T7、N1 和 H6；通过测试和编译后再合并，不直接改动默认分支。
+
 `.github/workflows/build.yml` 的 `workflow_dispatch` 只需要选择 `device`。
 GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传
 `.owrt/artifacts/**/*` 和构建证据。

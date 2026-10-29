@@ -1,5 +1,5 @@
 version = 1
-# ARM builds intentionally use the reviewed general-purpose configuration.
+# ARM devices use their own fragment, including shared armv8.config via #CONFIG_INCLUDE.
 default_config = "armv8.config"
 
 [[sources]]
@@ -44,7 +44,7 @@ aliases = ["n1"]
 platform = "arm"
 source = "armv8"
 profile = "generic"
-config = "armv8.config"
+config = "s905d.config"
 packager = "arm"
 target = "armsr/armv8"
 description = "Amlogic S905D / N1"
@@ -55,7 +55,7 @@ aliases = ["h6-vplus"]
 platform = "arm"
 source = "armv8"
 profile = "generic"
-config = "armv8.config"
+config = "vplus.config"
 packager = "arm"
 target = "armsr/armv8"
 description = "H6 V-Plus"

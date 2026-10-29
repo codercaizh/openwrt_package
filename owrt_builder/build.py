@@ -1372,7 +1372,6 @@ class BuildEngine:
         mediatek_target_lines = [
             "CONFIG_TARGET_mediatek_filogic=y\n",
             f"CONFIG_TARGET_mediatek_filogic_DEVICE_{spec.profile}=y\n",
-            f"CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_{spec.profile}=y\n",
             f'CONFIG_TARGET_PROFILE="DEVICE_{spec.profile}"\n',
         ] if spec.packager == "mediatek" else []
         target_symbols = {
@@ -1488,6 +1487,24 @@ class BuildEngine:
             heartbeat_label="make defconfig",
             heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
         )
+        # Kconfig may silently drop stale or unsatisfied positive selections.
+        # Compare against the native resolved config before downloading or
+        # compiling large toolchains.  Do not reject optional explicit 'n'
+        # selections: a dependency may legitimately force them on.
+        requested_config = parse_config(config_path)
+        resolved_config = parse_config(openwrt_dir / ".config")
+        missing_selections = [
+            f"{entry.symbol} requested={entry.value} actual={resolved_config.get(entry.symbol, 'n')}"
+            for entry in requested_config.entries
+            if entry.value in {"y", "m"}
+            and (entry.symbol.startswith("CONFIG_PACKAGE_") or entry.symbol.startswith("CONFIG_TARGET_"))
+            and resolved_config.get(entry.symbol, "n") != entry.value
+        ]
+        if missing_selections:
+            raise BuildError(
+                "make defconfig dropped requested selections: "
+                + "; ".join(missing_selections[:25])
+            )
         self._run_checked(
             ["make", "download"],
             cwd=openwrt_dir,
