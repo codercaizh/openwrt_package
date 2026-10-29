@@ -50,7 +50,7 @@ from .cleanup import (
     workspace_build_lock,
     workspace_cleanup_lock,
 )
-from .configuration import parse_config
+from .configuration import compose_fragment, parse_config
 from .devices import DeviceCatalog, DeviceSpec, load_catalog
 from .notifications import NotificationSettings, PushPlusNotifier
 from .paths import repository_root, static_path
@@ -1058,7 +1058,7 @@ def _fragment_defaults(runtime: Runtime, spec: DeviceSpec, catalog: Sequence[dic
         raise RuntimeNotReady("设备配置路径越界")
     if not path.is_file():
         raise RuntimeNotReady(f"设备配置不存在：{spec.config}")
-    document = parse_config(path)
+    document = parse_config(compose_fragment(path))
     packages: list[str] = []
     options: dict[str, Any] = {}
     package_names = {

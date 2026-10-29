@@ -54,3 +54,19 @@ def test_missing_include_is_reported(tmp_path: Path) -> None:
     path.write_text("#CONFIG_INCLUDE=not-here.config\n")
     with pytest.raises(ConfigurationError, match="included config not found"):
         compose_fragment(path)
+
+
+def test_web_defaults_expand_shared_device_profile() -> None:
+    from owrt_builder.web import _fragment_defaults
+
+    devices = load_catalog(CONFIGS / "devices.toml")
+    runtime = type("RuntimeStub", (), {"devices": devices})()
+    catalog = [
+        {"name": name, "symbol": f"CONFIG_PACKAGE_{name}", "options": []}
+        for name in ("parted", "luci-app-passwall", "luci-app-amlogic")
+    ]
+    for device, has_amlogic in (("s905d", True), ("vplus", False)):
+        packages, _ = _fragment_defaults(runtime, devices.resolve(device), catalog)
+        assert "parted" in packages
+        assert "luci-app-passwall" in packages
+        assert ("luci-app-amlogic" in packages) is has_amlogic
