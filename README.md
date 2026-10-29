@@ -183,6 +183,8 @@ UID；编译容器不使用 host network。
 此分支的全部设备都固定使用官方 `v25.12.2` 发布标签。
 官方固件修复集中在与 `configs/` 同级的 [fix_bugs/](fix_bugs/README.md)，源码准备时自动执行。
 当前回移官方 Linux 6.12 conntrack 通知链修复，解决 FullCone 与 nlbwmon 的事件订阅冲突。
+同时回移固定版本的 MediaTek PPE 计数修复，处理约 4 GiB 虚增、过期计数重复累计和连接结束漏计；
+上游候选 PR、Linux 6.12 适配及实机验证要求见 `fix_bugs/README.md`。
 不携带 237 / Linux 6.6 特有的 IPTV/HNAT 内核补丁。
 迁移细节、插件来源、配置验证与 n2 部署见
 [25.12.2 迁移运行手册](docs/immortalwrt-25.12.2-migration.md)。

@@ -22,6 +22,13 @@ def official_source(root: Path) -> Path:
     makefile = root / "package/network/utils/fullconenat-nft/Makefile"
     makefile.parent.mkdir(parents=True)
     makefile.write_text("KCONFIG:=CONFIG_NF_CONNTRACK_EVENTS=y CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y\n")
+    mediatek = root / "target/linux/mediatek/Makefile"
+    mediatek.parent.mkdir(parents=True)
+    mediatek.write_text("KERNEL_PATCHVER:=6.12\n")
+    shutil.copytree(
+        ROOT / "tests/fixtures/ppe-accounting/baseline-patches",
+        root / "target/linux/generic/pending-6.12",
+    )
     return root
 
 
@@ -37,6 +44,8 @@ def test_official_fix_is_idempotent_and_fullcone_controls_enablement(tmp_path: P
     assert config.count("# CONFIG_NF_CONNTRACK_CHAIN_EVENTS is not set") == 1
     assert "CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y" not in config
     assert (source / local_patches.FIX_STAMP).read_text().strip() == fingerprint
+    for patch in (ROOT / "fix_bugs/patches").glob("7*.patch"):
+        assert (source / "target/linux/generic/pending-6.12" / patch.name).read_bytes() == patch.read_bytes()
 
 
 def test_existing_different_upstream_patch_is_rejected_without_overwrite(tmp_path: Path) -> None:

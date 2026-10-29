@@ -1,0 +1,2 @@
+# Preserve the official unified-diff context exactly.
+baseline-patches/*.patch -whitespace

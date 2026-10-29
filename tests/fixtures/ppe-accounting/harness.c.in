@@ -1,0 +1,188 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Research harness: original Linux/ImmortalWrt functions with mocked PPE IO.
+ * Includes code by the Linux and OpenWrt/ImmortalWrt contributors.
+ * Candidate fix: OpenWrt PR 26107, head 3be1a0c4619d433c1ee8aa95d8de9459e6587b74.
+ * This does not test an actual router, locking, MMIO, or packet forwarding.
+ */
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+typedef uint64_t u64;
+typedef uint32_t u32;
+typedef uint16_t u16;
+struct mtk_foe_accounting { u64 bytes, packets; };
+struct mtk_foe_entry { u32 ib1; };
+struct mtk_flow_entry {
+    u64 packets, bytes, prev_packets, prev_bytes;
+    u16 hash;
+    int ppe_index;
+    struct mtk_foe_entry data;
+};
+struct mtk_eth;
+struct mtk_ppe { struct mtk_eth *eth; };
+struct mtk_eth { int flow_table; struct mtk_ppe *ppe[1]; };
+struct flow_stats { u64 pkts, bytes, lastused; };
+struct flow_cls_offload { unsigned long cookie; struct flow_stats stats; };
+static struct mtk_flow_entry live;
+static struct mtk_foe_entry hardware;
+static struct mtk_foe_accounting cached;
+static struct mtk_ppe ppe;
+static struct mtk_eth eth = { .ppe = { &ppe } };
+static bool fixed, expired;
+static u64 target_packets, target_bytes;
+#define mtk_flow_ht_params 0
+#define jiffies 1000ULL
+#define HZ 100ULL
+#define MTK_FOE_IB1_STATE 1
+#define MTK_FOE_STATE_BIND 1
+#define FIELD_GET(mask, value) ((value) & (mask))
+static void *rhashtable_lookup(void *table, void *cookie, int params)
+{ (void)table; (void)cookie; (void)params; return &live; }
+static struct mtk_foe_entry *mtk_foe_get_entry(struct mtk_ppe *p, u16 hash)
+{ (void)p; (void)hash; return &hardware; }
+static int mtk_flow_entry_match_len(struct mtk_eth *e, struct mtk_foe_entry *data)
+{ (void)e; (void)data; return sizeof(hardware); }
+static bool mtk_flow_entry_match(struct mtk_eth *e, struct mtk_flow_entry *entry,
+                                struct mtk_foe_entry *foe, int len)
+{ (void)e; (void)entry; (void)foe; (void)len; return !expired; }
+static struct mtk_foe_accounting *mtk_ppe_acct_data(struct mtk_ppe *p, u16 hash)
+{ (void)p; (void)hash; return &cached; }
+static struct mtk_foe_accounting *mtk_ppe_mib_entry_read(struct mtk_ppe *p, u16 hash)
+{ (void)p; (void)hash; return &cached; }
+@@ORIGINAL_UPDATE@@
+@@FIXED_DETACH@@
+@@FIXED_UPDATE@@
+
+static void mtk_foe_entry_get_stats(struct mtk_ppe *p, struct mtk_flow_entry *entry,
+                                   int *idle)
+{
+    *idle = 0;
+    if (!expired) {
+        entry->packets = target_packets;
+        entry->bytes = target_bytes;
+        return;
+    }
+    entry->packets = entry->prev_packets;
+    entry->bytes = entry->prev_bytes;
+    if (fixed)
+        mtk_flow_entry_update_after(p, entry, &entry->packets, &entry->bytes);
+    else
+        mtk_flow_entry_update_before(p, entry, &entry->packets, &entry->bytes);
+}
+/* Keep the actual conntrack API's unsigned-int argument boundary. */
+static void account(u64 *packets, u64 *bytes, unsigned int dp, unsigned int db)
+{ *packets += dp; *bytes += db; }
+@@ORIGINAL_STATS@@
+@@FIXED_STATS@@
+
+/* Exercise the real delete worker with a pending hardware counter. */
+struct nf_conn { unsigned long status; };
+struct flow_offload { struct nf_conn *ct; unsigned long flags; };
+struct nf_flowtable { unsigned int flags; };
+struct flow_offload_work { struct flow_offload *flow; struct nf_flowtable *flowtable; };
+#define NF_FLOWTABLE_COUNTER 1
+#define IPS_HW_OFFLOAD_BIT 0
+#define NF_FLOW_HW_BIDIRECTIONAL 1
+#define NF_FLOW_HW_DEAD 2
+#define FLOW_OFFLOAD_DIR_ORIGINAL 0
+#define FLOW_OFFLOAD_DIR_REPLY 1
+static u64 pending_hardware_bytes, final_accounted_bytes;
+static unsigned int deleted_directions;
+static bool test_bit(unsigned int bit, const unsigned long *value)
+{ return !!(*value & (1UL << bit)); }
+static void clear_bit(unsigned int bit, unsigned long *value)
+{ *value &= ~(1UL << bit); }
+static void set_bit(unsigned int bit, unsigned long *value)
+{ *value |= 1UL << bit; }
+static void flow_offload_work_stats(struct flow_offload_work *work)
+{
+    assert(test_bit(IPS_HW_OFFLOAD_BIT, &work->flow->ct->status));
+    final_accounted_bytes += pending_hardware_bytes;
+    pending_hardware_bytes = 0;
+}
+static void flow_offload_tuple_del(struct flow_offload_work *work, int direction)
+{
+    (void)work; (void)direction;
+    pending_hardware_bytes = 0;
+    deleted_directions++;
+}
+@@ORIGINAL_DELETE@@
+@@FIXED_DELETE@@
+
+static void check_final_accounting(void)
+{
+    for (int mode = 0; mode < 2; mode++) {
+        for (int counters = 0; counters < 2; counters++) {
+            struct nf_conn ct = { .status = 1UL << IPS_HW_OFFLOAD_BIT };
+            struct flow_offload flow = { .ct = &ct, .flags = 1UL << NF_FLOW_HW_BIDIRECTIONAL };
+            struct nf_flowtable table = { .flags = counters ? NF_FLOWTABLE_COUNTER : 0 };
+            struct flow_offload_work work = { .flow = &flow, .flowtable = &table };
+            pending_hardware_bytes = 1280;
+            final_accounted_bytes = 0;
+            deleted_directions = 0;
+            if (mode) flow_offload_work_del_after(&work);
+            else flow_offload_work_del_before(&work);
+            assert(final_accounted_bytes == ((mode && counters) ? 1280ULL : 0ULL));
+            assert(deleted_directions == 2);
+            assert(!test_bit(IPS_HW_OFFLOAD_BIT, &ct.status));
+            assert(test_bit(NF_FLOW_HW_DEAD, &flow.flags));
+        }
+    }
+}
+
+int main(void)
+{
+    struct flow_cls_offload f;
+    u64 packets, bytes;
+    ppe.eth = &eth;
+    for (int mode = 0; mode < 2; mode++) {
+        fixed = mode;
+        expired = false;
+        live = (struct mtk_flow_entry){ .packets = 722, .bytes = 51262, .hash = 7 };
+        target_packets = target_bytes = 0;
+        f = (struct flow_cls_offload){};
+        packets = 759; bytes = 53371;
+        if (fixed) mtk_flow_offload_stats_after(&eth, &f);
+        else mtk_flow_offload_stats_before(&eth, &f);
+        account(&packets, &bytes, f.stats.pkts, f.stats.bytes);
+        printf("decreasing total, %s: conntrack packets=%llu bytes=%llu\n",
+               fixed ? "candidate" : "stock",
+               (unsigned long long)packets, (unsigned long long)bytes);
+        assert(packets == (fixed ? 759ULL : 4294967333ULL));
+        assert(bytes == (fixed ? 53371ULL : 4294969405ULL));
+    }
+    for (int mode = 0; mode < 2; mode++) {
+        fixed = mode;
+        expired = true;
+        live = (struct mtk_flow_entry){ .hash = 7 };
+        cached = (struct mtk_foe_accounting){ .packets = 100, .bytes = 10000 };
+        packets = bytes = 0;
+        for (int poll = 0; poll < 3; poll++) {
+            f = (struct flow_cls_offload){};
+            if (fixed) mtk_flow_offload_stats_after(&eth, &f);
+            else mtk_flow_offload_stats_before(&eth, &f);
+            account(&packets, &bytes, f.stats.pkts, f.stats.bytes);
+        }
+        printf("same expired slot, three polls, %s: packets=%llu bytes=%llu\n",
+               fixed ? "candidate" : "stock",
+               (unsigned long long)packets, (unsigned long long)bytes);
+        assert(packets == (fixed ? 100ULL : 300ULL));
+        assert(bytes == (fixed ? 10000ULL : 30000ULL));
+    }
+    for (int mode = 0; mode < 2; mode++) {
+        fixed = mode;
+        expired = false;
+        live = (struct mtk_flow_entry){ .packets = 100, .bytes = 10000, .hash = 7 };
+        target_packets = 125; target_bytes = 12500;
+        f = (struct flow_cls_offload){};
+        if (fixed) mtk_flow_offload_stats_after(&eth, &f);
+        else mtk_flow_offload_stats_before(&eth, &f);
+        assert(f.stats.pkts == 25 && f.stats.bytes == 2500);
+    }
+    check_final_accounting();
+    puts("PASS: ten stock/patched cases, including final counters and HW_DEAD state");
+    return 0;
+}

@@ -1,0 +1,44 @@
+Subject: [PATCH] netfilter: fetch final hardware counters before flow removal (Linux 6.12)
+
+Backport the final accounting request from OpenWrt PR 26107 / 26081.
+Keep the Linux 6.12 NF_FLOW_HW_DEAD transition after hardware deletion.
+The PR targets 6.18, whose delete worker no longer has that statement.
+
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -987,15 +987,6 @@
+ 	nf_flow_offload_destroy(flow_rule);
+ }
+ 
+-static void flow_offload_work_del(struct flow_offload_work *offload)
+-{
+-	clear_bit(IPS_HW_OFFLOAD_BIT, &offload->flow->ct->status);
+-	flow_offload_tuple_del(offload, FLOW_OFFLOAD_DIR_ORIGINAL);
+-	if (test_bit(NF_FLOW_HW_BIDIRECTIONAL, &offload->flow->flags))
+-		flow_offload_tuple_del(offload, FLOW_OFFLOAD_DIR_REPLY);
+-	set_bit(NF_FLOW_HW_DEAD, &offload->flow->flags);
+-}
+-
+ static void flow_offload_tuple_stats(struct flow_offload_work *offload,
+ 				     enum flow_offload_tuple_dir dir,
+ 				     struct flow_stats *stats)
+@@ -1030,6 +1021,19 @@
+ 				       FLOW_OFFLOAD_DIR_REPLY,
+ 				       stats[1].pkts, stats[1].bytes);
+ 	}
++}
++
++static void flow_offload_work_del(struct flow_offload_work *offload)
++{
++	/* Account for traffic since the last statistics poll. */
++	if (offload->flowtable->flags & NF_FLOWTABLE_COUNTER)
++		flow_offload_work_stats(offload);
++
++	clear_bit(IPS_HW_OFFLOAD_BIT, &offload->flow->ct->status);
++	flow_offload_tuple_del(offload, FLOW_OFFLOAD_DIR_ORIGINAL);
++	if (test_bit(NF_FLOW_HW_BIDIRECTIONAL, &offload->flow->flags))
++		flow_offload_tuple_del(offload, FLOW_OFFLOAD_DIR_REPLY);
++	set_bit(NF_FLOW_HW_DEAD, &offload->flow->flags);
+ }
+ 
+ static void flow_offload_work_handler(struct work_struct *work)
