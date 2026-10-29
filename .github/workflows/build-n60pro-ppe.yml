@@ -1,0 +1,13 @@
+name: N60 Pro PPE accounting fix build
+run-name: N60 Pro with PPE accounting fixes
+on:
+  push:
+    branches:
+      - codex/n60pro-ppe-build-20261029
+permissions:
+  contents: read
+jobs:
+  firmware:
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro
