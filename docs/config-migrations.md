@@ -24,6 +24,9 @@ Kenzo 当前提供 `luci-theme-argon`，不再提供旧拼写
 旧配置中仅用于排除已经不存在的 `luci-app-ssr-plus`、
 `luci-app-accesscontrol` 或不存在的 `ddns-scripts` 子选项的行也已移除。
 
+N60 Pro 的默认固件不再预装 `luci-app-lucky`（以及其依赖的 Lucky 核心）。
+Lucky 上游 Feed 仍供 360T7 和 ARMv8 使用，因此不从全局 Feed 列表删除。
+
 ## ARMv8
 
 ARMv8 默认配置与 ImmortalWrt `openwrt-25.12` 快照的生成元数据保持一致。
