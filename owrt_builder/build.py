@@ -2140,6 +2140,7 @@ class BuildEngine:
             Path("owrt_builder"),
             Path("configs"),
             Path("scripts"),
+            Path("fix_bugs"),
         )
         files: list[Path] = []
         ignored = {".git", ".owrt", ".owrt-web", ".venv", "__pycache__"}

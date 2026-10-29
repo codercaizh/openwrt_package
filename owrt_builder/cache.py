@@ -28,6 +28,7 @@ import uuid
 from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .sources import SourceError, stage_download_seeds
+from .local_patches import FIX_STAMP
 
 
 LogCallback = Callable[[str], None]
@@ -1225,6 +1226,8 @@ class BuildCacheManager:
         expensive incremental state.  All other source files are replaced by
         the immutable prepared snapshot, which also removes files deleted by
         an upstream update.  The device lock is held by ``lease`` throughout.
+        A changed firmware fix bundle clears target state so a prepared old
+        kernel cannot survive the refresh; host tools/toolchains are retained.
         """
 
         if not snapshot_path.is_dir():
@@ -1246,6 +1249,21 @@ class BuildCacheManager:
             ready=False,
         )
         preserve = {"build_dir", "staging_dir", "dl"}
+        old_stamp = destination / FIX_STAMP
+        new_stamp = snapshot_path / FIX_STAMP
+        fixes_changed = (
+            (old_stamp.read_bytes() if old_stamp.is_file() else b"")
+            != (new_stamp.read_bytes() if new_stamp.is_file() else b"")
+        )
+        if fixes_changed:
+            for name in ("build_dir", "staging_dir"):
+                parent = destination / name
+                if parent.is_symlink():
+                    raise BuildCacheError(f"target cache parent must not be a symlink: {parent}")
+                for target in parent.glob("target-*"):
+                    _remove_tree(target)
+            if callback:
+                callback("固件修复内容变化：清除内核及目标软件包缓存，保留宿主工具、工具链和下载缓存")
         if callback:
             callback(
                 f"更新 {lease.device} 编译缓存源码: "

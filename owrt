@@ -66,6 +66,7 @@ builder_context_fingerprint() {
             printf '%s\0' requirements.txt pyproject.toml
             local context_dirs=(docker owrt_builder configs)
             [[ ! -d scripts ]] || context_dirs+=(scripts)
+            [[ ! -d fix_bugs ]] || context_dirs+=(fix_bugs)
             find "${context_dirs[@]}" -type f \
                 ! -path '*/__pycache__/*' ! -name '*.pyc' ! -name '*.pyo' -print0
         } | sort -z \

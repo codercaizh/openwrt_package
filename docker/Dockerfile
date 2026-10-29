@@ -47,6 +47,7 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir -r requirement
 COPY owrt_builder ./owrt_builder
 COPY configs ./configs
 COPY scripts ./scripts
+COPY fix_bugs ./fix_bugs
 COPY docs ./docs
 COPY docker ./docker
 ENV PYTHONDONTWRITEBYTECODE=1 \

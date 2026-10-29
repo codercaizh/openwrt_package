@@ -12,6 +12,7 @@
 | `owrt_builder/web_support/` | Web 的 DTO、catalog 适配和 Runtime 装配 | 保持 FastAPI 入口在 `web.py`；只依赖核心模块，不反向依赖路由 |
 | `owrt_builder/static/` | Web 页面资源 | 通过 Python 包数据随 wheel 和 Web 镜像发布 |
 | `configs/` | 设备目录和配置片段 | 只放审查过的设备/构建输入，不写入运行时状态 |
+| `fix_bugs/` | 官方固件问题修复脚本及固定补丁 | 按编号执行、可重复运行；内容指纹参与源码及编译缓存失效 |
 | `scripts/`、`docker/`、`deploy/` | 启动、构建镜像和部署 | 只负责环境边界，不复制构建业务逻辑 |
 | `tests/` | CLI、Web、核心和部署契约 | 优先通过公开入口和注入依赖测试，避免依赖真实 Docker 或网络 |
 
@@ -80,7 +81,9 @@ DTO 的 `jobs`。只有最终 `make` 编译阶段使用 `-jN`，defconfig 和 do
 
 编译工作树按规范设备保存为 `workspace/cache/builds/<device>`，同设备由 flock
 串行访问，元数据原子替换。新源码快照会同步到现有树，同时保留 `build_dir`、
-`staging_dir` 和共享 `cache/dl`；失败或取消在完成前保持 `ready=false`。没有复用
+`staging_dir` 和共享 `cache/dl`。若 `.owrt-fix-bugs` 指纹变化，则先清除
+`build_dir/target-*`、`staging_dir/target-*`，强制重建内核和目标软件包，保留宿主工具、
+工具链及下载缓存；失败或取消在完成前保持 `ready=false`。没有复用
 或设备缓存不存在时，估算值优先采用同设备历史占用，其次采用其他编译树的保守最大
 值，完全没有样本时使用 8 GiB。空间不足时按创建时间 FIFO 淘汰其他缓存；每个候选
 删除前都要取得其设备 flock，锁忙则跳过。旧版本的 `builds/<task-id>/openwrt`

@@ -7,6 +7,7 @@ import pytest
 
 from owrt_builder.build import BuildRequest, logical_cpu_count
 from owrt_builder.cache import BuildCacheError, BuildCacheManager
+from owrt_builder.local_patches import FIX_STAMP
 
 
 def _resolver(value: str) -> str:
@@ -111,6 +112,42 @@ def test_device_cache_reuses_across_snapshot_updates_and_preserves_incremental_d
     )
     assert metadata["snapshot_id"] == "new-snapshot"
     assert metadata["ready"] is True
+
+
+@pytest.mark.parametrize("old_fix,new_fix,cleared", [
+    (None, "fix-v1", True),
+    ("fix-v1", "fix-v2", True),
+    ("fix-v1", None, True),
+    ("fix-v1", "fix-v1", False),
+])
+def test_fix_bundle_changes_rebuild_targets_and_retain_toolchains(
+    tmp_path: Path, old_fix: str | None, new_fix: str | None, cleared: bool,
+) -> None:
+    manager = BuildCacheManager(tmp_path, default_estimate_bytes=1)
+    root = _ready_entry(manager, "n60pro", "first", created="2026-01-01T00:00:00+00:00") / "openwrt"
+    if old_fix is not None:
+        (root / FIX_STAMP).write_text(old_fix)
+    retained = ["build_dir/host", "build_dir/toolchain-aarch64", "staging_dir/host", "staging_dir/toolchain-aarch64"]
+    targets = ["build_dir/target-aarch64_musl/linux-mediatek/linux-6.12.103", "staging_dir/target-aarch64_musl"]
+    for relative in retained + targets:
+        path = root / relative
+        path.mkdir(parents=True)
+        (path / "cached-object").write_text("old binary")
+    manager.download_cache.mkdir(parents=True, exist_ok=True)
+    (manager.download_cache / "archive.tar.xz").write_text("download")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    if new_fix is not None:
+        (snapshot / FIX_STAMP).write_text(new_fix)
+    with manager.acquire("n60pro", "second", source_id="source", snapshot_id="new") as lease:
+        assert lease.reused
+        manager.refresh_source(lease, snapshot, source_id="source", snapshot_id="new", source_commit="commit")
+    for relative in retained:
+        assert (root / relative / "cached-object").is_file()
+    for relative in targets:
+        assert (root / relative / "cached-object").exists() is not cleared
+    assert (manager.download_cache / "archive.tar.xz").read_text() == "download"
+    assert (root / FIX_STAMP).exists() is (new_fix is not None)
 
 
 def test_legacy_download_migration_drops_symlinks_and_keeps_regular_files(tmp_path: Path) -> None:

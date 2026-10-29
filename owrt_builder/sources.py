@@ -50,7 +50,8 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # Version 13 switches to official ImmortalWrt v25.12.2.  Version 14 replaces
 # the incompatible moving Tailscale recipe with its Go 1.26-compatible pin.
 # Version 15 restores the Go 1.27 upgrade and tracks latest stable Tailscale.
-PREPARATION_VERSION = 15
+# Version 16 installs the reviewed fix_bugs bundle and its compiler-cache stamp.
+PREPARATION_VERSION = 16
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 
@@ -837,6 +838,8 @@ class SourceManager:
             self._clone(spec, source_path)
             source_commit = self._source_commit(source_path)
             local_patch_id = install_local_patches(source_path, source_id)
+            if local_patch_id:
+                _emit(status, "source", f"applied firmware fixes {local_patch_id}")
             _emit(status, "source", f"checked out {source_commit}", commit=source_commit)
 
             if feed_preparer is None:

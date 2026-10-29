@@ -23,6 +23,7 @@ def test_web_stage_has_docker_cli_and_worker_stage_does_not() -> None:
     assert "docker.io" not in worker
     assert "TZ=Asia/Shanghai" in dockerfile
     assert "ENV TZ=Asia/Shanghai" in worker
+    assert "COPY fix_bugs ./fix_bugs" in web
 
 
 def test_web_compose_mounts_host_docker_socket() -> None:
@@ -234,3 +235,16 @@ def test_fallback_doctor_handles_optional_scripts_in_fresh_checkout(tmp_path: Pa
     (repo / "scripts").mkdir()
     (repo / "scripts" / "example.sh").write_text("example\n")
     assert fingerprint() != without_scripts
+    with_scripts = fingerprint()
+    (repo / "fix_bugs").mkdir()
+    fix = repo / "fix_bugs/010-example.sh"
+    fix.write_text("first fix\n")
+    assert fingerprint() != with_scripts
+    from owrt_builder.build import BuildEngine
+
+    engine = BuildEngine(repo, tmp_path / "work", use_docker=False)
+    python_fingerprint = engine._context_fingerprint()
+    shell_fingerprint = fingerprint()
+    fix.write_text("changed fix\n")
+    assert engine._context_fingerprint() != python_fingerprint
+    assert fingerprint() != shell_fingerprint
