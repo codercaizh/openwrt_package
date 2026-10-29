@@ -188,6 +188,34 @@ def compose_fragment(
     return append_text + "\n" + fragment_text
 
 
+def _expand_config_includes(path: Path, parents: frozenset[Path] = frozenset()) -> str:
+    """Expand sibling config fragments, rejecting path traversal and cycles.
+
+    Included packages remain part of the editable device fragment, unlike
+    CONFIG_APPEND which is a hardware baseline.
+    """
+    resolved = path.resolve()
+    if resolved in parents:
+        raise ConfigurationError(f"cyclic CONFIG_INCLUDE at {path}")
+    if not path.is_file():
+        raise ConfigurationError(f"included config not found: {path}")
+    ancestors = parents | {resolved}
+    output: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
+        if line.lstrip().startswith("#CONFIG_INCLUDE="):
+            match = re.fullmatch(r"\s*#CONFIG_INCLUDE=([A-Za-z0-9_.-]+\.config)\s*", line)
+            if match is None:
+                raise ConfigurationError(f"invalid CONFIG_INCLUDE in {path}: {line.strip()}")
+            child = path.parent / match.group(1)
+            if child.resolve().parent != resolved.parent:
+                raise ConfigurationError(f"CONFIG_INCLUDE escapes directory: {child}")
+            output.append(_expand_config_includes(child, ancestors))
+            output.append("\n")
+        else:
+            output.append(line)
+    return "".join(output)
+
+
 def compose_fragment_parts(
     fragment: str | os.PathLike[str],
     *,
@@ -202,7 +230,7 @@ def compose_fragment_parts(
     """
 
     path = Path(fragment)
-    text = path.read_text(encoding="utf-8")
+    text = _expand_config_includes(path)
     match = re.search(r"^\s*#CONFIG_APPEND=([^\s#]+)\s*$", text, flags=re.MULTILINE)
     if not match:
         return "", text
