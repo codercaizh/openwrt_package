@@ -102,3 +102,15 @@ git status --short --branch
 - 此次修复验证：全套 Python 测试 `140 passed`；实际从 OpenWrt 上游稀疏拉取固定提交，核对 Tailscale `1.102.3` 源码包与配方的 SHA256 一致，并从该归档中读取 `go.mod` 确认要求 Go `1.26.6`。完整固件编译仍以新任务最终结果为准。
 - 用户随后要求采用最新 Tailscale，上一条降级方案由本条取代：恢复原分支 Go `27.x` feed，撤销 Tailscale 提交固定，加入官方最新稳定 release 同步和归档 Go 版本检查；本次确认 Go `1.27.3` / Tailscale `1.104.4`。准备版本升至 15，使之前固定 1.102.3 的快照失效；旧服务器任务 `e26bdc891d494793b2cdc9ffa9287d9d` 已取消，旧 Actions run `40640471934` 已请求取消。
 - 最新版本方案验证：`143 passed`；实际生成源码快照 `dda90379afb26a2af2465de10690502d4ae7482ec94811c097795bdaede9954e`，Go feed 提交为 `cd8953c31e0f64ea2853f87bb0f32256646a160d`，Tailscale release 提交为 `27047635f237d1f3e0b08c0f487674757f30d2f7`。N60 Pro 原生 `make defconfig` 通过，Tailscale、其社区 LuCI、PassWall、Pushbot、FRPC、Lucky 均保留选中；原生 packageinfo 确认 Tailscale `1.104.4` 和 Go `1.27.3`。完整固件编译仍待新任务完成。
+
+
+## 8. 2026-10-29 360T7 / ARMv8 目标配置审查
+
+以官方 v25.12.2 + 既有外部 feeds 为基础，360T7 配置清理重复主题和少用工具，
+增添 nlbwmon/Watchcat，保留普通版 `qihoo_360t7`（并非 UBI 版）设备 profile。
+N1/H6 使用 `#CONFIG_INCLUDE` 复用 ARM 通用软件包，并独立保留 N1 的
+Amlogic 管理插件。ARM 不再强制构建会被 Packit 替换的文件系统 kmod，
+但实际运行时模块必须来自 `kernel_stable` 对应 kernel release。
+构建任务现将显式请求但被 `make defconfig` 忽略的 `CONFIG_PACKAGE_*`
+及 `CONFIG_TARGET_*` 的 y/m 视为错误。此检查不能代替完整固件打包、
+第三方 APK/OPKG 兼容性检查与真机启动验证。

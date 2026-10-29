@@ -26,10 +26,16 @@
 | --- | --- | --- | --- | --- |
 | `360t7` | `360-t7`, `qihoo_360t7` | `immortalwrt-25.12-mediatek` | `360t7.config` | 路由默认配置 |
 | `netcore_n60-pro` | `n60pro`, `n60-pro`, `netcore-n60-pro`, `netcore_n60_pro` | `immortalwrt-25.12-mediatek` | `n60pro.config` | 路由默认配置，N60 Pro 真机验收 |
-| `s905d` | `n1` | `armv8` | `armv8.config` | 盒子通用配置；`s905` 是不同设备，不作为别名 |
-| `vplus` | `h6-vplus` | `armv8` | `armv8.config` | 盒子通用配置 |
+| `s905d` | `n1` | `armv8` | `s905d.config` | 包含 armv8.config，启用 Amlogic 管理；s905 非别名 |
+| `vplus` | `h6-vplus` | `armv8` | `vplus.config` | 包含 armv8.config，不预装 Amlogic 管理 |
 
 源码仓库和分支是 `SourceSpec` 的常量；准备完成后以 git 实际 `HEAD` 作为 snapshot 的 source commit。接口不接受用户输入的 commit。snapshot 目录不可变，`current` 只是原子替换的符号链接；正在编译的任务只使用其创建时返回的 `PreparedSource.path`/`snapshot_id`，后续 feed 更新不会改变它。
+
+设备配置可用 `#CONFIG_INCLUDE=armv8.config` 包含同目录的公共配置。
+`compose_fragment_parts` 展开 include 时禁止路径越界、符号链接越界和循环引用；
+它与硬件基线 `CONFIG_APPEND` 不同，包含的 package 仍可由 Web 显式选择替换。
+实际构建完成原生 `make defconfig` 后，若显式要求的 package/target
+`y/m` 被 Kconfig 丢弃，则在下载和长时间编译前报错。
 
 ## Feed
 
