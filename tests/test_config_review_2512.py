@@ -71,3 +71,11 @@ def test_web_defaults_expand_shared_device_profile() -> None:
         assert "parted" in packages
         assert "luci-app-passwall" in packages
         assert ("luci-app-amlogic" in packages) is has_amlogic
+
+@pytest.mark.parametrize("device", ["360t7", "n60pro", "armv8", "s905d", "vplus"])
+def test_all_firmware_configs_include_packet_capture_and_network_diagnostics(device: str) -> None:
+    data = parse_config(compose_fragment(CONFIGS / f"{device}.config"))
+    for package in ("tcpdump", "iftop", "ethtool", "conntrack", "mtr-nojson", "ip-bridge"):
+        assert data[f"CONFIG_PACKAGE_{package}"] == "y", (device, package)
+    # The full tcpdump variant provides the capture binary; avoid bundling mini too.
+    assert data.get("CONFIG_PACKAGE_tcpdump-mini") != "y"
