@@ -77,13 +77,26 @@ packager = "ramips"
 target = "ramips/mt7621"
 description = "Xiaomi Mi Router 3G (R3G, NAND; not R3G v2)"
 
+# Full router mode: keep the old "k2p" key for backward compatibility.
 [[devices]]
 key = "k2p"
-aliases = ["phicomm-k2p", "phicomm_k2p", "k2p-a1", "k2p-a2"]
+aliases = ["phicomm-k2p", "phicomm_k2p", "k2p-a1", "k2p-a2", "k2p-router"]
 platform = "ramips"
 source = "immortalwrt-25.12-ramips"
 profile = "phicomm_k2p"
 config = "k2p.config"
 packager = "ramips"
 target = "ramips/mt7621"
-description = "Phicomm K2P A1/A2 (MediaTek; not Broadcom B1)"
+description = "Phicomm K2P A1/A2 — ROUTER (PassWall, DHCP, firewall)"
+
+# AP variant uses the same board DTS but a separate config and artifact.
+[[devices]]
+key = "k2p-ap"
+aliases = ["phicomm-k2p-ap", "k2p-bridge", "k2p-ap-only"]
+platform = "ramips"
+source = "immortalwrt-25.12-ramips"
+profile = "phicomm_k2p"
+config = "k2p-ap.config"
+packager = "ramips"
+target = "ramips/mt7621"
+description = "Phicomm K2P A1/A2 — AP (bridge, capture tools, no router services)"

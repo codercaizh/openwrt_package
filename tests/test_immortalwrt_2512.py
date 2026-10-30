@@ -93,7 +93,7 @@ def test_ramips_config_generation_uses_native_profile_without_duplicates(tmp_pat
     build_dir = tmp_path / "build"
     build_dir.mkdir()
     catalog = Catalog(root=source, packages=[], authoritative=True)
-    for device in ("r3g", "k2p"):
+    for device in ("r3g", "k2p", "k2p-ap"):
         spec = engine.catalog.resolve(device)
         generated = engine._write_config(
             spec, engine.catalog.source_for(spec), source, build_dir,
@@ -125,7 +125,8 @@ def test_ramips_packager_collects_only_correct_device_images(tmp_path: Path) -> 
     artifact_dir.mkdir()
     for device, wanted in (
         ("r3g", {r3g.name, recovery.name}),
-        ("k2p", {k2p.name}),
+        ("k2p", {k2p.name.replace("-sysupgrade.bin", "-router-sysupgrade.bin")}),
+        ("k2p-ap", {k2p.name.replace("-sysupgrade.bin", "-ap-sysupgrade.bin")}),
     ):
         outputs = engine._package_ramips(
             engine.catalog.resolve(device), tmp_path / "source",
@@ -146,12 +147,14 @@ def test_k2p_ap_validation_rejects_router_services_after_defconfig(tmp_path: Pat
     from owrt_builder.configuration import parse_config
 
     engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
-    k2p = engine.catalog.resolve("k2p")
+    k2p = engine.catalog.resolve("k2p-ap")
+    router = engine.catalog.resolve("k2p")
     r3g = engine.catalog.resolve("r3g")
     clean = parse_config("CONFIG_PACKAGE_tcpdump-mini=y\nCONFIG_PACKAGE_firewall4=n\n")
     engine._validate_ap_package_exclusions(k2p, clean)
     polluted = parse_config("CONFIG_PACKAGE_luci=y\nCONFIG_PACKAGE_dnsmasq-full=y\n")
     with pytest.raises(BuildError, match="luci, dnsmasq-full"):
         engine._validate_ap_package_exclusions(k2p, polluted)
-    # Other devices retain their independent router package policy.
+    # Router variant and other devices retain their full router package policy.
+    engine._validate_ap_package_exclusions(router, polluted)
     engine._validate_ap_package_exclusions(r3g, polluted)

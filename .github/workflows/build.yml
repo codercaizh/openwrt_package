@@ -14,6 +14,7 @@ on:
           - vplus
           - r3g
           - k2p
+          - k2p-ap
         default: n60pro
   workflow_call:
     inputs:

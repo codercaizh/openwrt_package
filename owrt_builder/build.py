@@ -1542,7 +1542,7 @@ class BuildEngine:
         Kconfig can re-enable a package through dependencies even when a
         reviewed fragment says '=n'. Catch this before costly compilation.
         """
-        if spec.key != "k2p":
+        if spec.key != "k2p-ap":
             return
         forbidden = (
             "luci", "luci-app-firewall", "luci-proto-ppp",
@@ -1820,7 +1820,14 @@ class BuildEngine:
             ))
         outputs = []
         for source in images:
-            dest = artifact_dir / source.name
+            filename = source.name
+            # Both K2P variants use one board profile and have identical
+            # upstream basenames. Tag exported images to avoid flashing the
+            # wrong AP/router build. Embedded fwtool metadata stays intact.
+            if spec.key in {"k2p", "k2p-ap"} and filename.endswith("-sysupgrade.bin"):
+                variant = "ap" if spec.key == "k2p-ap" else "router"
+                filename = filename.removesuffix("-sysupgrade.bin") + f"-{variant}-sysupgrade.bin"
+            dest = artifact_dir / filename
             shutil.copyfile(source, dest)
             os.utime(dest, None)
             outputs.append(dest)

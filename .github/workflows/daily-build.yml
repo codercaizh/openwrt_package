@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        device: [360t7, n60pro, s905d, vplus, r3g, k2p]
+        device: [360t7, n60pro, s905d, vplus, r3g, k2p, k2p-ap]
     uses: ./.github/workflows/build.yml
     with:
       device: ${{ matrix.device }}

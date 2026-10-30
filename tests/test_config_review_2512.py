@@ -83,7 +83,7 @@ def test_all_firmware_configs_include_packet_capture_and_network_diagnostics(dev
 
 @pytest.mark.parametrize(
     ("device", "profile"),
-    [("r3g", "xiaomi_mi-router-3g"), ("k2p", "phicomm_k2p")],
+    [("r3g", "xiaomi_mi-router-3g"), ("k2p", "phicomm_k2p"), ("k2p-ap", "phicomm_k2p")],
 )
 def test_ramips_profiles_have_exact_official_target(device: str, profile: str) -> None:
     catalog = load_catalog(CONFIGS / "devices.toml")
@@ -96,17 +96,17 @@ def test_ramips_profiles_have_exact_official_target(device: str, profile: str) -
     assert data["CONFIG_TARGET_ramips_mt7621"] == "y"
     assert data[f"CONFIG_TARGET_ramips_mt7621_DEVICE_{profile}"] == "y"
     assert data["CONFIG_TARGET_PROFILE"] == f'"DEVICE_{profile}"'
-    if device == "r3g":
-        assert data["CONFIG_PACKAGE_luci"] == "y"
-    else:
+    if device == "k2p-ap":
         assert data["CONFIG_PACKAGE_luci"] == "n"
         assert data["CONFIG_PACKAGE_luci-mod-admin-full"] == "y"
-    assert "CONFIG_PACKAGE_luci-app-passwall" not in data
+        assert "CONFIG_PACKAGE_luci-app-passwall" not in data
+    else:
+        assert data["CONFIG_PACKAGE_luci"] == "y"
     assert "CONFIG_PACKAGE_tailscale" not in data
 
 
 def test_k2p_is_a_minimal_ap_with_packet_capture() -> None:
-    config = parse_config(compose_fragment(CONFIGS / "k2p.config"))
+    config = parse_config(compose_fragment(CONFIGS / "k2p-ap.config"))
     for package in (
         "luci-base", "luci-mod-admin-full", "luci-theme-bootstrap",
         "uhttpd", "uhttpd-mod-ubus", "tcpdump-mini",
@@ -126,3 +126,31 @@ def test_k2p_is_a_minimal_ap_with_packet_capture() -> None:
         "htop", "luci-app-ttyd", "luci-app-passwall", "tailscale",
     ):
         assert config.get(f"CONFIG_PACKAGE_{package}") != "y", package
+
+
+def test_k2p_router_has_standard_services_and_only_passwall() -> None:
+    data = parse_config(compose_fragment(CONFIGS / "k2p.config"))
+    assert data["CONFIG_PACKAGE_luci"] == "y"
+    assert data["CONFIG_PACKAGE_luci-app-passwall"] == "y"
+    assert data["CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy"] == "y"
+    assert data["CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client"] == "y"
+    assert data["CONFIG_PACKAGE_tcpdump-mini"] == "y"
+    for core in ("Xray", "SingBox", "Hysteria", "SmartDNS", "V2ray_Geodata"):
+        assert data[f"CONFIG_PACKAGE_luci-app-passwall_INCLUDE_{core}"] == "n"
+    for pkg in ("luci-app-lucky", "luci-app-pushbot", "luci-app-ttyd", "tailscale"):
+        assert data.get(f"CONFIG_PACKAGE_{pkg}", "n") != "y"
+    for pkg in ("dnsmasq-full", "firewall4", "nftables", "odhcp6c",
+                "odhcpd-ipv6only", "ppp", "ppp-mod-pppoe", "wpad-openssl"):
+        assert data[f"CONFIG_PACKAGE_{pkg}"] == "y"
+
+
+def test_k2p_variants_have_distinct_catalog_keys_and_configs() -> None:
+    cat = load_catalog(CONFIGS / "devices.toml")
+    router = cat.resolve("k2p")
+    ap = cat.resolve("k2p-ap")
+    assert router.config == "k2p.config"
+    assert ap.config == "k2p-ap.config"
+    assert router.profile == ap.profile == "phicomm_k2p"
+    assert router.key != ap.key
+    assert "ROUTER" in router.description
+    assert "AP" in ap.description

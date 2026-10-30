@@ -3,7 +3,7 @@
 这是一个面向个人使用的 OpenWrt 固件编译工具。宿主机只需要 Docker；源码、
 feeds、编译环境和产物都由工具管理。
 
-目前支持六款设备，含 ARMv8 和 MT7621 路由器：
+目前支持六款物理设备、七个固件构建项（K2P 有两种模式）：
 
 | 设备 | 别名 | 源码目标 |
 | --- | --- | --- |
@@ -12,7 +12,8 @@ feeds、编译环境和产物都由工具管理。
 | `s905d` | `n1` | armsr/armv8 |
 | `vplus` | `h6-vplus` | armsr/armv8 |
 | `r3g` | `xiaomi-r3g`、`mir3g` | ramips/mt7621（首代 NAND R3G） |
-| `k2p` | `phicomm-k2p`、`k2p-a1` | ramips/mt7621（A1/A2，非 B1） |
+| `k2p` | `phicomm-k2p`、`k2p-router` | ramips/mt7621（标准路由 + PassWall） |
+| `k2p-ap` | `phicomm-k2p-ap`、`k2p-bridge` | ramips/mt7621（纯 AP / 桥接版） |
 
 设备、源码分支和默认插件配置集中在
 [configs/devices.toml](configs/devices.toml) 与 `configs/*.config`。构建时不
@@ -71,15 +72,15 @@ SHA256、产物大小和每个产物的 SHA256；设备别名和规范名使用�
 
 `s905d`、`vplus` 以 `#CONFIG_INCLUDE=armv8.config` 包含共享 ARMv8 软件包配置。
 `config-review-build.yml` 在针对默认分支的配置 PR 上先运行单元测试，
-再编译全部六款设备；通过测试和编译后再合并，不直接改动默认分支。
+再编译全部七种固件配置；通过测试和编译后再合并，不直接改动默认分支。
 
 `.github/workflows/build.yml` 的 `workflow_dispatch` 只需要选择 `device`。
 GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传
 `.owrt/artifacts/**/*` 和构建证据。
 
 `.github/workflows/daily-build.yml` 每天北京时间 **00:00**（GitHub cron 使用 UTC，
-即前一天 `16:00 UTC`）自动启动固件构建矩阵，并行编译当前全部六款设备：
-`360t7`、`n60pro`、`s905d`、`vplus`、`r3g`、`k2p`。矩阵启用 `fail-fast: false`，
+即前一天 `16:00 UTC`）自动启动固件构建矩阵，并行编译当前全部七种固件配置：
+`360t7`、`n60pro`、`s905d`、`vplus`、`r3g`、`k2p`、`k2p-ap`。矩阵启用 `fail-fast: false`，
 单个固件构建失败不会取消其余任务；同时支持手动触发一次完整矩阵。
 实际启动时间可能受 GitHub Actions 调度延迟影响；定时任务仅从默认分支执行。
 
@@ -208,21 +209,33 @@ UID；编译容器不使用 host network。
   K2P profile 为 `phicomm_k2p`（MediaTek A1/A2，不是 Broadcom B1）。
 - R3G 使用共享 MT7621 诊断配置，包含 tcpdump、iftop、ethtool、
   conntrack、mtr-nojson、ip-bridge，另有 ttyd、iperf3 和 htop。
-  K2P 作为 16MB 闪存的纯 AP，**不继承 R3G 的工具和插件列表**，
-  只包含基础 LuCI Web/SSH、tcpdump-mini、ethtool、iwinfo、ip-bridge。
-  K2P 不预装 PassWall、Xray、Tailscale、DHCP/DNS、firewall4、
-  PPPoE 或 LuCI 的路由器管理插件。
+  **K2P 有两个明确区分的固件构建项**：
+  - `k2p-ap` → `configs/k2p-ap.config`：精简桥接 AP，含基础 LuCI/SSH、
+    tcpdump-mini、ethtool、iwinfo、ip-bridge；不装独立 DHCP/DNS、
+    firewall4、PPPoE 或 PassWall。
+  - `k2p` → `configs/k2p.config`：标准路由器，保留默认 LuCI、
+    WAN/LAN、DHCP/DNS、firewall4、PPPoE、Wi-Fi，并且**只增加 PassWall**
+    这一第三方 LuCI 插件。为控制 16MB 闪存占用，只携带
+    ShadowsocksR-libev 客户端代理核心，不装 Xray、Sing-box、
+    Hysteria2、地理规则库或其他第三方插件。
+  标准版目前**不支持直接使用 Hysteria2 / VLESS / Reality 节点**；
+  如果必须使用这些协议，需要先解决闪存容量（或外置扩容）问题。
+  正式镜像能否放入 16MB NOR，须以编译时上游 check-size 为准。
 - R3G 的构建制品包含 `sysupgrade.bin`；如上游实际生成，
   还会保存 `kernel1.bin`、`rootfs0.bin`。
-  K2P 保存 `sysupgrade.bin`。两者不可互刷，也不可与 R3G v2 混刷。
+  两种 K2P 构建使用同一个硬件 profile，但输出镜像分别带有
+  `-router-sysupgrade.bin` 与 `-ap-sysupgrade.bin` 标识。
+  GitHub Actions 下载项也以 `openwrt-k2p-*`（路由版）和
+  `openwrt-k2p-ap-*`（AP 版）区分。**不要混淆镜像来源。**
+  K2P 与 R3G 不可互刷，也不可与 R3G v2 混刷。
 - `sysupgrade.bin` 适用于已安装兼容 OpenWrt/ImmortalWrt 的设备。
   原厂固件首刷须确认 bootloader、分区布局及恢复路径，
   切勿直接用 sysupgrade 镜像覆盖未知分区。刷机前先备份并核对板型。
 
 
-### K2P 作为有线回程 AP 的首次配置
+### K2P-AP 作为有线回程 AP 的首次配置
 
-K2P 固件默认不运行独立 DHCP/DNS 和防火墙，但不会在编译时写死管理 IP、
+K2P-AP 固件默认不运行独立 DHCP/DNS 和防火墙，但不会在编译时写死管理 IP、
 无线 SSID、密码或上级路由地址。首次刷入后用 LAN 口访问管理界面，
 把 LAN 管理 IP 设置为主路由网段中的**空闲固定地址**，网关和 DNS
 设置为主路由地址；把无线 SSID 绑定到 LAN 接口并开启无线。
