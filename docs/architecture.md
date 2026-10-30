@@ -28,6 +28,8 @@
 | `netcore_n60-pro` | `n60pro`, `n60-pro`, `netcore-n60-pro`, `netcore_n60_pro` | `immortalwrt-25.12-mediatek` | `n60pro.config` | 路由默认配置，N60 Pro 真机验收 |
 | `s905d` | `n1` | `armv8` | `s905d.config` | 包含 armv8.config，启用 Amlogic 管理；s905 非别名 |
 | `vplus` | `h6-vplus` | `armv8` | `vplus.config` | 包含 armv8.config，不预装 Amlogic 管理 |
+| `r3g` | `xiaomi-r3g`, `mir3g` | `immortalwrt-25.12-ramips` | `r3g.config` | 首代小米 R3G / ramips/mt7621 |
+| `k2p` | `phicomm-k2p`, `k2p-a1` | `immortalwrt-25.12-ramips` | `k2p.config` | 斐讯 K2P A1/A2 / ramips/mt7621，16MB AP 专用配置，tcpdump-mini + ethtool + iwinfo + ip-bridge |
 
 源码仓库和分支是 `SourceSpec` 的常量；准备完成后以 git 实际 `HEAD` 作为 snapshot 的 source commit。接口不接受用户输入的 commit。snapshot 目录不可变，`current` 只是原子替换的符号链接；正在编译的任务只使用其创建时返回的 `PreparedSource.path`/`snapshot_id`，后续 feed 更新不会改变它。
 

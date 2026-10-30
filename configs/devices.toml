@@ -16,6 +16,12 @@ branch = "v25.12.2"
 # Pin the official release tag; both MediaTek profiles exist in v25.12.2.
 platform = "mediatek"
 
+[[sources]]
+id = "immortalwrt-25.12-ramips"
+url = "https://github.com/immortalwrt/immortalwrt.git"
+branch = "v25.12.2"
+platform = "ramips"
+
 [[devices]]
 key = "360t7"
 aliases = ["360-t7", "qihoo_360t7"]
@@ -59,3 +65,25 @@ config = "vplus.config"
 packager = "arm"
 target = "armsr/armv8"
 description = "H6 V-Plus"
+
+[[devices]]
+key = "r3g"
+aliases = ["xiaomi-r3g", "xiaomi_r3g", "mir3g", "xiaomi_mi-router-3g"]
+platform = "ramips"
+source = "immortalwrt-25.12-ramips"
+profile = "xiaomi_mi-router-3g"
+config = "r3g.config"
+packager = "ramips"
+target = "ramips/mt7621"
+description = "Xiaomi Mi Router 3G (R3G, NAND; not R3G v2)"
+
+[[devices]]
+key = "k2p"
+aliases = ["phicomm-k2p", "phicomm_k2p", "k2p-a1", "k2p-a2"]
+platform = "ramips"
+source = "immortalwrt-25.12-ramips"
+profile = "phicomm_k2p"
+config = "k2p.config"
+packager = "ramips"
+target = "ramips/mt7621"
+description = "Phicomm K2P A1/A2 (MediaTek; not Broadcom B1)"

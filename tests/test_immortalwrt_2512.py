@@ -81,3 +81,77 @@ def test_official_2512_does_not_request_237_append_profiles() -> None:
         text = (ROOT / "configs" / f"{name}.config").read_text()
         assert "#CONFIG_APPEND=" not in text
         assert compose_fragment(ROOT / "configs" / f"{name}.config") == text
+
+def test_ramips_config_generation_uses_native_profile_without_duplicates(tmp_path: Path) -> None:
+    from owrt_builder.build import BuildEngine
+    from owrt_builder.catalog import Catalog
+    from owrt_builder.configuration import parse_config
+
+    engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
+    source = tmp_path / "source"
+    source.mkdir()
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    catalog = Catalog(root=source, packages=[], authoritative=True)
+    for device in ("r3g", "k2p"):
+        spec = engine.catalog.resolve(device)
+        generated = engine._write_config(
+            spec, engine.catalog.source_for(spec), source, build_dir,
+            None, catalog=catalog
+        )
+        doc = parse_config(generated)
+        for symbol in (
+            "CONFIG_TARGET_ramips", "CONFIG_TARGET_ramips_mt7621",
+            f"CONFIG_TARGET_ramips_mt7621_DEVICE_{spec.profile}",
+            "CONFIG_TARGET_PROFILE",
+        ):
+            assert sum(entry.symbol == symbol for entry in doc.entries) == 1
+        assert doc[f"CONFIG_TARGET_ramips_mt7621_DEVICE_{spec.profile}"] == "y"
+
+
+def test_ramips_packager_collects_only_correct_device_images(tmp_path: Path) -> None:
+    from owrt_builder.build import BuildEngine, BuildError
+
+    engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
+    images = tmp_path / "source/bin/targets/ramips/mt7621"
+    images.mkdir(parents=True)
+    r3g = images / "immortalwrt-25.12.2-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin"
+    v2 = images / "immortalwrt-25.12.2-ramips-mt7621-xiaomi_mi-router-3g-v2-squashfs-sysupgrade.bin"
+    k2p = images / "immortalwrt-25.12.2-ramips-mt7621-phicomm_k2p-squashfs-sysupgrade.bin"
+    recovery = images / "immortalwrt-25.12.2-ramips-mt7621-xiaomi_mi-router-3g-squashfs-kernel1.bin"
+    for image in (r3g, v2, k2p, recovery):
+        image.write_bytes(b"firmware")
+    artifact_dir = tmp_path / "out"
+    artifact_dir.mkdir()
+    for device, wanted in (
+        ("r3g", {r3g.name, recovery.name}),
+        ("k2p", {k2p.name}),
+    ):
+        outputs = engine._package_ramips(
+            engine.catalog.resolve(device), tmp_path / "source",
+            artifact_dir, lambda *_: None
+        )
+        assert {item.name for item in outputs} == wanted
+    r3g.unlink()
+    recovery.unlink()
+    with __import__("pytest").raises(BuildError, match="no xiaomi_mi-router-3g"):
+        engine._package_ramips(
+            engine.catalog.resolve("r3g"), tmp_path / "source",
+            artifact_dir, lambda *_: None
+        )
+
+def test_k2p_ap_validation_rejects_router_services_after_defconfig(tmp_path: Path) -> None:
+    import pytest
+    from owrt_builder.build import BuildEngine, BuildError
+    from owrt_builder.configuration import parse_config
+
+    engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
+    k2p = engine.catalog.resolve("k2p")
+    r3g = engine.catalog.resolve("r3g")
+    clean = parse_config("CONFIG_PACKAGE_tcpdump-mini=y\nCONFIG_PACKAGE_firewall4=n\n")
+    engine._validate_ap_package_exclusions(k2p, clean)
+    polluted = parse_config("CONFIG_PACKAGE_luci=y\nCONFIG_PACKAGE_dnsmasq-full=y\n")
+    with pytest.raises(BuildError, match="luci, dnsmasq-full"):
+        engine._validate_ap_package_exclusions(k2p, polluted)
+    # Other devices retain their independent router package policy.
+    engine._validate_ap_package_exclusions(r3g, polluted)

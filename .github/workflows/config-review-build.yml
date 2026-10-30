@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [360t7, s905d, vplus]
+        device: [360t7, n60pro, s905d, vplus, r3g, k2p]
     uses: ./.github/workflows/build.yml
     with:
       device: ${{ matrix.device }}

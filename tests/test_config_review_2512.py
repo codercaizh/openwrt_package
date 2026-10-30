@@ -72,10 +72,57 @@ def test_web_defaults_expand_shared_device_profile() -> None:
         assert "luci-app-passwall" in packages
         assert ("luci-app-amlogic" in packages) is has_amlogic
 
-@pytest.mark.parametrize("device", ["360t7", "n60pro", "armv8", "s905d", "vplus"])
+@pytest.mark.parametrize("device", ["360t7", "n60pro", "armv8", "s905d", "vplus", "r3g"])
 def test_all_firmware_configs_include_packet_capture_and_network_diagnostics(device: str) -> None:
     data = parse_config(compose_fragment(CONFIGS / f"{device}.config"))
     for package in ("tcpdump", "iftop", "ethtool", "conntrack", "mtr-nojson", "ip-bridge"):
         assert data[f"CONFIG_PACKAGE_{package}"] == "y", (device, package)
     # The full tcpdump variant provides the capture binary; avoid bundling mini too.
     assert data.get("CONFIG_PACKAGE_tcpdump-mini") != "y"
+
+
+@pytest.mark.parametrize(
+    ("device", "profile"),
+    [("r3g", "xiaomi_mi-router-3g"), ("k2p", "phicomm_k2p")],
+)
+def test_ramips_profiles_have_exact_official_target(device: str, profile: str) -> None:
+    catalog = load_catalog(CONFIGS / "devices.toml")
+    spec = catalog.resolve(device)
+    assert spec.target == "ramips/mt7621"
+    assert spec.profile == profile
+    assert spec.packager == "ramips"
+    data = parse_config(compose_fragment(CONFIGS / spec.config))
+    assert data["CONFIG_TARGET_ramips"] == "y"
+    assert data["CONFIG_TARGET_ramips_mt7621"] == "y"
+    assert data[f"CONFIG_TARGET_ramips_mt7621_DEVICE_{profile}"] == "y"
+    assert data["CONFIG_TARGET_PROFILE"] == f'"DEVICE_{profile}"'
+    if device == "r3g":
+        assert data["CONFIG_PACKAGE_luci"] == "y"
+    else:
+        assert data["CONFIG_PACKAGE_luci"] == "n"
+        assert data["CONFIG_PACKAGE_luci-mod-admin-full"] == "y"
+    assert "CONFIG_PACKAGE_luci-app-passwall" not in data
+    assert "CONFIG_PACKAGE_tailscale" not in data
+
+
+def test_k2p_is_a_minimal_ap_with_packet_capture() -> None:
+    config = parse_config(compose_fragment(CONFIGS / "k2p.config"))
+    for package in (
+        "luci-base", "luci-mod-admin-full", "luci-theme-bootstrap",
+        "uhttpd", "uhttpd-mod-ubus", "tcpdump-mini",
+        "ethtool", "iwinfo", "ip-bridge",
+    ):
+        assert config[f"CONFIG_PACKAGE_{package}"] == "y", package
+    for package in (
+        "luci", "dnsmasq-full", "firewall4", "nftables",
+        "kmod-nft-offload", "odhcp6c", "odhcpd-ipv6only",
+        "ppp", "ppp-mod-pppoe", "luci-app-firewall",
+        "luci-proto-ppp", "luci-app-package-manager",
+        "default-settings-chn", "block-mount", "kmod-nf-nathelper",
+    ):
+        assert config[f"CONFIG_PACKAGE_{package}"] == "n", package
+    for package in (
+        "tcpdump", "iftop", "conntrack", "mtr-nojson", "iperf3",
+        "htop", "luci-app-ttyd", "luci-app-passwall", "tailscale",
+    ):
+        assert config.get(f"CONFIG_PACKAGE_{package}") != "y", package

@@ -78,11 +78,11 @@ class DeviceSpec:
     def __post_init__(self) -> None:
         if not self.key or not self.source_id or not self.profile:
             raise CatalogError("device key, source_id and profile are required")
-        if self.packager not in {"mediatek", "arm"}:
+        if self.packager not in {"mediatek", "arm", "ramips"}:
             raise CatalogError(
                 f"device {self.key!r} has unsupported packager {self.packager!r}"
             )
-        if self.platform not in {"mediatek", "arm"}:
+        if self.platform not in {"mediatek", "arm", "ramips"}:
             raise CatalogError(
                 f"device {self.key!r} has unsupported platform {self.platform!r}"
             )

@@ -18,7 +18,7 @@ from owrt_builder.web import QueueWorker, Runtime, Settings, SourceService, crea
 
 
 def test_real_app_initialises_reviewed_devices(tmp_path: Path) -> None:
-    """The default app uses the real core catalog and exposes all four devices."""
+    """The default app uses the real core catalog and exposes all six devices."""
 
     app = create_app(settings=Settings(data_dir=tmp_path))
     storage = app.state.storage
@@ -36,7 +36,7 @@ def test_real_app_initialises_reviewed_devices(tmp_path: Path) -> None:
             response = await client.get("/api/devices")
             assert response.status_code == 200
             items = response.json()["items"]
-            assert [item["key"] for item in items] == ["360t7", "netcore_n60-pro", "s905d", "vplus"]
+            assert [item["key"] for item in items] == ["360t7", "netcore_n60-pro", "s905d", "vplus", "r3g", "k2p"]
             assert all("s905" not in item["aliases"] for item in items)
             return login
 
