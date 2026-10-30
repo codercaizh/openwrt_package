@@ -133,7 +133,10 @@ def test_k2p_router_has_standard_services_and_only_passwall() -> None:
     assert data["CONFIG_PACKAGE_luci"] == "y"
     assert data["CONFIG_PACKAGE_luci-app-passwall"] == "y"
     assert data["CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy"] == "y"
-    assert data["CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client"] == "y"
+    assert data["CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client"] == "n"
+    assert data["CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray"] == "n"
+    assert data["CONFIG_PACKAGE_xray-core"] == "n"
+    assert data["CONFIG_PACKAGE_unzip"] == "y"
     assert data["CONFIG_PACKAGE_tcpdump-mini"] == "y"
     for core in ("Xray", "SingBox", "Hysteria", "SmartDNS", "V2ray_Geodata"):
         assert data[f"CONFIG_PACKAGE_luci-app-passwall_INCLUDE_{core}"] == "n"

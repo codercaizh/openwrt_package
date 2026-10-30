@@ -1455,6 +1455,24 @@ class BuildEngine:
         output.write_text(rendered, encoding="utf-8")
         return output
 
+    def _stage_device_files(self, spec: DeviceSpec, openwrt_dir: Path) -> None:
+        """Install reviewed image overlays into a private build worktree.
+
+        Stage after snapshot checkout, not in the shared source snapshot:
+        this keeps K2P's RAM-only Xray downloader out of every other device.
+        The overlay contains only shell scripts, config, and fixed symlinks;
+        Xray itself is never included in the firmware image.
+        """
+        if spec.key != "k2p":
+            return
+        source = self.repo_root / "device-files" / "k2p-router"
+        if not source.is_dir():
+            raise BuildError(f"missing K2P image overlay: {source}")
+        destination = openwrt_dir / "files"
+        if destination.is_symlink():
+            raise BuildError(f"unsafe image overlay path: {destination}")
+        shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
+
     def _run_pipeline(
         self,
         spec: DeviceSpec,
@@ -1488,6 +1506,7 @@ class BuildEngine:
         # invalidate the snapshot hash, so the worker consumes the prepared
         # tree as-is.
         self._emit(callback, "使用已准备的源码与 feed 快照")
+        self._stage_device_files(spec, openwrt_dir)
         shutil.copyfile(config_path, openwrt_dir / ".config")
         self._run_checked(
             ["make", "defconfig"],

@@ -1,0 +1,4 @@
+# Optional HTTPS mirror of the exact pinned Xray archive (same SHA256).
+# The unmodified default works when GitHub Releases is reachable.
+config settings 'settings'
+    option url 'https://github.com/XTLS/Xray-core/releases/download/v26.10.21/Xray-linux-mips32le.zip'

@@ -1,0 +1,84 @@
+#!/bin/sh /etc/rc.common
+# K2P (MT7621, 16 MiB flash) boot-time Xray RAM installer.
+# PassWall uses /usr/bin/xray -> /tmp/k2p-xray/xray.
+# Download only Xray-linux-mips32le.zip; extract xray_softfloat for MT7621.
+START=98
+STOP=10
+
+XRAY_VERSION="v26.10.21"
+XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/v26.10.21/Xray-linux-mips32le.zip"
+XRAY_SHA256="1e9953aecee4024d9da6427a42929817b53d1660f5122ec6b22629e11cab4012"
+XRAY_DIR="/tmp/k2p-xray"
+XRAY_BIN="$XRAY_DIR/xray"
+XRAY_ARCHIVE="$XRAY_DIR/xray.zip"
+
+log() {
+    logger -t k2p-xray-ram "$*"
+    echo "$*" >&2
+}
+
+start() {
+    [ -x "$XRAY_BIN" ] && return 0
+    mkdir -p "$XRAY_DIR" || return 1
+    if ! mkdir "$XRAY_DIR/.lock" 2>/dev/null; then
+        log "another Xray RAM installation is in progress"
+        return 1
+    fi
+
+    staged="$XRAY_DIR/.xray.$$"
+    trap 'rm -f "$XRAY_ARCHIVE" "$staged"; rmdir "$XRAY_DIR/.lock" 2>/dev/null' 0
+    trap 'exit 1' 1 2 15
+
+    # A stock 128MiB device typically mounts /tmp as a 64MiB tmpfs.
+    # The verified 22MiB release zip + 34MiB softfloat binary must coexist
+    # briefly. Refuse to download if there is insufficient memory/space.
+    available="$(df -Pk /tmp | awk 'NR==2 {print $4}')"
+    case "$available" in ''|*[!0-9]*) log "unable to measure /tmp free space"; return 1;; esac
+    if [ "$available" -lt 60000 ]; then
+        log "insufficient /tmp space ($available KiB; need 60000 KiB)"
+        return 1
+    fi
+    memory="$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo)"
+    case "$memory" in
+        ''|*[!0-9]*) ;;
+        *) if [ "$memory" -lt 65536 ]; then
+            log "insufficient available memory ($memory KiB; need 65536 KiB)"
+            return 1
+        fi ;;
+    esac
+
+    url="$(uci -q get k2p_xray.settings.url)"
+    [ -n "$url" ] || url="$XRAY_URL"
+    case "$url" in
+        https://*) ;;
+        *) log "rejecting non-HTTPS download URL"; return 1 ;;
+    esac
+
+    # SHA256 is firmware-pinned even if a local HTTPS mirror is used.
+    # Avoid unverified 'latest' endpoints or silently updated binaries.
+    log "fetching Xray $XRAY_VERSION into RAM; failure does not disable routing"
+    if ! curl --fail --location --silent --show-error         --connect-timeout 8 --max-time 90         --output "$XRAY_ARCHIVE" "$url"; then
+        log "Xray RAM download failed; check WAN/DNS/GitHub reachability"
+        return 1
+    fi
+    actual="$(sha256sum "$XRAY_ARCHIVE" | cut -d ' ' -f 1)"
+    if [ "$actual" != "$XRAY_SHA256" ]; then
+        log "Xray archive SHA256 mismatch; refusing to execute"
+        return 1
+    fi
+    if ! unzip -p "$XRAY_ARCHIVE" xray_softfloat > "$staged"; then
+        log "could not extract xray_softfloat from verified archive"
+        return 1
+    fi
+    [ -s "$staged" ] || { log "empty Xray executable"; return 1; }
+    chmod 0755 "$staged" || return 1
+    mv -f "$staged" "$XRAY_BIN" || return 1
+    rm -f "$XRAY_ARCHIVE"
+    log "Xray RAM core ready: $XRAY_BIN"
+    return 0
+}
+
+stop() {
+    # Never delete the binary while Xray is running. RAM is cleared at reboot.
+    return 0
+}

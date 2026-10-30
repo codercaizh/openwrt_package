@@ -158,3 +158,32 @@ def test_k2p_ap_validation_rejects_router_services_after_defconfig(tmp_path: Pat
     # Router variant and other devices retain their full router package policy.
     engine._validate_ap_package_exclusions(router, polluted)
     engine._validate_ap_package_exclusions(r3g, polluted)
+
+def test_k2p_only_stages_ram_xray_overlay(tmp_path: Path) -> None:
+    from owrt_builder.build import BuildEngine
+
+    engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
+    work = tmp_path / "openwrt"
+    work.mkdir()
+    engine._stage_device_files(engine.catalog.resolve("k2p"), work)
+    overlay = work / "files"
+    init = overlay / "etc/init.d/k2p-xray-ram"
+    rc = overlay / "etc/rc.d/S98k2p-xray-ram"
+    binary = overlay / "usr/bin/xray"
+    assert init.is_file() and init.stat().st_mode & 0o111
+    assert rc.is_symlink()
+    assert rc.readlink().as_posix() == "../init.d/k2p-xray-ram"
+    assert binary.is_symlink()
+    assert binary.readlink().as_posix() == "/tmp/k2p-xray/xray"
+    script = init.read_text()
+    assert "xray_softfloat" in script
+    assert 'XRAY_VERSION="v26.10.21"' in script
+    assert 'XRAY_SHA256="1e9953aecee4024d9da6427a42929817b53d1660f5122ec6b22629e11cab4012"' in script
+    assert 'sha256sum "$XRAY_ARCHIVE"' in script
+    assert "XRAY_BIN=" in script
+    assert not any(path.is_file() and path.name == "xray" for path in overlay.rglob("*"))
+
+    other = tmp_path / "other"
+    other.mkdir()
+    engine._stage_device_files(engine.catalog.resolve("k2p-ap"), other)
+    assert not (other / "files").exists()

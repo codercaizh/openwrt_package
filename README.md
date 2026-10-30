@@ -216,11 +216,13 @@ UID；编译容器不使用 host network。
   - `k2p` → `configs/k2p.config`：标准路由器，保留默认 LuCI、
     WAN/LAN、DHCP/DNS、firewall4、PPPoE、Wi-Fi，并且**只增加 PassWall**
     这一第三方 LuCI 插件。为控制 16MB 闪存占用，只携带
-    ShadowsocksR-libev 客户端代理核心，不装 Xray、Sing-box、
-    Hysteria2、地理规则库或其他第三方插件。
-  标准版目前**不支持直接使用 Hysteria2 / VLESS / Reality 节点**；
-  如果必须使用这些协议，需要先解决闪存容量（或外置扩容）问题。
-  正式镜像能否放入 16MB NOR，须以编译时上游 check-size 为准。
+    PassWall 的 LuCI 界面，但**不预装任何代理核心**；通过
+    [K2P Xray RAM 加载方案](docs/k2p-xray-ram.md)在开机时下载一个
+    固定版本的 Xray 软浮点核心到 `/tmp`，支持 Xray 对应的
+    VLESS / Reality 等协议，不包含 Hysteria2、Sing-box 或
+    额外地理规则库。失败时仍可正常路由，但代理不可用。
+  K2P Router 的 16MB NOR 是否装得下 PassWall 所需依赖，
+  以及 128MB RAM 是否能稳定运行 Xray，仍须通过实机验证。
 - R3G 的构建制品包含 `sysupgrade.bin`；如上游实际生成，
   还会保存 `kernel1.bin`、`rootfs0.bin`。
   两种 K2P 构建使用同一个硬件 profile，但输出镜像分别带有
