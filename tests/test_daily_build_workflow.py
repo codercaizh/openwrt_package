@@ -13,7 +13,7 @@ def test_daily_build_matrix_covers_all_supported_devices() -> None:
     assert '    - cron: "0 16 * * *"' in workflow
     assert "workflow_dispatch:" in workflow
     assert "fail-fast: false" in workflow
-    assert "max-parallel: 4" in workflow
+    assert "max-parallel: 10" in workflow
     assert "uses: ./.github/workflows/build.yml" in workflow
 
     matrix_lines = [

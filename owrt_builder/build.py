@@ -902,7 +902,10 @@ class BuildEngine:
                     cache_reused = cache_lease.reused
                     if cache_lease.reused:
                         previous = cache_lease.previous
-                        if previous and previous.snapshot_id != source_result.snapshot_id:
+                        if previous and (
+                            previous.snapshot_id != source_result.snapshot_id
+                            or not (cache_lease.source_root / "Makefile").is_file()
+                        ):
                             cache_manager.refresh_source(
                                 cache_lease,
                                 source_result.path,
@@ -1537,13 +1540,13 @@ class BuildEngine:
             )
         self._validate_ap_package_exclusions(spec, resolved_config)
         self._run_checked(
-            ["make", "download"],
+            ["make", f"-j{jobs}", "download"],
             cwd=openwrt_dir,
             env=env,
             callback=callback,
             cancel_event=cancel_event,
             retry_once=True,
-            heartbeat_label="make download",
+            heartbeat_label=f"make -j{jobs} download",
             heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
         )
         self._run_compile_with_diagnostics(

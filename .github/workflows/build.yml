@@ -37,6 +37,50 @@ jobs:
       - name: Check out builder
         uses: actions/checkout@v4
 
+      # Reusable workflow runs once per device. GitHub runners are ephemeral,
+      # so persist only the download archives and host/toolchain incremental
+      # build state; never cache target packages or firmware output.
+      - name: Choose cache scopes
+        id: cache_scope
+        env:
+          DEVICE: ${{ inputs.device || github.event.inputs.device }}
+        run: |
+          case "$DEVICE" in
+            n60pro) canonical=netcore_n60-pro; family=filogic ;;
+            360t7) canonical=360t7; family=filogic ;;
+            s905d) canonical=s905d; family=armv8 ;;
+            vplus) canonical=vplus; family=armv8 ;;
+            r3g) canonical=r3g; family=mt7621 ;;
+            k2p) canonical=k2p; family=mt7621 ;;
+            k2p-ap) canonical=k2p-ap; family=mt7621 ;;
+            *) echo "Unsupported cache device: $DEVICE" >&2; exit 1 ;;
+          esac
+          echo "canonical=$canonical" >> "$GITHUB_OUTPUT"
+          echo "family=$family" >> "$GITHUB_OUTPUT"
+          # Weekly rolling keys limit cache growth. Previous weeks are fallbacks.
+          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore host tools and cross-toolchain cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/cache.json
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/host*
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/toolchain-*
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/host*
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/toolchain-*
+          key: owrt-tools-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-${{ steps.cache_scope.outputs.week }}
+          restore-keys: |
+            owrt-tools-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-
+
+      - name: Restore downloaded source archives
+        uses: actions/cache@v4
+        with:
+          path: .owrt/cache/dl
+          key: owrt-dl-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.family }}-${{ steps.cache_scope.outputs.week }}
+          restore-keys: |
+            owrt-dl-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.family }}-
+
       - name: Check Docker and builder catalog
         run: |
           docker version

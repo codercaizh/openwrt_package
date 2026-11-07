@@ -253,7 +253,7 @@ def test_sysupgrade_uses_target_fwtool_metadata(tmp_path: Path) -> None:
     assert BuildEngine._firmware_supported_devices(image, tmp_path / "openwrt") == ["netcore,n60-pro"]
 
 
-def test_pipeline_applies_jobs_only_to_final_compile(tmp_path: Path) -> None:
+def test_pipeline_applies_jobs_to_download_and_compile(tmp_path: Path) -> None:
     engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
     openwrt = tmp_path / "openwrt"
     openwrt.mkdir()
@@ -275,7 +275,7 @@ def test_pipeline_applies_jobs_only_to_final_compile(tmp_path: Path) -> None:
         jobs=3,
     )
 
-    assert commands == [["make", "defconfig"], ["make", "download"], ["make", "-j3"]]
+    assert commands == [["make", "defconfig"], ["make", "-j3", "download"], ["make", "-j3"]]
 
 
 def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Path) -> None:
@@ -309,11 +309,11 @@ def test_pipeline_retries_failed_formal_compile_with_verbose_output(tmp_path: Pa
 
     assert commands == [
         ["make", "defconfig"],
-        ["make", "download"],
+        ["make", "-j3", "download"],
         ["make", "-j3"],
         ["make", "V=s", "-j1"],
     ]
-    assert labels == ["make defconfig", "make download", "make -j3", "make V=s -j1"]
+    assert labels == ["make defconfig", "make -j3 download", "make -j3", "make V=s -j1"]
     assert intervals == [
         COMMAND_HEARTBEAT_SECONDS,
         COMMAND_HEARTBEAT_SECONDS,
@@ -394,7 +394,7 @@ def test_pipeline_does_not_start_verbose_compile_after_cancellation(tmp_path: Pa
             jobs=4,
         )
 
-    assert commands == [["make", "defconfig"], ["make", "download"], ["make", "-j4"]]
+    assert commands == [["make", "defconfig"], ["make", "-j4", "download"], ["make", "-j4"]]
     assert any("跳过详细诊断编译" in line for line in lines)
 
 
