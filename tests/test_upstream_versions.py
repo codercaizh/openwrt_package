@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from contextlib import nullcontext
 from pathlib import Path
+import subprocess
 import tarfile
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,18 +25,13 @@ def _release(monkeypatch, *, requirement: str = "1.27.3") -> str:
     data = archive.getvalue()
     checksum = hashlib.sha256(data).hexdigest()
 
-    def get_json(url: str):
-        if url.endswith("/releases/latest"):
-            return {"tag_name": "v1.104.4", "draft": False, "prerelease": False}
-        assert url.endswith("/commits/v1.104.4")
-        return {"sha": "b" * 40}
-
     def download(url: str, destination: Path) -> str:
         assert url.endswith("/tar.gz/v1.104.4")
         destination.write_bytes(data)
         return checksum
 
-    monkeypatch.setattr(upstream_versions, "_get_json", get_json)
+    monkeypatch.setattr(upstream_versions, "_latest_tailscale_tag", lambda: "v1.104.4")
+    monkeypatch.setattr(upstream_versions, "_tailscale_tag_commit", lambda tag: "b" * 40)
     monkeypatch.setattr(upstream_versions, "_download", download)
     return checksum
 
@@ -47,6 +45,37 @@ def _recipe(root: Path) -> Path:
         "GO_PKG_TAGS:=ts_include_cli,ts_omit_flashappliance\n"
     )
     return path
+
+
+def test_latest_tag_uses_public_release_redirect(monkeypatch):
+    def open_release(request, *, timeout):
+        assert request.full_url == "https://github.com/tailscale/tailscale/releases/latest"
+        assert request.get_method() == "HEAD"
+        url = "https://github.com/tailscale/tailscale/releases/tag/v1.104.4"
+        return nullcontext(SimpleNamespace(geturl=lambda: url))
+
+    monkeypatch.setattr(upstream_versions.urllib.request, "urlopen", open_release)
+    assert upstream_versions._latest_tailscale_tag() == "v1.104.4"
+
+
+@pytest.mark.parametrize("annotated", [False, True])
+def test_tag_lookup_records_commit_for_lightweight_and_annotated_tags(monkeypatch, annotated):
+    tag_ref = "refs/tags/v1.104.4"
+    commit = "b" * 40
+
+    def ls_remote(args, **kwargs):
+        assert args == [
+            "git", "ls-remote", "--exit-code", "https://github.com/tailscale/tailscale.git",
+            tag_ref, tag_ref + "^{}",
+        ]
+        if annotated:
+            stdout = f"{'a' * 40}\t{tag_ref}\n{commit}\t{tag_ref}^{{}}\n"
+        else:
+            stdout = f"{commit}\t{tag_ref}\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(upstream_versions.subprocess, "run", ls_remote)
+    assert upstream_versions._tailscale_tag_commit("v1.104.4") == commit
 
 
 def test_latest_release_updates_recipe_and_checks_archive_go_requirement(tmp_path, monkeypatch):
@@ -76,8 +105,6 @@ def test_newer_go_requirement_rejects_release_before_recipe_changes(tmp_path, mo
 
 
 def test_feed_preparation_records_release_commit_alongside_recipe_commit(tmp_path, monkeypatch):
-    import subprocess
-
     upstream = tmp_path / "upstream"
     recipe = _recipe(upstream)
     for args in (

@@ -141,7 +141,7 @@ Kenzo、rtp2httpd、cloudflarespeedtest、Passwall packages/LuCI；Passwall 跟�
 默认分支。Go 恢复原分支的 `sbwml/packages_lang_golang` `27.x` feed，在源码准备阶段自动替换
 `feeds/packages/lang/golang`，跟随 Go 1.27 最新补丁（本次核验为 `1.27.3`）。
 Tailscale 从 `https://github.com/openwrt/packages.git` 的 `master` 稀疏检出 `net/tailscale`，
-再由 `owrt_builder/upstream_versions.py` 查询 Tailscale 最新稳定 release，下载官方
+再由 `owrt_builder/upstream_versions.py` 通过 GitHub release 地址和 Git tag 获取 Tailscale 最新稳定版，下载官方
 源码归档、计算 SHA256、核对实际 `go.mod`，自动更新配方的版本和校验值；保留
 OpenWrt 的启动脚本、配置和编译选项。本次核验为 Tailscale `1.104.4`，要求 Go `1.27.3`。
 从 `https://github.com/openwrt/luci.git` 的 `master` 分支浅克隆并稀疏检出

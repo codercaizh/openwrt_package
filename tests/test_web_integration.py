@@ -556,12 +556,13 @@ def test_web_registers_manifest_alongside_firmware_artifact(tmp_path: Path) -> N
 def _ready_job_app(tmp_path: Path):
     """Build a deterministic app with one ready catalog for submit tests."""
 
+    devices = load_catalog()
     source_root = tmp_path / "source-snapshot"
     source_root.mkdir(parents=True)
     catalog_path = tmp_path / "source-catalog.json"
     Catalog(root=source_root, packages=[], authoritative=True).write(catalog_path)
     prepared = PreparedSource(
-        source_id="immortalwrt-25.12-mediatek",
+        source_id=devices.resolve("n60pro").source_id,
         snapshot_id="web-controls-snapshot",
         path=source_root,
         catalog_path=catalog_path,
@@ -574,7 +575,7 @@ def _ready_job_app(tmp_path: Path):
             return prepared
 
     runtime = Runtime(
-        devices=load_catalog(),
+        devices=devices,
         sources=SourceStub(),
         build=SimpleNamespace(),
     )
@@ -582,7 +583,7 @@ def _ready_job_app(tmp_path: Path):
     storage = app.state.storage
     storage.create_admin("admin", hash_password("a-strong-test-password"))
     snapshot = {
-        "source_id": "immortalwrt-25.12-mediatek",
+        "source_id": prepared.source_id,
         "snapshot_id": "web-controls-snapshot",
         "source_commit": "test-source",
     }
@@ -618,6 +619,7 @@ def _snapshot_tree(root: Path) -> tuple[str, ...]:
 def test_web_static_validation_is_read_only_and_skips_native_make(tmp_path: Path) -> None:
     """Catalog checks never copy the snapshot or invoke native make."""
 
+    devices = load_catalog()
     source_root = tmp_path / "immutable-source"
     (source_root / "feeds" / "packages").mkdir(parents=True)
     (source_root / "Makefile").write_text("include rules.mk\n", encoding="utf-8")
@@ -629,7 +631,7 @@ def test_web_static_validation_is_read_only_and_skips_native_make(tmp_path: Path
         authoritative=True,
     ).write(catalog_path)
     prepared = PreparedSource(
-        source_id="immortalwrt-25.12-mediatek",
+        source_id=devices.resolve("n60pro").source_id,
         snapshot_id="isolated-validation-snapshot",
         path=source_root,
         catalog_path=catalog_path,
@@ -651,7 +653,7 @@ def test_web_static_validation_is_read_only_and_skips_native_make(tmp_path: Path
             raise AssertionError("static Web validation must not compose a build config")
 
     runtime = Runtime(
-        devices=load_catalog(),
+        devices=devices,
         sources=SourceStub(),
         build=BuildStub(),
     )
@@ -725,7 +727,7 @@ def test_job_submission_rejects_invalid_snapshot_before_enqueue(tmp_path: Path) 
     storage = app.state.storage
     storage.create_admin("admin", hash_password("a-strong-test-password"))
     snapshot = {
-        "source_id": "immortalwrt-25.12-mediatek",
+        "source_id": runtime.devices.resolve("n60pro").source_id,
         "snapshot_id": "contaminated-snapshot",
         "source_commit": "source-sha",
     }

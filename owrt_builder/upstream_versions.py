@@ -12,9 +12,9 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import tarfile
 import tempfile
-from typing import Any
 import urllib.request
 
 
@@ -22,12 +22,41 @@ class UpstreamVersionError(RuntimeError):
     """An upstream release cannot be used with the selected toolchain."""
 
 
-def _get_json(url: str) -> Any:
+_TAILSCALE_REPO = "https://github.com/tailscale/tailscale"
+
+
+def _latest_tailscale_tag() -> str:
     request = urllib.request.Request(
-        url, headers={"Accept": "application/vnd.github+json", "User-Agent": "owrt-builder"}
+        f"{_TAILSCALE_REPO}/releases/latest",
+        headers={"User-Agent": "owrt-builder"},
+        method="HEAD",
     )
     with urllib.request.urlopen(request, timeout=60) as response:
-        return json.load(response)
+        release_url = response.geturl()
+    prefix = f"{_TAILSCALE_REPO}/releases/tag/"
+    tag = release_url.removeprefix(prefix)
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+        raise UpstreamVersionError("latest Tailscale release did not resolve to a stable version tag")
+    return tag
+
+
+def _tailscale_tag_commit(tag: str) -> str:
+    ref = f"refs/tags/{tag}"
+    peeled_ref = ref + "^{}"
+    result = subprocess.run(
+        ["git", "ls-remote", "--exit-code", f"{_TAILSCALE_REPO}.git", ref, peeled_ref],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode:
+        raise UpstreamVersionError(f"cannot resolve Tailscale {tag}: {result.stderr.strip()}")
+    refs = {}
+    for line in result.stdout.splitlines():
+        sha, _, name = line.partition("\t")
+        refs[name] = sha
+    commit = refs.get(peeled_ref, refs.get(ref, ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise UpstreamVersionError(f"Tailscale {tag} has no valid Git commit")
+    return commit
 
 
 def _download(url: str, destination: Path) -> str:
@@ -52,14 +81,9 @@ def sync_latest_tailscale(
 
     makefile = source_root / "feeds/packages/net/tailscale/Makefile"
     recipe = makefile.read_text(encoding="utf-8")
-    release = _get_json("https://api.github.com/repos/tailscale/tailscale/releases/latest")
-    tag = release.get("tag_name", "")
-    if release.get("draft") or release.get("prerelease") or not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
-        raise UpstreamVersionError(f"invalid stable Tailscale release: {tag!r}")
+    tag = _latest_tailscale_tag()
     version = tag[1:]
-    commit = _get_json(f"https://api.github.com/repos/tailscale/tailscale/commits/{tag}").get("sha", "")
-    if not re.fullmatch(r"[0-9a-f]{40}", commit):
-        raise UpstreamVersionError(f"Tailscale {tag} has no valid Git commit")
+    commit = _tailscale_tag_commit(tag)
 
     with tempfile.TemporaryDirectory(prefix=".tailscale-release-", dir=source_root) as directory:
         archive = Path(directory) / f"tailscale-{version}.tar.gz"
