@@ -18,22 +18,24 @@ kernel() {
 }
 
 state() {
+    section cat /proc/uptime
+    section ubus call network.interface.wan status
+    for dev in eth0 eth1 lan1 lan3; do
+        section ethtool -S "$dev"
+    done
     section cat /proc/interrupts /proc/net/softnet_stat /proc/net/dev
     section ip -s -d link show
     section bridge vlan show
     section bridge -s fdb show br br-lan
-    section ubus call network.interface.wan status
     section nft list flowtable inet fw4 ft
     for dev in eth0 eth1 eth1.10 eth1.20; do
         section ethtool -k "$dev"
     done
     for dev in eth0 eth1; do
         section ethtool "$dev"
+        section ethtool -a "$dev"
     done
-    for dev in eth0 eth1 lan1 lan3; do
-        section ethtool -S "$dev"
-    done
-    for queue in /sys/class/net/eth[01]/queues/tx-[13]; do
+    for queue in /sys/class/net/eth[01]/queues/tx-[0136]; do
         for name in tx_timeout byte_queue_limits/inflight byte_queue_limits/limit; do
             if [ -r "$queue/$name" ]; then
                 printf '%s %s\n' "$queue/$name" "$(cat "$queue/$name")"
