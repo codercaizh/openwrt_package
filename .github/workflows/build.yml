@@ -37,9 +37,10 @@ jobs:
       - name: Check out builder
         uses: actions/checkout@v4
 
-      # Reusable workflow runs once per device. GitHub runners are ephemeral,
-      # so persist only the download archives and host/toolchain incremental
-      # build state; never cache target packages or firmware output.
+      # Cache tools/* build state (including tools/llvm-bpf's LLVM/Clang/LLD
+      # under build_dir/host and staged LLVM binaries/stamps under
+      # staging_dir/host) and the cross-toolchain, but not target packages or
+      # firmware images. GitHub cache keys are immutable once created.
       - name: Choose cache scopes
         id: cache_scope
         env:
@@ -57,6 +58,14 @@ jobs:
           esac
           echo "canonical=$canonical" >> "$GITHUB_OUTPUT"
           echo "family=$family" >> "$GITHUB_OUTPUT"
+          # Refresh Filogic host-tool snapshots once: the original v1 weekly
+          # cache cannot capture an LLVM/BPF build that finished after its
+          # first upload. Restore v1 as a fallback to avoid a cold rebuild.
+          if [[ "$family" == "filogic" ]]; then
+            echo "host_cache_version=v2" >> "$GITHUB_OUTPUT"
+          else
+            echo "host_cache_version=v1" >> "$GITHUB_OUTPUT"
+          fi
           # Weekly rolling keys limit cache growth. Previous weeks are fallbacks.
           echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
@@ -69,8 +78,9 @@ jobs:
             .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/toolchain-*
             .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/host*
             .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/toolchain-*
-          key: owrt-tools-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-${{ steps.cache_scope.outputs.week }}
+          key: owrt-tools-${{ steps.cache_scope.outputs.host_cache_version }}-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-${{ steps.cache_scope.outputs.week }}
           restore-keys: |
+            owrt-tools-${{ steps.cache_scope.outputs.host_cache_version }}-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-
             owrt-tools-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-
 
       - name: Restore downloaded source archives
@@ -80,6 +90,39 @@ jobs:
           key: owrt-dl-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.family }}-${{ steps.cache_scope.outputs.week }}
           restore-keys: |
             owrt-dl-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.family }}-
+
+      # Merely seeing "tools/llvm-bpf compile" in OpenWrt's dependency plan
+      # does not prove it rebuilt. Report the actual restored .built/.installed
+      # markers so we can distinguish reused LLVM from a full host rebuild.
+      - name: Inspect LLVM/BPF host cache markers
+        if: ${{ steps.cache_scope.outputs.family == 'filogic' }}
+        env:
+          CANONICAL: ${{ steps.cache_scope.outputs.canonical }}
+        run: |
+          set -euo pipefail
+          tree=".owrt/cache/builds/$CANONICAL/openwrt"
+          shopt -s nullglob
+          found=0
+          for llvm in "$tree"/build_dir/host/llvm-project-*.src; do
+            [[ -d "$llvm" ]] || continue
+            found=1
+            if [[ -f "$llvm/.built" ]]; then
+              echo "LLVM/BPF host compile marker restored: $llvm/.built"
+            else
+              echo "LLVM/BPF build directory exists without .built marker: $llvm"
+            fi
+          done
+          if [[ "$found" == 0 ]]; then
+            echo "No cached LLVM/BPF host build directory"
+          fi
+          if [[ -f "$tree/staging_dir/host/stamp/.llvm-project_installed" ]]; then
+            echo "LLVM/BPF host installed marker restored"
+          else
+            echo "No cached LLVM/BPF host installed marker"
+          fi
+          if [[ -e "$tree/staging_dir/host/llvm-bpf/.llvm-version" ]]; then
+            echo "LLVM/BPF installed version: $(cat "$tree/staging_dir/host/llvm-bpf/.llvm-version")"
+          fi
 
       - name: Check Docker and builder catalog
         run: |
@@ -92,6 +135,38 @@ jobs:
         run: |
           set -o pipefail
           ./owrt build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+
+      # ARM packagers run as container root (mount/loop setup), leaving 0600
+      # files in cargo/rustc downloads and hostpkg/staging output. The
+      # actions/cache post-job tar runs as the ordinary runner and otherwise
+      # fails with "Cannot open: Permission denied", silently losing both
+      # caches. Repair only the paths archived by actions/cache, after the
+      # worker has finished writing and before its post-job save.
+      - name: Make ARMv8 caches readable for post-job save
+        if: ${{ success() && steps.cache_scope.outputs.family == 'armv8' }}
+        env:
+          CANONICAL: ${{ steps.cache_scope.outputs.canonical }}
+        run: |
+          set -euo pipefail
+          base=".owrt/cache/builds/$CANONICAL"
+          tree="$base/openwrt"
+          for parent in .owrt .owrt/cache .owrt/cache/builds "$base" "$tree" "$tree/build_dir" "$tree/staging_dir"; do
+            if [[ -d "$parent" && ! -L "$parent" ]]; then
+              sudo chmod a+rx -- "$parent"
+            fi
+          done
+          shopt -s nullglob
+          archived=(.owrt/cache/dl "$base/cache.json"
+            "$tree"/build_dir/host* "$tree"/build_dir/toolchain-*
+            "$tree"/staging_dir/host* "$tree"/staging_dir/toolchain-*)
+          for path in "${archived[@]}"; do
+            if [[ -d "$path" && ! -L "$path" ]]; then
+              sudo chmod -R a+rX -- "$path"
+            elif [[ -f "$path" ]]; then
+              sudo chmod a+r -- "$path"
+            fi
+          done
+          echo "ARMv8 cache archive permissions normalized"
 
       - name: Upload firmware
         if: success()
