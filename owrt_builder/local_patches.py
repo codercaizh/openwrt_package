@@ -21,6 +21,14 @@ def _fix_root() -> Path:
     return repository_root() / "fix_bugs"
 
 
+def _bundle(source_id: str) -> Path | None:
+    if source_id == "immortalwrt-master-mediatek-qdma-debug":
+        return repository_root() / "scripts" / "n60pro-qdma-debug"
+    if source_id in _SUPPORTED_SOURCES:
+        return _fix_root()
+    return None
+
+
 def _scripts(root: Path) -> list[Path]:
     scripts = sorted(root.glob("[0-9][0-9][0-9]-*.sh"))
     if not scripts:
@@ -29,9 +37,9 @@ def _scripts(root: Path) -> list[Path]:
 
 
 def patch_fingerprint(source_id: str) -> str:
-    if source_id not in _SUPPORTED_SOURCES:
+    root = _bundle(source_id)
+    if root is None:
         return ""
-    root = _fix_root()
     _scripts(root)
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):
@@ -45,11 +53,12 @@ def patch_fingerprint(source_id: str) -> str:
 
 
 def install_local_patches(source_root: Path, source_id: str) -> str:
-    fingerprint = patch_fingerprint(source_id)
-    if not fingerprint:
+    root = _bundle(source_id)
+    if root is None:
         return ""
+    fingerprint = patch_fingerprint(source_id)
     source_root = source_root.resolve(strict=True)
-    for script in _scripts(_fix_root()):
+    for script in _scripts(root):
         result = subprocess.run(
             ["sh", str(script), str(source_root)],
             cwd=source_root,

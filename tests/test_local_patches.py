@@ -77,6 +77,26 @@ def test_unsupported_sources_do_not_receive_kernel_612_fix(tmp_path: Path) -> No
     assert list(tmp_path.iterdir()) == []
 
 
+def test_n60pro_diagnostics_installs_only_618_patch_and_collector(tmp_path: Path) -> None:
+    mediatek = tmp_path / "target/linux/mediatek"
+    patches = mediatek / "patches-6.18"
+    patches.mkdir(parents=True)
+    (mediatek / "Makefile").write_text("KERNEL_PATCHVER:=6.18\n")
+    dts = mediatek / "dts"
+    dts.mkdir()
+    (dts / "mt7986a-netcore-n60-pro.dts").touch()
+    source_id = "immortalwrt-master-mediatek-qdma-debug"
+
+    fingerprint = local_patches.install_local_patches(tmp_path, source_id)
+    assert fingerprint == local_patches.install_local_patches(tmp_path, source_id)
+    assert (tmp_path / local_patches.FIX_STAMP).read_text().strip() == fingerprint
+    assert len(list(patches.glob("*-n60pro-qdma-*.patch"))) == 1
+    assert not (tmp_path / "target/linux/generic").exists()
+    files = tmp_path / "files"
+    assert (files / "usr/sbin/n60pro-qdma-debug").stat().st_mode & 0o111
+    assert (files / "etc/rc.d/S94n60pro-qdma-debug").is_file()
+
+
 def test_script_and_patch_changes_invalidate_fingerprint_but_docs_do_not(tmp_path: Path, monkeypatch) -> None:
     fixes = tmp_path / "fix_bugs"
     shutil.copytree(ROOT / "fix_bugs", fixes)

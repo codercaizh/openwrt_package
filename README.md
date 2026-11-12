@@ -194,10 +194,12 @@ UID；编译容器不使用 host network。
 
 ## ImmortalWrt v25.12.2 官方版本
 
-N60 Pro 的固件用于复测 SMB 与 PPPoE 同时转发时的发送队列超时。
+N60 Pro 的诊断固件用于复测 SMB 与 PPPoE 同时转发时的发送队列超时。
 运行 `./owrt build n60pro`。首次准备源码时获取官方 `master` 的当前提交，
 随后使用不可变快照。每次 GitHub Actions 构建都会准备新的源码快照。
-固件保留 N60 Pro 原有的软件包配置，内核补丁采用官方 `master` 自带的版本。
+固件保留 N60 Pro 原有的软件包配置，在官方 `master` 的内核补丁上增加
+MediaTek TX watchdog 诊断日志。详细采集字段与路径见
+[N60 Pro TX 超时诊断](scripts/n60pro-qdma-debug/README.md)。
 
 其余设备固定使用官方 `v25.12.2` 发布标签。
 官方固件修复集中在与 `configs/` 同级的 [fix_bugs/](fix_bugs/README.md)，源码准备时自动执行。

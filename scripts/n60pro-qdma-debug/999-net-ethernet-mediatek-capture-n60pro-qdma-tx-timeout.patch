@@ -1,0 +1,182 @@
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 221ce72..e122784 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -28,6 +28,7 @@
+ #include <linux/phy/phy.h>
+ #include <linux/jhash.h>
+ #include <linux/bitfield.h>
++#include <linux/ratelimit.h>
+ #include <net/dsa.h>
+ #include <net/dst_metadata.h>
+ #include <net/gso.h>
+@@ -2721,6 +2722,12 @@ mtk_poll_tx_done(struct mtk_eth *eth, struct mtk_poll_state *state, u8 mac,
+ 	state->bytes = bytes;
+ }
+ 
++enum mtk_tx_diag_blocked {
++	MTK_TX_DIAG_NONE,
++	MTK_TX_DIAG_OWNER_DMA,
++	MTK_TX_DIAG_NO_BUFFER,
++};
++
+ static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
+ 			    struct mtk_poll_state *state)
+ {
+@@ -2733,6 +2740,7 @@ static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
+ 
+ 	cpu = ring->last_free_ptr;
+ 	dma = mtk_r32(eth, reg_map->qdma.drx_ptr);
++	WRITE_ONCE(eth->tx_diag_blocked, MTK_TX_DIAG_NONE);
+ 
+ 	desc = mtk_qdma_phys_to_virt(ring, cpu);
+ 	xdp_frame_bulk_init(&bq);
+@@ -2741,13 +2749,19 @@ static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
+ 		u32 next_cpu = desc->txd2;
+ 
+ 		desc = mtk_qdma_phys_to_virt(ring, desc->txd2);
+-		if ((desc->txd3 & TX_DMA_OWNER_CPU) == 0)
++		if ((desc->txd3 & TX_DMA_OWNER_CPU) == 0) {
++			WRITE_ONCE(eth->tx_diag_blocked_ptr, next_cpu);
++			WRITE_ONCE(eth->tx_diag_blocked, MTK_TX_DIAG_OWNER_DMA);
+ 			break;
++		}
+ 
+ 		tx_buf = mtk_desc_to_tx_buf(ring, desc,
+ 					    eth->soc->tx.desc_shift);
+-		if (!tx_buf->data)
++		if (!tx_buf->data) {
++			WRITE_ONCE(eth->tx_diag_blocked_ptr, next_cpu);
++			WRITE_ONCE(eth->tx_diag_blocked, MTK_TX_DIAG_NO_BUFFER);
+ 			break;
++		}
+ 
+ 		if (tx_buf->data != (void *)MTK_DMA_DUMMY_DESC) {
+ 			if (tx_buf->type == MTK_TYPE_SKB)
+@@ -2855,6 +2869,8 @@ static int mtk_napi_tx(struct napi_struct *napi, int budget)
+ 		mtk_handle_status_irq(eth);
+ 	mtk_w32(eth, MTK_TX_DONE_INT, reg_map->tx_irq_status);
+ 	tx_done = mtk_poll_tx(eth, budget);
++	WRITE_ONCE(eth->tx_diag_last_work, tx_done);
++	WRITE_ONCE(eth->tx_diag_polls, eth->tx_diag_polls + 1);
+ 
+ 	if (unlikely(netif_msg_intr(eth))) {
+ 		dev_info(eth->dev,
+@@ -3605,24 +3621,98 @@ static void mtk_dma_free(struct mtk_eth *eth)
+ 	}
+ }
+ 
+-static bool mtk_hw_reset_check(struct mtk_eth *eth)
++static bool mtk_hw_reset_check(u32 val)
+ {
+-	u32 val = mtk_r32(eth, MTK_INT_STATUS2);
+-
+ 	return (val & MTK_FE_INT_FQ_EMPTY) || (val & MTK_FE_INT_RFIFO_UF) ||
+ 	       (val & MTK_FE_INT_RFIFO_OV) || (val & MTK_FE_INT_TSO_FAIL) ||
+ 	       (val & MTK_FE_INT_TSO_ALIGN) || (val & MTK_FE_INT_TSO_ILLEGAL);
+ }
+ 
++static void mtk_n60pro_tx_snapshot(struct mtk_eth *eth, struct net_device *dev,
++				  unsigned int txqueue, u32 fe_status,
++				  bool reset_allowed)
++{
++	static DEFINE_RATELIMIT_STATE(limit, 15 * HZ, 1);
++	const struct mtk_reg_map *map = eth->soc->reg_map;
++	struct mtk_tx_ring *ring = &eth->tx_ring;
++	unsigned int i;
++
++	if (map != &mt7986_reg_map ||
++	    !of_machine_is_compatible("netcore,n60-pro") ||
++	    !__ratelimit(&limit))
++		return;
++
++	netdev_warn(dev,
++		    "n60pro-qdma: queue=%u fe_status=%08x reset_allowed=%u dma_users=%u\n",
++		    txqueue, fe_status, reset_allowed, refcount_read(&eth->dma_refcnt));
++	dev_warn(eth->dev,
++		 "n60pro-qdma: glo=%08x ctx=%08x dtx=%08x crx=%08x drx=%08x fq=%08x\n",
++		 mtk_r32(eth, map->qdma.glo_cfg), mtk_r32(eth, map->qdma.ctx_ptr),
++		 mtk_r32(eth, map->qdma.dtx_ptr), mtk_r32(eth, map->qdma.crx_ptr),
++		 mtk_r32(eth, map->qdma.drx_ptr), mtk_r32(eth, map->qdma.fq_count));
++	dev_warn(eth->dev,
++		 "n60pro-qdma: qfsm=%08x qfwd=%08x monitor_hang_wdma=%u qdma=%u adma=%u\n",
++		 mtk_r32(eth, map->qdma.qtx_cfg + 0x234),
++		 mtk_r32(eth, map->qdma.qtx_cfg + 0x308),
++		 READ_ONCE(eth->reset.wdma_hang_count), READ_ONCE(eth->reset.qdma_hang_count),
++		 READ_ONCE(eth->reset.adma_hang_count));
++	dev_warn(eth->dev,
++		 "n60pro-qdma: ring_phys=%pad free=%d size=%d thresh=%u last_free=%08x blocked=%u blocked_ptr=%08x\n",
++		 &ring->phys, atomic_read(&ring->free_count), READ_ONCE(ring->dma_size),
++		 READ_ONCE(ring->thresh), READ_ONCE(ring->last_free_ptr),
++		 READ_ONCE(eth->tx_diag_blocked), READ_ONCE(eth->tx_diag_blocked_ptr));
++	dev_warn(eth->dev,
++		 "n60pro-qdma: tx_irq=%08x tx_mask=%08x napi_state=%lx polls=%u last_work=%u\n",
++		 mtk_r32(eth, map->tx_irq_status), mtk_r32(eth, map->tx_irq_mask),
++		 READ_ONCE(eth->tx_napi.state), READ_ONCE(eth->tx_diag_polls),
++		 READ_ONCE(eth->tx_diag_last_work));
++	dev_warn(eth->dev,
++		 "n60pro-qdma: pse_free=%08x iq=%08x/%08x oq=%08x/%08x/%08x gdm_fsm=%08x/%08x\n",
++		 mtk_r32(eth, MTK_FE_PSE_FREE), mtk_r32(eth, map->pse_iq_sta),
++		 mtk_r32(eth, map->pse_iq_sta + 4), mtk_r32(eth, map->pse_oq_sta),
++		 mtk_r32(eth, map->pse_oq_sta + 4), mtk_r32(eth, map->pse_oq_sta + 0x10),
++		 mtk_r32(eth, MTK_FE_GDM1_FSM), mtk_r32(eth, MTK_FE_GDM2_FSM));
++
++	for (i = 0; i < 2; i++) {
++		struct net_device *ndev = eth->netdev[i];
++		unsigned long driver_stopped = 0, stack_stopped = 0;
++		unsigned int q;
++
++		if (!ndev)
++			continue;
++
++		for (q = 0; q < min_t(unsigned int, ndev->real_num_tx_queues,
++				      BITS_PER_LONG); q++) {
++			unsigned long state = READ_ONCE(netdev_get_tx_queue(ndev, q)->state);
++
++			if (state & BIT(__QUEUE_STATE_DRV_XOFF))
++				driver_stopped |= BIT(q);
++			if (state & BIT(__QUEUE_STATE_STACK_XOFF))
++				stack_stopped |= BIT(q);
++		}
++		netdev_warn(ndev,
++			    "n60pro-qdma: carrier=%u drv_stopped=%lx stack_stopped=%lx mac_status=%08x mac_fsm=%08x gdm_fwd=%08x\n",
++			    netif_carrier_ok(ndev), driver_stopped, stack_stopped,
++			    mtk_r32(eth, MTK_MAC_MSR(i)), mtk_r32(eth, MTK_MAC_FSM(i)),
++			    mtk_r32(eth, MTK_GDMA_FWD_CFG(i)));
++	}
++	dev_warn(eth->dev, "n60pro-qdma: snapshot end\n");
++}
++
+ static void mtk_tx_timeout(struct net_device *dev, unsigned int txqueue)
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	struct mtk_eth *eth = mac->hw;
++	bool reset_allowed;
++	u32 fe_status;
+ 
+ 	if (test_bit(MTK_RESETTING, &eth->state))
+ 		return;
+ 
+-	if (!mtk_hw_reset_check(eth))
++	fe_status = mtk_r32(eth, MTK_INT_STATUS2);
++	reset_allowed = mtk_hw_reset_check(fe_status);
++	mtk_n60pro_tx_snapshot(eth, dev, txqueue, fe_status, reset_allowed);
++	if (!reset_allowed)
+ 		return;
+ 
+ 	eth->netdev[mac->id]->stats.tx_errors++;
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index da3815f..1053ced 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1397,6 +1397,10 @@ struct mtk_eth {
+ 	struct regmap			*pctl;
+ 	bool				hwlro;
+ 	refcount_t			dma_refcnt;
++	u32				tx_diag_polls;
++	u32				tx_diag_last_work;
++	u32				tx_diag_blocked;
++	u32				tx_diag_blocked_ptr;
+ 	struct mtk_tx_ring		tx_ring;
+ 	struct mtk_rx_ring		rx_ring[MTK_MAX_RX_RING_NUM];
+ 	struct mtk_rx_ring		rx_ring_qdma;

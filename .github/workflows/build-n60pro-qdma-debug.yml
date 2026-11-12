@@ -1,0 +1,12 @@
+name: N60 Pro QDMA diagnostics
+on:
+  push:
+    branches:
+      - codex/n60pro-qdma-debug
+permissions:
+  contents: read
+jobs:
+  firmware:
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro

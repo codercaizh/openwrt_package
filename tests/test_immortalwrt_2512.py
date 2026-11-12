@@ -13,7 +13,7 @@ def test_profiles_use_official_2512_tag_except_n60pro_master() -> None:
         source = catalog.source_for(device)
         assert source.url == "https://github.com/immortalwrt/immortalwrt.git"
         if device.key == "netcore_n60-pro":
-            assert source.id == "immortalwrt-master-mediatek"
+            assert source.id == "immortalwrt-master-mediatek-qdma-debug"
             assert source.branch == "master"
             assert source.snapshot is None
         else:

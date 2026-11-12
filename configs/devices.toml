@@ -16,7 +16,7 @@ branch = "v25.12.2"
 platform = "mediatek"
 
 [[sources]]
-id = "immortalwrt-master-mediatek"
+id = "immortalwrt-master-mediatek-qdma-debug"
 url = "https://github.com/immortalwrt/immortalwrt.git"
 branch = "master"
 platform = "mediatek"
@@ -42,7 +42,7 @@ description = "Qihoo 360T7"
 key = "netcore_n60-pro"
 aliases = ["n60pro", "n60-pro", "netcore-n60-pro", "netcore_n60_pro"]
 platform = "mediatek"
-source = "immortalwrt-master-mediatek"
+source = "immortalwrt-master-mediatek-qdma-debug"
 profile = "netcore_n60-pro"
 config = "n60pro.config"
 packager = "mediatek"
