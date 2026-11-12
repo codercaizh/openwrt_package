@@ -1,0 +1,12 @@
+name: N60 Pro ImmortalWrt master
+on:
+  push:
+    branches:
+      - codex/n60pro-immortalwrt-master
+permissions:
+  contents: read
+jobs:
+  firmware:
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro

@@ -135,7 +135,8 @@ PushPlus 可在页面“设置”中填写 token；token 只保存于持久化�
 
 ## feeds、配置和产物
 
-本分支固定 ImmortalWrt 官方 `v25.12.2`，采用其内核/Rust，保留
+本分支的 N60 Pro 使用 ImmortalWrt 官方 `master`，其余设备使用官方 `v25.12.2`。
+各设备采用对应源码的内核/Rust，保留
 Kenzo、rtp2httpd、cloudflarespeedtest、Passwall packages/LuCI；Passwall 跟随配置的
 默认分支。Go 恢复原分支的 `sbwml/packages_lang_golang` `27.x` feed，在源码准备阶段自动替换
 `feeds/packages/lang/golang`，跟随 Go 1.27 最新补丁（本次核验为 `1.27.3`）。
@@ -193,7 +194,12 @@ UID；编译容器不使用 host network。
 
 ## ImmortalWrt v25.12.2 官方版本
 
-此分支的全部设备都固定使用官方 `v25.12.2` 发布标签。
+N60 Pro 的固件用于复测 SMB 与 PPPoE 同时转发时的发送队列超时。
+运行 `./owrt build n60pro`。首次准备源码时获取官方 `master` 的当前提交，
+随后使用不可变快照。每次 GitHub Actions 构建都会准备新的源码快照。
+固件保留 N60 Pro 原有的软件包配置，内核补丁采用官方 `master` 自带的版本。
+
+其余设备固定使用官方 `v25.12.2` 发布标签。
 官方固件修复集中在与 `configs/` 同级的 [fix_bugs/](fix_bugs/README.md)，源码准备时自动执行。
 当前回移官方 Linux 6.12 conntrack 通知链修复，解决 FullCone 与 nlbwmon 的事件订阅冲突。
 同时回移固定版本的 MediaTek PPE 计数修复，处理约 4 GiB 虚增、过期计数重复累计和连接结束漏计；

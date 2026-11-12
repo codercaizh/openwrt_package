@@ -13,7 +13,12 @@ platform = "arm"
 id = "immortalwrt-25.12-mediatek"
 url = "https://github.com/immortalwrt/immortalwrt.git"
 branch = "v25.12.2"
-# Pin the official release tag; both MediaTek profiles exist in v25.12.2.
+platform = "mediatek"
+
+[[sources]]
+id = "immortalwrt-master-mediatek"
+url = "https://github.com/immortalwrt/immortalwrt.git"
+branch = "master"
 platform = "mediatek"
 
 [[sources]]
@@ -37,7 +42,7 @@ description = "Qihoo 360T7"
 key = "netcore_n60-pro"
 aliases = ["n60pro", "n60-pro", "netcore-n60-pro", "netcore_n60_pro"]
 platform = "mediatek"
-source = "immortalwrt-25.12-mediatek"
+source = "immortalwrt-master-mediatek"
 profile = "netcore_n60-pro"
 config = "n60pro.config"
 packager = "mediatek"

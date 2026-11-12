@@ -7,12 +7,17 @@ from owrt_builder.feeds import FEED_SPECS
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_all_profiles_use_immutable_official_2512_tag() -> None:
+def test_profiles_use_official_2512_tag_except_n60pro_master() -> None:
     catalog = load_catalog(ROOT / "configs/devices.toml")
     for device in catalog.devices.values():
         source = catalog.source_for(device)
         assert source.url == "https://github.com/immortalwrt/immortalwrt.git"
-        assert source.branch == "v25.12.2"
+        if device.key == "netcore_n60-pro":
+            assert source.id == "immortalwrt-master-mediatek"
+            assert source.branch == "master"
+            assert source.snapshot is None
+        else:
+            assert source.branch == "v25.12.2"
         assert source.platform == device.platform
 
 

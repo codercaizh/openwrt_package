@@ -71,7 +71,7 @@ def test_incompatible_kernel_is_rejected(tmp_path: Path) -> None:
 
 
 def test_unsupported_sources_do_not_receive_kernel_612_fix(tmp_path: Path) -> None:
-    for source_id in ("test", "immortalwrt-mt798x"):
+    for source_id in ("test", "immortalwrt-mt798x", "immortalwrt-master-mediatek"):
         assert local_patches.patch_fingerprint(source_id) == ""
         assert local_patches.install_local_patches(tmp_path, source_id) == ""
     assert list(tmp_path.iterdir()) == []
