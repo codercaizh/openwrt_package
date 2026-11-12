@@ -1,5 +1,5 @@
 diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 221ce72..813d6a0 100644
+index 221ce72..2bbd83c 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 @@ -28,6 +28,7 @@
@@ -18,7 +18,37 @@ index 221ce72..813d6a0 100644
  #include "mtk_wed.h"
  
  static int mtk_msg_level = -1;
-@@ -1887,14 +1889,41 @@ next_frag:
+@@ -888,6 +890,9 @@ static void mtk_gdm_mac_link_up(struct mtk_mac *mac,
+ 				int speed, int duplex, bool tx_pause,
+ 				bool rx_pause)
+ {
++	bool n60pro_disable_rx_pause = mac->hw->tx_diag_enabled &&
++				       mac->id == MTK_GMAC1_ID &&
++				       mode == MLO_AN_FIXED;
+ 	u32 mcr;
+ 
+ 	mcr = mtk_r32(mac->hw, MTK_MAC_MCR(mac->id));
+@@ -914,11 +919,18 @@ static void mtk_gdm_mac_link_up(struct mtk_mac *mac,
+ 	/* Configure pause modes - phylink will avoid these for half duplex */
+ 	if (tx_pause)
+ 		mcr |= MAC_MCR_FORCE_TX_FC;
+-	if (rx_pause)
++	if (rx_pause && !n60pro_disable_rx_pause)
+ 		mcr |= MAC_MCR_FORCE_RX_FC;
+ 
+ 	mcr |= MAC_MCR_TX_EN | MAC_MCR_RX_EN | MAC_MCR_FORCE_LINK;
+ 	mtk_w32(mac->hw, mcr, MTK_MAC_MCR(mac->id));
++	if (n60pro_disable_rx_pause) {
++		mcr = mtk_r32(mac->hw, MTK_MAC_MCR(mac->id));
++		dev_info(mac->hw->dev,
++			 "n60pro-qdma: gmac%u rx_pause=%u tx_pause=%u mac_ctrl=%08x\n",
++			 mac->id, !!(mcr & MAC_MCR_FORCE_RX_FC),
++			 !!(mcr & MAC_MCR_FORCE_TX_FC), mcr);
++	}
+ }
+ 
+ static void mtk_xgdm_mac_link_up(struct mtk_mac *mac,
+@@ -1887,14 +1899,41 @@ next_frag:
  	ring->next_free = mtk_qdma_phys_to_virt(ring, state.txd->txd2);
  	atomic_sub(state.ndesc, &ring->free_count);
  
@@ -61,7 +91,7 @@ index 221ce72..813d6a0 100644
  	} else {
  		int next_idx;
  
-@@ -2331,6 +2360,10 @@ static int mtk_xdp_submit_frame(struct mtk_eth *eth, struct xdp_frame *xdpf,
+@@ -2331,6 +2370,10 @@ static int mtk_xdp_submit_frame(struct mtk_eth *eth, struct xdp_frame *xdpf,
  	wmb();
  
  	if (MTK_HAS_CAPS(soc->caps, MTK_QDMA)) {
@@ -72,7 +102,7 @@ index 221ce72..813d6a0 100644
  		mtk_w32(eth, txd->txd2, soc->reg_map->qdma.ctx_ptr);
  	} else {
  		int idx;
-@@ -2721,6 +2754,27 @@ mtk_poll_tx_done(struct mtk_eth *eth, struct mtk_poll_state *state, u8 mac,
+@@ -2721,6 +2764,27 @@ mtk_poll_tx_done(struct mtk_eth *eth, struct mtk_poll_state *state, u8 mac,
  	state->bytes = bytes;
  }
  
@@ -100,7 +130,7 @@ index 221ce72..813d6a0 100644
  static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
  			    struct mtk_poll_state *state)
  {
-@@ -2733,21 +2787,30 @@ static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
+@@ -2733,21 +2797,30 @@ static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
  
  	cpu = ring->last_free_ptr;
  	dma = mtk_r32(eth, reg_map->qdma.drx_ptr);
@@ -133,7 +163,7 @@ index 221ce72..813d6a0 100644
  
  		if (tx_buf->data != (void *)MTK_DMA_DUMMY_DESC) {
  			if (tx_buf->type == MTK_TYPE_SKB)
-@@ -2834,10 +2897,17 @@ static int mtk_poll_tx(struct mtk_eth *eth, int budget)
+@@ -2834,10 +2907,17 @@ static int mtk_poll_tx(struct mtk_eth *eth, int budget)
  	return state.total;
  }
  
@@ -151,7 +181,7 @@ index 221ce72..813d6a0 100644
  	if (unlikely(status2 & (MTK_GDM1_AF | MTK_GDM2_AF))) {
  		mtk_stats_update(eth);
  		mtk_w32(eth, (MTK_GDM1_AF | MTK_GDM2_AF),
-@@ -2855,6 +2925,8 @@ static int mtk_napi_tx(struct napi_struct *napi, int budget)
+@@ -2855,6 +2935,8 @@ static int mtk_napi_tx(struct napi_struct *napi, int budget)
  		mtk_handle_status_irq(eth);
  	mtk_w32(eth, MTK_TX_DONE_INT, reg_map->tx_irq_status);
  	tx_done = mtk_poll_tx(eth, budget);
@@ -160,7 +190,7 @@ index 221ce72..813d6a0 100644
  
  	if (unlikely(netif_msg_intr(eth))) {
  		dev_info(eth->dev,
-@@ -2968,6 +3040,10 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+@@ -2968,6 +3050,10 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
  	ring->dma_size = ring_size;
  	atomic_set(&ring->free_count, ring_size - 2);
  	ring->next_free = ring->dma;
@@ -171,7 +201,7 @@ index 221ce72..813d6a0 100644
  	ring->last_free = (void *)txd;
  	ring->last_free_ptr = (u32)(ring->phys + TX_DESC_OFS(eth, ring_size - 1));
  	ring->thresh = MAX_SKB_FRAGS;
-@@ -3605,24 +3681,216 @@ static void mtk_dma_free(struct mtk_eth *eth)
+@@ -3605,24 +3691,217 @@ static void mtk_dma_free(struct mtk_eth *eth)
  	}
  }
  
@@ -364,8 +394,9 @@ index 221ce72..813d6a0 100644
 +				stack_stopped |= BIT(q);
 +		}
 +		netdev_warn(ndev,
-+			    "n60pro-qdma: carrier=%u drv_stopped=%lx stack_stopped=%lx mac_status=%08x mac_fsm=%08x gdm_fwd=%08x\n",
++			    "n60pro-qdma: carrier=%u drv_stopped=%lx stack_stopped=%lx mac_ctrl=%08x mac_status=%08x mac_fsm=%08x gdm_fwd=%08x\n",
 +			    netif_carrier_ok(ndev), driver_stopped, stack_stopped,
++			    mtk_r32(eth, MTK_MAC_MCR(i)),
 +			    mtk_r32(eth, MTK_MAC_MSR(i)), mtk_r32(eth, MTK_MAC_FSM(i)),
 +			    mtk_r32(eth, MTK_GDMA_FWD_CFG(i)));
 +	}
@@ -392,7 +423,7 @@ index 221ce72..813d6a0 100644
  		return;
  
  	eth->netdev[mac->id]->stats.tx_errors++;
-@@ -4395,7 +4663,7 @@ static void mtk_hw_warm_reset(struct mtk_eth *eth)
+@@ -4395,7 +4674,7 @@ static void mtk_hw_warm_reset(struct mtk_eth *eth)
  			val, rst_mask);
  }
  
@@ -401,7 +432,7 @@ index 221ce72..813d6a0 100644
  {
  	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
  	bool gmac1_tx, gmac2_tx, gdm1_tx, gdm2_tx;
-@@ -4403,10 +4671,10 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+@@ -4403,10 +4682,10 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
  	bool wtx_busy, cdm_full, oq_free;
  	u32 wdidx, val, gdm1_fc, gdm2_fc;
  	bool qfsm_hang, qfwd_hang;
@@ -414,7 +445,7 @@ index 221ce72..813d6a0 100644
  
  	/* WDMA sanity checks */
  	wdidx = mtk_r32(eth, reg_map->wdma_base[0] + 0xc);
-@@ -4424,7 +4692,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+@@ -4424,7 +4703,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
  	if (wdidx == eth->reset.wdidx && wtx_busy && cdm_full && oq_free) {
  		if (++eth->reset.wdma_hang_count > 2) {
  			eth->reset.wdma_hang_count = 0;
@@ -423,7 +454,7 @@ index 221ce72..813d6a0 100644
  		}
  		goto out;
  	}
-@@ -4445,7 +4713,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+@@ -4445,7 +4724,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
  	     (gdm2_tx && gmac2_tx && gdm2_fc < 1))) {
  		if (++eth->reset.qdma_hang_count > 2) {
  			eth->reset.qdma_hang_count = 0;
@@ -432,7 +463,7 @@ index 221ce72..813d6a0 100644
  		}
  		goto out;
  	}
-@@ -4459,7 +4727,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+@@ -4459,7 +4738,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
  	if (oq_hang && cdm1_busy && adma_busy) {
  		if (++eth->reset.adma_hang_count > 2) {
  			eth->reset.adma_hang_count = 0;
@@ -441,7 +472,7 @@ index 221ce72..813d6a0 100644
  		}
  		goto out;
  	}
-@@ -4470,7 +4738,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+@@ -4470,7 +4749,7 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
  out:
  	eth->reset.wdidx = wdidx;
  
@@ -450,7 +481,7 @@ index 221ce72..813d6a0 100644
  }
  
  static void mtk_hw_reset_monitor_work(struct work_struct *work)
-@@ -4478,13 +4746,21 @@ static void mtk_hw_reset_monitor_work(struct work_struct *work)
+@@ -4478,13 +4757,21 @@ static void mtk_hw_reset_monitor_work(struct work_struct *work)
  	struct delayed_work *del_work = to_delayed_work(work);
  	struct mtk_eth *eth = container_of(del_work, struct mtk_eth,
  					   reset.monitor_work);
@@ -473,7 +504,7 @@ index 221ce72..813d6a0 100644
  
  out:
  	schedule_delayed_work(&eth->reset.monitor_work,
-@@ -4796,11 +5072,14 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -4796,11 +5083,14 @@ static void mtk_pending_work(struct work_struct *work)
  	struct mtk_eth *eth = container_of(work, struct mtk_eth, pending_work);
  	unsigned long restart = 0;
  	u32 val;
@@ -489,7 +520,7 @@ index 221ce72..813d6a0 100644
  	mtk_hw_dump(eth);
  
  	mtk_prepare_for_reset(eth);
-@@ -4824,7 +5103,7 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -4824,7 +5114,7 @@ static void mtk_pending_work(struct work_struct *work)
  	if (eth->dev->pins)
  		pinctrl_select_state(eth->dev->pins->p,
  				     eth->dev->pins->default_state);
@@ -498,7 +529,7 @@ index 221ce72..813d6a0 100644
  
  	/* restart DMA and enable IRQs */
  	for (i = 0; i < MTK_MAX_DEVS; i++) {
-@@ -4855,6 +5134,10 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -4855,6 +5145,10 @@ static void mtk_pending_work(struct work_struct *work)
  
  	mtk_wed_fe_reset_complete();
  
@@ -509,7 +540,7 @@ index 221ce72..813d6a0 100644
  	rtnl_unlock();
  }
  
-@@ -5655,6 +5938,10 @@ static int mtk_probe(struct platform_device *pdev)
+@@ -5655,6 +5949,10 @@ static int mtk_probe(struct platform_device *pdev)
  	spin_lock_init(&eth->tx_irq_lock);
  	spin_lock_init(&eth->rx_irq_lock);
  	spin_lock_init(&eth->dim_lock);

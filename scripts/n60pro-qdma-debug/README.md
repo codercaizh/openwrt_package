@@ -10,6 +10,9 @@
 正常流量路径在内存中更新计数和各 MAC 最近一次提交的 SKB 元数据。
 采集只读取寄存器，沿用驱动原有的提交、回收和重置条件。
 
+对照固件仅关闭 N60 Pro `eth0` 固定 CPU 链路的接收 PAUSE，保留发送 PAUSE。
+链路启动时记录 `rx_pause=0`、`tx_pause` 和 `mac_ctrl` 的寄存器回读值，超时快照也记录 `mac_ctrl`。
+
 - `reset_allowed` 是 watchdog 路径按原逻辑决定是否安排重置的结果。
 - `trigger=dma-monitor` 时，`monitor` 标明 WDMA、QDMA 或 ADMA 检测分支。
 - `next` 是软件准备好的下一描述符指针。与 `ctx` 对照可查是否有准备后尚未通知硬件的描述符。
