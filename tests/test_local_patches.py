@@ -71,10 +71,42 @@ def test_incompatible_kernel_is_rejected(tmp_path: Path) -> None:
 
 
 def test_unsupported_sources_do_not_receive_kernel_612_fix(tmp_path: Path) -> None:
-    for source_id in ("test", "immortalwrt-mt798x", "immortalwrt-master-mediatek"):
+    for source_id in ("test", "immortalwrt-mt798x", "immortalwrt-25.12-ramips"):
         assert local_patches.patch_fingerprint(source_id) == ""
         assert local_patches.install_local_patches(tmp_path, source_id) == ""
     assert list(tmp_path.iterdir()) == []
+
+
+def test_master_installs_only_618_ppe_patches(tmp_path: Path) -> None:
+    target = tmp_path / "target/linux/mediatek"
+    patches = target / "patches-6.18"
+    patches.mkdir(parents=True)
+    (target / "Makefile").write_text("KERNEL_PATCHVER:=6.18\n")
+    source_id = "immortalwrt-master-mediatek"
+    assets = ROOT / "fix_bugs/mediatek-6.18/patches"
+    fingerprint = local_patches.install_local_patches(tmp_path, source_id)
+    assert fingerprint == local_patches.install_local_patches(tmp_path, source_id)
+    assert (tmp_path / local_patches.FIX_STAMP).read_text().strip() == fingerprint
+    assert {p.name: p.read_bytes() for p in patches.iterdir()} == {
+        p.name: p.read_bytes() for p in assets.glob("*.patch")
+    }
+    assert not (tmp_path / "target/linux/generic").exists()
+
+    (target / "Makefile").write_text("KERNEL_PATCHVER:=6.12\n")
+    with pytest.raises(local_patches.LocalPatchError, match="MediaTek Linux 6.18"):
+        local_patches.install_local_patches(tmp_path, source_id)
+
+
+def test_master_patch_changes_only_invalidate_master_snapshot(tmp_path: Path, monkeypatch) -> None:
+    fixes = tmp_path / "fixes"
+    shutil.copytree(ROOT / "fix_bugs", fixes)
+    monkeypatch.setattr(local_patches, "_fix_root", lambda: fixes)
+    release = local_patches.patch_fingerprint("immortalwrt-25.12-mediatek")
+    master = local_patches.patch_fingerprint("immortalwrt-master-mediatek")
+    patch = next((fixes / "mediatek-6.18/patches").glob("990-01*.patch"))
+    patch.write_text(patch.read_text() + "# changed patch\n")
+    assert local_patches.patch_fingerprint("immortalwrt-master-mediatek") != master
+    assert local_patches.patch_fingerprint("immortalwrt-25.12-mediatek") == release
 
 
 def test_script_and_patch_changes_invalidate_fingerprint_but_docs_do_not(tmp_path: Path, monkeypatch) -> None:

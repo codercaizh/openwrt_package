@@ -41,6 +41,7 @@ static u64 target_packets, target_bytes;
 #define FIELD_GET(mask, value) ((value) & (mask))
 static void *rhashtable_lookup(void *table, void *cookie, int params)
 { (void)table; (void)cookie; (void)params; return &live; }
+#define rhashtable_lookup_fast rhashtable_lookup
 static struct mtk_foe_entry *mtk_foe_get_entry(struct mtk_ppe *p, u16 hash)
 { (void)p; (void)hash; return &hardware; }
 static int mtk_flow_entry_match_len(struct mtk_eth *e, struct mtk_foe_entry *data)

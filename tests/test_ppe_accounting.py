@@ -87,14 +87,20 @@ def _function(path: Path, name: str, rename: str | None = None) -> str:
     return body.replace(name + "(", (rename or name) + "(", 1)
 
 
-def test_kernel_accounting_regressions(tmp_path: Path) -> None:
+@pytest.mark.parametrize("version", ["6.12", "6.18"])
+def test_kernel_accounting_regressions(tmp_path: Path, version: str) -> None:
     compiler = shutil.which("cc")
     if not compiler:
         pytest.fail("a C compiler is required for kernel accounting regression checks")
-    original = FIXTURES / "linux"
+    if version == "6.12":
+        original = FIXTURES / "linux"
+        patches = [PATCHES / FINAL_PATCH, PATCHES / PPE_PATCH]
+    else:
+        original = FIXTURES / "linux-6.18"
+        patches = sorted((ROOT / "fix_bugs/mediatek-6.18/patches").glob("*.patch"))
     patched = tmp_path / "linux"
     shutil.copytree(original, patched)
-    subprocess.run(["git", "apply", str(PATCHES / FINAL_PATCH), str(PATCHES / PPE_PATCH)], cwd=patched, check=True)
+    subprocess.run(["git", "apply", *(str(patch) for patch in patches)], cwd=patched, check=True)
     driver = Path("drivers/net/ethernet/mediatek")
     replacements = {
         "ORIGINAL_UPDATE": _function(original / driver / "mtk_ppe.c", "mtk_flow_entry_update", "mtk_flow_entry_update_before"),

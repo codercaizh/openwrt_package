@@ -11,6 +11,8 @@ from .paths import repository_root
 
 FIX_STAMP = ".owrt-fix-bugs"
 _SUPPORTED_SOURCES = frozenset({"armv8", "immortalwrt-25.12-mediatek"})
+_MASTER_SOURCE = "immortalwrt-master-mediatek"
+_MASTER_BUNDLE = "mediatek-6.18"
 
 
 class LocalPatchError(RuntimeError):
@@ -21,6 +23,14 @@ def _fix_root() -> Path:
     return repository_root() / "fix_bugs"
 
 
+def _bundle(source_id: str) -> Path | None:
+    if source_id == _MASTER_SOURCE:
+        return _fix_root() / _MASTER_BUNDLE
+    if source_id in _SUPPORTED_SOURCES:
+        return _fix_root()
+    return None
+
+
 def _scripts(root: Path) -> list[Path]:
     scripts = sorted(root.glob("[0-9][0-9][0-9]-*.sh"))
     if not scripts:
@@ -29,27 +39,32 @@ def _scripts(root: Path) -> list[Path]:
 
 
 def patch_fingerprint(source_id: str) -> str:
-    if source_id not in _SUPPORTED_SOURCES:
+    root = _bundle(source_id)
+    if root is None:
         return ""
-    root = _fix_root()
+    if root.is_symlink():
+        raise LocalPatchError(f"firmware fix assets must not be symlinks: {root}")
     _scripts(root)
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if relative.parts[0] == _MASTER_BUNDLE:
+            continue
         if path.is_symlink():
             raise LocalPatchError(f"firmware fix assets must not be symlinks: {path}")
         if not path.is_file() or path.suffix.lower() == ".md":
             continue
-        relative = path.relative_to(root).as_posix()
-        digest.update(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {relative}\n".encode())
+        digest.update(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {relative.as_posix()}\n".encode())
     return digest.hexdigest()
 
 
 def install_local_patches(source_root: Path, source_id: str) -> str:
-    fingerprint = patch_fingerprint(source_id)
-    if not fingerprint:
+    root = _bundle(source_id)
+    if root is None:
         return ""
+    fingerprint = patch_fingerprint(source_id)
     source_root = source_root.resolve(strict=True)
-    for script in _scripts(_fix_root()):
+    for script in _scripts(root):
         result = subprocess.run(
             ["sh", str(script), str(source_root)],
             cwd=source_root,

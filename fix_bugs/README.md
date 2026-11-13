@@ -1,7 +1,8 @@
 # 官方固件问题修复
 
 这里与 `configs/` 同级，集中保存需要随固件编译的修复脚本和固定补丁。
-当前用于官方 ImmortalWrt `v25.12.2` 的 `armv8`、`immortalwrt-25.12-mediatek` 源。
+根目录用于官方 ImmortalWrt `v25.12.2` 的 `armv8`、`immortalwrt-25.12-mediatek` 源。
+N60 Pro 的 `immortalwrt-master-mediatek` 源使用 `mediatek-6.18/`。
 
 源码准备阶段会按文件名顺序执行根目录的 `NNN-名称.sh`，唯一参数为源码树的绝对路径。
 CLI、Web、GitHub Actions 共用此入口；全部成功后才发布源码快照。脚本失败时保留上一份快照。
@@ -55,7 +56,7 @@ FullCone 和 nlbwmon 同时运行时产生新的统计数据，并在路由器�
   在锁内初始化统计快照，并避免递减累计值产生假增量。
 - `pending-6.12/708-netfilter-flowtable-fetch-final-hardware-counters.patch`：
   将连接删除前补收硬件计数的逻辑适配到 Linux 6.12，保留该版本的 `NF_FLOW_HW_DEAD`
-  状态转换。上游 6.18 版本不能直接替换此文件。
+  状态转换。
 
 两份补丁随当前两个官方 Linux 6.12 源安装；PPE 驱动部分只在选中相应 MediaTek 驱动时编译。
 新增修复自动改变源码/设备缓存指纹，已有未修复内核及目标软件包需要重建。
@@ -72,3 +73,16 @@ python3 -m pytest tests/test_ppe_accounting.py tests/test_local_patches.py
 需要 C 编译器、git 和项目测试依赖。这些回归检查不替代 MMIO、并发及真实转发验证。
 刷入完整固件后，应在硬件卸载开启时以已知大小的实际传输对账，并覆盖空闲重绑定、
 连接立即关闭和长期混合流量。确认源头正确后再处理先前已污染的流量历史；构建脚本不删除路由器统计。
+
+## N60 Pro master 的 PPE 计数修复
+
+`mediatek-6.18/` 将 [OpenWrt PR #26107](https://github.com/openwrt/openwrt/pull/26107)
+的 `3be1a0c4619d433c1ee8aa95d8de9459e6587b74` 适配到官方 ImmortalWrt
+`4765b657625ec5bbda74b44400465fe043802b30`（Linux 6.18.60）。
+补丁排在 MediaTek 官方补丁之后，保留 WED 优先级和 VLAN 检查，重绑或释放桥接子流时先将
+计数汇入父流，删除 flowtable 表项时保留 `NF_FLOW_HW_DEAD`。此目录单独参与 N60 Pro
+源码快照指纹。FullCone 的 conntrack 通知链修复由官方 master 提供。
+
+在官方补丁栈上用 ARM64 GCC 编译 `mtk_ppe.o`、`mtk_ppe_offload.o` 和
+`nf_flow_table_offload.o`。刷机后可开启硬件卸载，对比已知大小的传输、WAN 端口计数和
+conntrack/nlbwmon 的增量，覆盖长连接和快速关闭的连接。

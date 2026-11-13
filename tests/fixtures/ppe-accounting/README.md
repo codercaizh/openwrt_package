@@ -9,6 +9,10 @@ and functions are omitted. Tests apply the actual vendored fixes to these
 excerpts, then compile the original and patched functions with hardware IO
 stubs from `harness.c.in`.
 
+`linux-6.18/` contains equivalent excerpts from Linux v6.18.60 after
+applying the official ImmortalWrt `4765b657625e` patch stack. The same harness
+runs against the patches in `fix_bugs/mediatek-6.18/`.
+
 The harness does not embed the algorithms under test: markers are populated
 from the original excerpts and the patched result. It demonstrates unsigned
 underflow, repeated expired-slot accounting, ordinary increments, and final
