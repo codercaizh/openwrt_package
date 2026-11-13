@@ -1459,18 +1459,13 @@ class BuildEngine:
         return output
 
     def _stage_device_files(self, spec: DeviceSpec, openwrt_dir: Path) -> None:
-        """Install reviewed image overlays into a private build worktree.
-
-        Stage after snapshot checkout, not in the shared source snapshot:
-        this keeps K2P's RAM-only Xray downloader out of every other device.
-        The overlay contains only shell scripts, config, and fixed symlinks;
-        Xray itself is never included in the firmware image.
-        """
-        if spec.key != "k2p":
+        """Stage the device overlay in its private build worktree."""
+        overlay = {"k2p": "k2p-router", "netcore_n60-pro": "n60pro"}.get(spec.key)
+        if overlay is None:
             return
-        source = self.repo_root / "device-files" / "k2p-router"
+        source = self.repo_root / "device-files" / overlay
         if not source.is_dir():
-            raise BuildError(f"missing K2P image overlay: {source}")
+            raise BuildError(f"missing {spec.key} image overlay: {source}")
         destination = openwrt_dir / "files"
         if destination.is_symlink():
             raise BuildError(f"unsafe image overlay path: {destination}")

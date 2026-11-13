@@ -192,12 +192,17 @@ UID；编译容器不使用 host network。
 
 更完整的模块边界和任务状态见 [docs/architecture.md](docs/architecture.md)。
 
-## ImmortalWrt v25.12.2 官方版本
+## N60 Pro 官方 ImmortalWrt master
 
-N60 Pro 的固件用于复测 SMB 与 PPPoE 同时转发时的发送队列超时。
-运行 `./owrt build n60pro`。首次准备源码时获取官方 `master` 的当前提交，
-随后使用不可变快照。每次 GitHub Actions 构建都会准备新的源码快照。
-固件保留 N60 Pro 原有的软件包配置，内核补丁采用官方 `master` 自带的版本。
+运行 `./owrt build n60pro`。GitHub Actions 每次构建时获取官方 `master` 的当前提交，
+内核使用官方补丁集。固件首次启动时（包括保留配置升级），通过 UCI 设置
+`lan1` 为 RX PAUSE 关闭、TX PAUSE 开启。脚本沿用已有的 `lan1` 设备段，
+也能为全新安装创建该段。该设置用于 SMB 和 PPPoE 同时转发时的断网问题。
+
+官方 Linux 6.18 已包含 FullCone 与 nlbwmon 共用 conntrack 通知链的修复。
+旧 PPE 回移涉及硬件卸载计数，当前 6.18 的 PPE 驱动需要重新适配并验证后才能使用。
+
+## ImmortalWrt v25.12.2 官方版本
 
 其余设备固定使用官方 `v25.12.2` 发布标签。
 官方固件修复集中在与 `configs/` 同级的 [fix_bugs/](fix_bugs/README.md)，源码准备时自动执行。

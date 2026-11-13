@@ -192,3 +192,20 @@ def test_k2p_only_stages_ram_xray_overlay(tmp_path: Path) -> None:
     other.mkdir()
     engine._stage_device_files(engine.catalog.resolve("k2p-ap"), other)
     assert not (other / "files").exists()
+
+
+def test_n60pro_only_stages_lan1_pause_defaults(tmp_path: Path) -> None:
+    from owrt_builder.build import BuildEngine
+
+    engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
+    script = Path("etc/uci-defaults/99-n60pro-lan1-pause")
+    for device in engine.catalog.devices.values():
+        work = tmp_path / device.key
+        work.mkdir()
+        engine._stage_device_files(device, work)
+        staged = work / "files" / script
+        if device.key == "netcore_n60-pro":
+            assert staged.read_bytes() == (ROOT / "device-files/n60pro" / script).read_bytes()
+            assert staged.stat().st_mode & 0o111
+        else:
+            assert not staged.exists()
