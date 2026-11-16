@@ -1,8 +1,10 @@
 # 官方固件问题修复
 
 这里与 `configs/` 同级，集中保存需要随固件编译的修复脚本和固定补丁。
-根目录用于官方 ImmortalWrt `v25.12.2` 的 `armv8`、`immortalwrt-25.12-mediatek` 源。
-N60 Pro 的 `immortalwrt-master-mediatek` 源使用 `mediatek-6.18/`。
+当前默认分支的所有设备均使用官方 ImmortalWrt `master`：
+MediaTek 设备（N60 Pro、360T7）共用 `mediatek-6.18/`；ARMv8 和 Ramips
+设备不应用旧的 Linux 6.12 回移补丁。根目录的 Linux 6.12 脚本仅为
+`immortalwrt-25.12.2` 归档分支保留，不参与当前 master 构建。
 
 源码准备阶段会按文件名顺序执行根目录的 `NNN-名称.sh`，唯一参数为源码树的绝对路径。
 CLI、Web、GitHub Actions 共用此入口；全部成功后才发布源码快照。脚本失败时保留上一份快照。
