@@ -32,7 +32,7 @@ def official_source(root: Path) -> Path:
     return root
 
 
-@pytest.mark.parametrize("source_id", ["armv8", "immortalwrt-25.12-mediatek"])
+@pytest.mark.parametrize("source_id", ["immortalwrt-25.12-armv8", "immortalwrt-25.12-mediatek"])
 def test_official_fix_is_idempotent_and_fullcone_controls_enablement(tmp_path: Path, source_id: str) -> None:
     source = official_source(tmp_path / "source with spaces")
     fingerprint = local_patches.install_local_patches(source, source_id)
@@ -56,7 +56,7 @@ def test_existing_different_upstream_patch_is_rejected_without_overwrite(tmp_pat
     config = source / "target/linux/generic/config-6.12"
     before = config.read_bytes()
     with pytest.raises(local_patches.LocalPatchError, match="existing kernel patch differs"):
-        local_patches.install_local_patches(source, "armv8")
+        local_patches.install_local_patches(source, "immortalwrt-25.12-armv8")
     assert patch.read_text() == "different upstream implementation\n"
     assert config.read_bytes() == before
     assert not (source / local_patches.FIX_STAMP).exists()
@@ -113,26 +113,26 @@ def test_script_and_patch_changes_invalidate_fingerprint_but_docs_do_not(tmp_pat
     fixes = tmp_path / "fix_bugs"
     shutil.copytree(ROOT / "fix_bugs", fixes)
     monkeypatch.setattr(local_patches, "_fix_root", lambda: fixes)
-    first = local_patches.patch_fingerprint("armv8")
+    first = local_patches.patch_fingerprint("immortalwrt-25.12-armv8")
     (fixes / "README.md").write_text("documentation change\n")
-    assert local_patches.patch_fingerprint("armv8") == first
+    assert local_patches.patch_fingerprint("immortalwrt-25.12-armv8") == first
     script = fixes / "010-fullcone-conntrack-events.sh"
     script.write_text(script.read_text() + "# script change\n")
-    second = local_patches.patch_fingerprint("armv8")
+    second = local_patches.patch_fingerprint("immortalwrt-25.12-armv8")
     assert second != first
     patch = fixes / "patches" / PATCH_NAME
     patch.write_text(patch.read_text() + "tampering\n")
-    assert local_patches.patch_fingerprint("armv8") != second
+    assert local_patches.patch_fingerprint("immortalwrt-25.12-armv8") != second
     source = official_source(tmp_path / "source")
     with pytest.raises(local_patches.LocalPatchError, match="checksum mismatch"):
-        local_patches.install_local_patches(source, "armv8")
+        local_patches.install_local_patches(source, "immortalwrt-25.12-armv8")
     assert not (source / PATCH_PATH).exists()
 
 
 def test_missing_fix_bundle_fails_preparation(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(local_patches, "_fix_root", lambda: tmp_path / "missing")
     with pytest.raises(local_patches.LocalPatchError, match="no firmware fix scripts"):
-        local_patches.patch_fingerprint("armv8")
+        local_patches.patch_fingerprint("immortalwrt-25.12-armv8")
 
 
 def test_numbered_scripts_run_in_order_and_stop_on_failure(tmp_path: Path, monkeypatch) -> None:
@@ -145,7 +145,7 @@ def test_numbered_scripts_run_in_order_and_stop_on_failure(tmp_path: Path, monke
     source = tmp_path / "source"
     source.mkdir()
     with pytest.raises(local_patches.LocalPatchError, match="020-fail.sh.*expected failure"):
-        local_patches.install_local_patches(source, "armv8")
+        local_patches.install_local_patches(source, "immortalwrt-25.12-armv8")
     assert (source / "order").read_text() == "first\n"
     assert not (source / local_patches.FIX_STAMP).exists()
 
@@ -164,22 +164,22 @@ def test_changed_fix_republishes_snapshot_and_failed_fix_keeps_previous(tmp_path
         return subprocess.CompletedProcess(args, 0, "", "")
 
     manager = SourceManager(tmp_path / "state", source_specs={
-        "armv8": SourceSpec("armv8", "https://example.invalid/official.git", "v25.12.2", None, "arm"),
+        "immortalwrt-25.12-armv8": SourceSpec("immortalwrt-25.12-armv8", "https://example.invalid/official.git", "v25.12.2", None, "arm"),
     }, command_runner=runner)
 
     def prepare():
-        return manager.prepare_source("armv8", feed_preparer=lambda *_: {}, catalog_builder=lambda root: Catalog(
+        return manager.prepare_source("immortalwrt-25.12-armv8", feed_preparer=lambda *_: {}, catalog_builder=lambda root: Catalog(
             root=root, packages=[PackageMetadata(name="demo", title="Demo")], authoritative=True,
         ))
 
     first = prepare()
     script = fixes / "010-fullcone-conntrack-events.sh"
     script.write_text(script.read_text() + "# changed fix\n")
-    assert manager.current("armv8") is None
+    assert manager.current("immortalwrt-25.12-armv8") is None
     second = prepare()
     assert second.snapshot_id != first.snapshot_id
     assert (second.path / PATCH_PATH).is_file()
-    current = tmp_path / "state/armv8/current"
+    current = tmp_path / "state/immortalwrt-25.12-armv8/current"
     previous_target = current.resolve()
     script.write_text("echo broken >&2; exit 1\n")
     with pytest.raises(SourceError, match="firmware fix.*broken"):
@@ -191,3 +191,8 @@ def test_changed_fix_republishes_snapshot_and_failed_fix_keeps_previous(tmp_path
 def test_removed_kernel_66_overlay_not_in_repo() -> None:
     assert not (ROOT / "scripts/iptv-hnat").exists()
     assert not (ROOT / "scripts/fix_bugs/rust_Makefile").exists()
+
+
+def test_active_master_arm_and_ramips_sources_do_not_receive_linux_612_patches() -> None:
+    for source_id in ("armv8", "immortalwrt-master-ramips"):
+        assert local_patches.patch_fingerprint(source_id) == ""
