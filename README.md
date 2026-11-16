@@ -78,8 +78,8 @@ SHA256、产物大小和每个产物的 SHA256；设备别名和规范名使用�
 GitHub runner 会调用与本地相同的 `./owrt build <device>`，并上传
 `.owrt/artifacts/**/*` 和构建证据。
 
-`.github/workflows/daily-build.yml` 每天北京时间 **00:00**（GitHub cron 使用 UTC，
-即前一天 `16:00 UTC`）自动启动固件构建矩阵，并行编译当前全部七种固件配置：
+`.github/workflows/daily-build.yml` 每天北京时间 **23:00**（GitHub cron 使用 UTC，
+即当天 `15:00 UTC`）自动启动固件构建矩阵，并行编译当前全部七种固件配置：
 `360t7`、`n60pro`、`s905d`、`vplus`、`r3g`、`k2p`、`k2p-ap`。矩阵启用 `fail-fast: false`，
 单个固件构建失败不会取消其余任务；同时支持手动触发一次完整矩阵。
 实际启动时间可能受 GitHub Actions 调度延迟影响；定时任务仅从默认分支执行。
@@ -135,8 +135,8 @@ PushPlus 可在页面“设置”中填写 token；token 只保存于持久化�
 
 ## feeds、配置和产物
 
-本分支的 N60 Pro 使用 ImmortalWrt 官方 `master`，其余设备使用官方 `v25.12.2`。
-各设备采用对应源码的内核/Rust，保留
+本分支七种设备固件全部使用 ImmortalWrt 官方 `master`，按 MediaTek、ARMv8、Ramips
+目标共享对应源码快照。各设备采用 master 当前的内核/Rust 工具链，保留
 Kenzo、rtp2httpd、cloudflarespeedtest、Passwall packages/LuCI；Passwall 跟随配置的
 默认分支。Go 恢复原分支的 `sbwml/packages_lang_golang` `27.x` feed，在源码准备阶段自动替换
 `feeds/packages/lang/golang`，跟随 Go 1.27 最新补丁（本次核验为 `1.27.3`）。
@@ -149,7 +149,7 @@ OpenWrt 的启动脚本、配置和编译选项。本次核验为 Tailscale `1.1
 `feeds/luci/applications/luci-app-tailscale-community`。每次 prepare/刷新都会获取
 配置分支的最新 HEAD 和 Tailscale 最新稳定版。准备阶段会删除默认 feed 中仅
 用于旧实现的 `luci-app-tailscale` 链接，但保留官方 `tailscale` 和
-`luci-app-tailscale-community` 链接，确保官方目录被选中；四个设备的默认配置均
+`luci-app-tailscale-community` 链接，确保官方目录被选中；七个设备的默认配置均
 选择 `tailscale` 和 `luci-app-tailscale-community`。每个 source snapshot 会把两个
 官方配方仓库及 Tailscale release 的实际提交记录到 `feed_commits`，并在配方目录的
 `.owrt-upstream.json` 记录版本、SHA256 和 Go 要求。release 变化会改变源码快照 ID。
@@ -177,7 +177,7 @@ OpenWrt 的启动脚本、配置和编译选项。本次核验为 Tailscale `1.1
 manifest 和固件仍按 task-id 分开保存。默认复用同设备缓存；源码快照变化时只替换
 源码文件并保留 `build_dir`、`staging_dir` 和下载目录；`fix_bugs` 修复指纹变化时会清除
 其中的目标编译状态，重建内核与目标软件包，保留工具链和下载缓存。Host 工具（尤其
-`tools/llvm-bpf`）改为放在 `cache/host-tools/<上游分支>`，同一 ImmortalWrt 分支的设备共享；
+`tools/llvm-bpf`）统一放在 `cache/host-tools/master`，七种设备共享同一套 LLVM 22.1.3 编译缓存；
 `hostpkg` 和目标交叉工具链仍按设备隔离，避免跨架构复用。Host 构建目录使用固定路径，
 避免 CMake 缓存中的绝对路径因设备目录变化而失效。缓存元数据使用原子写入和设备
 锁，失败或取消的任务不会把缓存标记为可复用。首次没有样本时按 8 GiB 保守估算，
@@ -195,30 +195,30 @@ UID；编译容器不使用 host network。
 
 更完整的模块边界和任务状态见 [docs/architecture.md](docs/architecture.md)。
 
-## N60 Pro 官方 ImmortalWrt master
+## 全设备统一 ImmortalWrt master
 
-运行 `./owrt build n60pro`。GitHub Actions 每次构建时获取官方 `master` 的当前提交，
-内核包含适配到 Linux 6.18 的 MediaTek PPE 计数修复。固件首次启动时（包括保留配置升级），通过 UCI 设置
-`lan1` 为 RX PAUSE 关闭、TX PAUSE 开启。脚本沿用已有的 `lan1` 设备段，
-也能为全新安装创建该段。该设置用于 SMB 和 PPPoE 同时转发时的断网问题。
+当前七种设备固件（N60 Pro、360T7、S905D、V-Plus、R3G、K2P Router、K2P AP）
+全部跟随官方 `master` 当前提交，三个目标平台均使用 Linux 6.18。GitHub Actions
+使用同一套 LLVM 22.1.3 Host 工具缓存，设备交叉工具链仍分别缓存。
 
-官方 Linux 6.18 已包含 FullCone 与 nlbwmon 共用 conntrack 通知链的修复。
-PPE 计数修复的上游来源及验证方式见 [fix_bugs/](fix_bugs/README.md)。
+MediaTek 的 N60 Pro 和 360T7 共用适配 Linux 6.18 的 PPE 计数修复；
+FullCone 与 nlbwmon 共用 conntrack 通知链的修复由官方 master 提供。
+修复来源及验证方式见 [fix_bugs/](fix_bugs/README.md)。
 
-## ImmortalWrt v25.12.2 官方版本
+N60 Pro 额外在首次启动时（包括保留配置升级）通过 UCI 设置 `lan1` 为 RX PAUSE
+关闭、TX PAUSE 开启。脚本沿用已有的 `lan1` 设备段，也能为全新安装创建该段。
+该设置用于 SMB 和 PPPoE 同时转发时的断网问题。
 
-其余设备固定使用官方 `v25.12.2` 发布标签。
-官方固件修复集中在与 `configs/` 同级的 [fix_bugs/](fix_bugs/README.md)，源码准备时自动执行。
-当前回移官方 Linux 6.12 conntrack 通知链修复，解决 FullCone 与 nlbwmon 的事件订阅冲突。
-同时回移固定版本的 MediaTek PPE 计数修复，处理约 4 GiB 虚增、过期计数重复累计和连接结束漏计；
-上游候选 PR、Linux 6.12 适配及实机验证要求见 `fix_bugs/README.md`。
-不携带 237 / Linux 6.6 特有的 IPTV/HNAT 内核补丁。
-迁移细节、插件来源、配置验证与 n2 部署见
+## ImmortalWrt v25.12.2 历史归档
+
+本仓库的 `immortalwrt-25.12.2` 分支保留旧版官方发布标签及 Linux 6.12 修复记录，
+仅作归档，不参与当前默认分支的七设备矩阵编译。当前活跃设备不再引用
+`v25.12.2` 上游源码。迁移历史、插件来源和 n2 部署记录见
 [25.12.2 迁移运行手册](docs/immortalwrt-25.12.2-migration.md)。
 
 ## MT7621 设备说明（R3G / K2P）
 
-- 两款机型基于官方 ImmortalWrt `v25.12.2` 的 `ramips/mt7621`。
+- 两款机型基于官方 ImmortalWrt `master` 的 `ramips/mt7621`（Linux 6.18）。
   R3G profile 为 `xiaomi_mi-router-3g`（首代 NAND，不是 R3G v2），
   K2P profile 为 `phicomm_k2p`（MediaTek A1/A2，不是 Broadcom B1）。
 - R3G 使用共享 MT7621 诊断配置，包含 tcpdump、iftop、ethtool、
