@@ -5,15 +5,8 @@ default_config = "armv8.config"
 [[sources]]
 id = "armv8"
 url = "https://github.com/immortalwrt/immortalwrt.git"
-branch = "v25.12.2"
-# Official immutable release tag, not the moving 25.12 maintenance branch.
+branch = "master"
 platform = "arm"
-
-[[sources]]
-id = "immortalwrt-25.12-mediatek"
-url = "https://github.com/immortalwrt/immortalwrt.git"
-branch = "v25.12.2"
-platform = "mediatek"
 
 [[sources]]
 id = "immortalwrt-master-mediatek"
@@ -22,16 +15,16 @@ branch = "master"
 platform = "mediatek"
 
 [[sources]]
-id = "immortalwrt-25.12-ramips"
+id = "immortalwrt-master-ramips"
 url = "https://github.com/immortalwrt/immortalwrt.git"
-branch = "v25.12.2"
+branch = "master"
 platform = "ramips"
 
 [[devices]]
 key = "360t7"
 aliases = ["360-t7", "qihoo_360t7"]
 platform = "mediatek"
-source = "immortalwrt-25.12-mediatek"
+source = "immortalwrt-master-mediatek"
 profile = "qihoo_360t7"
 config = "360t7.config"
 packager = "mediatek"
@@ -75,7 +68,7 @@ description = "H6 V-Plus"
 key = "r3g"
 aliases = ["xiaomi-r3g", "xiaomi_r3g", "mir3g", "xiaomi_mi-router-3g"]
 platform = "ramips"
-source = "immortalwrt-25.12-ramips"
+source = "immortalwrt-master-ramips"
 profile = "xiaomi_mi-router-3g"
 config = "r3g.config"
 packager = "ramips"
@@ -87,7 +80,7 @@ description = "Xiaomi Mi Router 3G (R3G, NAND; not R3G v2)"
 key = "k2p"
 aliases = ["phicomm-k2p", "phicomm_k2p", "k2p-a1", "k2p-a2", "k2p-router"]
 platform = "ramips"
-source = "immortalwrt-25.12-ramips"
+source = "immortalwrt-master-ramips"
 profile = "phicomm_k2p"
 config = "k2p.config"
 packager = "ramips"
@@ -99,7 +92,7 @@ description = "Phicomm K2P A1/A2 — ROUTER (PassWall, DHCP, firewall)"
 key = "k2p-ap"
 aliases = ["phicomm-k2p-ap", "k2p-bridge", "k2p-ap-only"]
 platform = "ramips"
-source = "immortalwrt-25.12-ramips"
+source = "immortalwrt-master-ramips"
 profile = "phicomm_k2p"
 config = "k2p-ap.config"
 packager = "ramips"
