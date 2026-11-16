@@ -24,13 +24,13 @@
 
 | key | aliases | source | config fragment | 说明 |
 | --- | --- | --- | --- | --- |
-| `360t7` | `360-t7`, `qihoo_360t7` | `immortalwrt-25.12-mediatek` | `360t7.config` | 路由默认配置 |
-| `netcore_n60-pro` | `n60pro`, `n60-pro`, `netcore-n60-pro`, `netcore_n60_pro` | `immortalwrt-25.12-mediatek` | `n60pro.config` | 路由默认配置，N60 Pro 真机验收 |
-| `s905d` | `n1` | `armv8` | `s905d.config` | 包含 armv8.config，启用 Amlogic 管理；s905 非别名 |
-| `vplus` | `h6-vplus` | `armv8` | `vplus.config` | 包含 armv8.config，不预装 Amlogic 管理 |
-| `r3g` | `xiaomi-r3g`, `mir3g` | `immortalwrt-25.12-ramips` | `r3g.config` | 首代小米 R3G / ramips/mt7621 |
-| `k2p` | `phicomm-k2p`, `k2p-router` | `immortalwrt-25.12-ramips` | `k2p.config` | K2P 标准路由 + 精简 PassWall，16MB 空间待验收 |
-| `k2p-ap` | `phicomm-k2p-ap`, `k2p-bridge` | `immortalwrt-25.12-ramips` | `k2p-ap.config` | K2P AP 桥接专用配置，tcpdump-mini / ethtool / iwinfo / ip-bridge |
+| `360t7` | `360-t7`, `qihoo_360t7` | `immortalwrt-master-mediatek` | `360t7.config` | 路由默认配置 |
+| `netcore_n60-pro` | `n60pro`, `n60-pro`, `netcore-n60-pro`, `netcore_n60_pro` | `immortalwrt-master-mediatek` | `n60pro.config` | 路由默认配置，N60 Pro 真机验收 |
+| `s905d` | `n1` | `armv8` | `s905d.config` | master armsr/armv8，启用 Amlogic 管理；s905 非别名 |
+| `vplus` | `h6-vplus` | `armv8` | `vplus.config` | master armsr/armv8，不预装 Amlogic 管理 |
+| `r3g` | `xiaomi-r3g`, `mir3g` | `immortalwrt-master-ramips` | `r3g.config` | 首代小米 R3G / ramips/mt7621 |
+| `k2p` | `phicomm-k2p`, `k2p-router` | `immortalwrt-master-ramips` | `k2p.config` | K2P 标准路由 + 精简 PassWall，16MB 空间待验收 |
+| `k2p-ap` | `phicomm-k2p-ap`, `k2p-bridge` | `immortalwrt-master-ramips` | `k2p-ap.config` | K2P AP 桥接专用配置，tcpdump-mini / ethtool / iwinfo / ip-bridge |
 
 源码仓库和分支是 `SourceSpec` 的常量；准备完成后以 git 实际 `HEAD` 作为 snapshot 的 source commit。接口不接受用户输入的 commit。snapshot 目录不可变，`current` 只是原子替换的符号链接；正在编译的任务只使用其创建时返回的 `PreparedSource.path`/`snapshot_id`，后续 feed 更新不会改变它。
 
@@ -42,7 +42,7 @@
 
 ## Feed
 
-默认 feed 包含 Passwall 上游、OpenWrt 官方 Tailscale 及 FRP 配方、luci-app-tailscale-community、Lucky 原作者、Pushbot 原作者、rtp2httpd、CloudflareSpeedTest 及 Kenzo 辅助包。构建使用 ImmortalWrt v25.12.2 自带 Go/Rust 工具链，不覆盖 lang/golang、不再应用 237/6.6 IPTV/HNAT 补丁。历史实现详见迁移文档。
+默认 feed 包含 Passwall 上游、OpenWrt 官方 Tailscale 及 FRP 配方、luci-app-tailscale-community、Lucky 原作者、Pushbot 原作者、rtp2httpd、CloudflareSpeedTest 及 Kenzo 辅助包。构建使用 ImmortalWrt master 自带的 Go/Rust 工具链，不覆盖 lang/golang，不应用 237/6.6 IPTV/HNAT 补丁。
 
 Feed 准备完成后会读取 Go feed 的 `GO_VERSION_MAJOR_MINOR`/`GO_VERSION_PATCH`，并只扫描带有 `GO_PKG` 或 `golang/host` 的 OpenWrt package Makefile 目录下的 `go.mod`。`vendor`、测试、示例和生成目录会被跳过；已存在的模块若声明了高于工具链的 `go` 版本，准备立即失败。检查发生在临时 staging 树切换为 `current` 之前，因此失败时上一份可用快照仍然保留。远程源码压缩包在后续 `make download` 阶段才获取，未出现在准备树中的模块不会被预扫描。
 
