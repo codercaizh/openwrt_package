@@ -1507,6 +1507,16 @@ class BuildEngine:
 
         shared_build_host = host_cache_root / "build_dir" / "host"
         shared_staging_host = host_cache_root / "staging_dir" / "host"
+        for candidate in (
+            host_cache_root.parent,
+            host_cache_root,
+            host_cache_root / "build_dir",
+            host_cache_root / "staging_dir",
+            shared_build_host,
+            shared_staging_host,
+        ):
+            if candidate.is_symlink():
+                raise BuildError(f"unsafe shared host cache path: {candidate}")
         shared_build_host.mkdir(parents=True, exist_ok=True)
         shared_staging_host.mkdir(parents=True, exist_ok=True)
 
