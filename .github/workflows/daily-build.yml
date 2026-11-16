@@ -2,8 +2,8 @@ name: Daily Firmware Matrix
 
 on:
   schedule:
-    # GitHub cron is UTC: 16:00 UTC = 00:00 Beijing time the next day.
-    - cron: "0 16 * * *"
+    # GitHub cron is UTC: 15:00 UTC = 23:00 Beijing time.
+    - cron: "0 15 * * *"
   workflow_dispatch:
 
 permissions:
