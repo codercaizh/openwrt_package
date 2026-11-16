@@ -38,4 +38,10 @@ def test_build_workflow_shares_host_tools_and_keeps_target_toolchains_device_sco
     assert "owrt-toolchain-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.canonical }}" in workflow
     assert ".owrt/cache/dl/llvm-project-${{ steps.cache_scope.outputs.llvm_version }}.src.tar.xz" in workflow
     assert "github.ref_name" not in workflow
+    catalog = load_catalog(ROOT / "configs/devices.toml")
+    assert {catalog.source_for(device).branch for device in catalog.devices.values()} == {"master"}
+    assert "host_scope=master" in workflow
+    assert "llvm_version=22.1.3" in workflow
+    assert "v25.12.2" not in workflow
+    assert "21.1.6" not in workflow
     assert ".owrt/cache/dl\n" not in workflow
