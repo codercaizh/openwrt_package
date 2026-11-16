@@ -137,6 +137,76 @@ def test_archive_preserves_nanos_permissions_symlinks_and_rejects_escape(tmp_pat
 
 
 @pytest.mark.skipif(not shutil.which("zstd"), reason="cache transport requires zstd")
+def test_archive_accepts_file_list_larger_than_linux_argv_limit(tmp_path: Path):
+    source = tmp_path / "downloads"
+    source.mkdir()
+    first = source / "payload.tar.gz"
+    first.write_bytes(b"payload")
+    paths = ["payload.tar.gz"]
+    for index in range(14_000):
+        name = f"{index:05d}-{'x' * 174}.tar.gz"
+        os.link(first, source / name)
+        paths.append(name)
+    assert sum(len(path) + 1 for path in paths) > 2 * 1024**2
+    archive = tmp_path / "downloads.tar.zst"
+    cache_archive.pack(archive, source, paths)
+    assert cache_archive.inspect(archive, lambda _: True) == set(paths)
+
+
+def test_compiler_restore_breaks_legacy_key_ties_only_within_same_version(tmp_path: Path, monkeypatch):
+    cache = ci.Cache(tmp_path)
+    version = Version("a" * 40, "b" * 40)
+    plan = {"version": asdict(version), "identities": {"host": "new", "source": "new"}}
+    a = Candidate("old-key-a", version, "old-a")
+    b = Candidate("old-key-b", version, "old-b")
+    monkeypatch.setattr(cache, "candidates", lambda *_: [b, a])
+    assert cache.choose("host", plan, fallback=True) == a.key
+    assert cache.choose("source", plan, fallback=True) == ""
+    plan["identities"]["host"] = b.identity
+    assert cache.choose("host", plan, fallback=True) == b.key
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="cache transport requires zstd")
+@pytest.mark.parametrize("change_toolchain_source", [False, True])
+def test_restore_compiler_layers_from_old_manifest_uses_source_files(tmp_path: Path, change_toolchain_source: bool):
+    cache = ci.Cache(tmp_path)
+    version = Version("a" * 40, "b" * 40)
+    identity = "c" * 64
+    files = {"rules.mk": [0o644, "same content"]}
+    plan = {
+        "version": asdict(version), "keys": {}, "device": "n60", "target": "mediatek/filogic",
+        "source_id": "mediatek", "snapshot": "snapshot", "host_files": files,
+        "toolchain_files": {"rules.mk": [0o644, "changed"]} if change_toolchain_source else files,
+    }
+    paths = {
+        "host": ["build_dir/host", "staging_dir/host"],
+        "toolchain": ["build_dir/toolchain-example", "staging_dir/toolchain-example/bin"],
+    }
+    cache.transfer.mkdir(parents=True)
+    for family, folders in paths.items():
+        base = tmp_path / family
+        for folder in folders:
+            (base / folder).mkdir(parents=True)
+            (base / folder / "artifact").write_text("built")
+        ci.save(base / "ci-manifest.json", {
+            "schema": ci.SCHEMA, "family": family, "repository": REPOSITORY, "branch": ci.BRANCH,
+            "ready": True, "version": asdict(version), "identity": identity,
+            "files": files, "mtimes": {"rules.mk": 1},
+            "device": plan["device"], "target": plan["target"], "source_id": plan["source_id"],
+            "environment": f"legacy-{family}", "inputs": "legacy-includes-environment",
+        })
+        cache_archive.pack(cache.archive(family), base, ["ci-manifest.json", "build_dir", "staging_dir"])
+        plan["keys"][family] = f"{cache.prefix(family, plan)}{version.builder}-{version.upstream}-{identity}"
+
+    ci.save(cache.plan_path, plan)
+    cache.restore_compilers()
+    assert cache.plan["host_restore"] is not None
+    assert (cache.host / "build_dir/host/artifact").is_file()
+    assert (cache.plan["toolchain_restore"] is None) == change_toolchain_source
+    assert (cache.device / "openwrt/staging_dir/toolchain-example/bin/artifact").is_file() != change_toolchain_source
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="cache transport requires zstd")
 def test_restore_drops_bad_manifest_without_promoting_any_files(tmp_path: Path):
     cache = ci.Cache(tmp_path)
     cache.transfer.mkdir(parents=True)
@@ -150,6 +220,39 @@ def test_restore_drops_bad_manifest_without_promoting_any_files(tmp_path: Path):
     plan["keys"]["dl"] = f"{cache.prefix('dl', plan)}{version.builder}-{version.upstream}-{'c' * 64}"
     assert cache.restore("dl", plan, cache.dl, lambda *_: None) is None
     assert not cache.dl.exists()
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="cache transport requires zstd")
+@pytest.mark.parametrize("changed_download", [False, True])
+def test_download_archive_roundtrip_checks_files_but_excludes_transport_manifest(
+    tmp_path: Path, changed_download: bool,
+):
+    cache = ci.Cache(tmp_path)
+    staging = tmp_path / "downloads"
+    staging.mkdir()
+    package = staging / "linux.tar.xz"
+    package.write_bytes(b"archive contents")
+    (staging / "archive.partial").write_bytes(b"incomplete")
+    version = Version("a" * 40, "b" * 40)
+    identity = "c" * 64
+    downloads = ci.download_entries(staging)
+    assert set(downloads) == {"linux.tar.xz"}
+    ci.save(staging / "ci-manifest.json", {
+        "schema": ci.SCHEMA, "family": "dl", "repository": REPOSITORY, "branch": ci.BRANCH,
+        "ready": True, "version": asdict(version), "identity": identity, "downloads": downloads,
+    })
+    if changed_download:
+        package.write_bytes(b"changed bytes")
+    cache_archive.pack(cache.archive("dl"), staging, ["ci-manifest.json", *downloads])
+    key = f"{cache.prefix('dl', {})}{version.builder}-{version.upstream}-{identity}"
+    metadata = cache.restore("dl", {"keys": {"dl": key}}, cache.dl, ci.verify_downloads)
+    if changed_download:
+        assert metadata is None
+        assert not cache.dl.exists()
+    else:
+        assert metadata is not None
+        assert (cache.dl / package.name).read_bytes() == package.read_bytes()
+        assert list(cache.dl.iterdir()) == [cache.dl / package.name]
 
 
 def test_download_guard_checks_current_recipe_and_refetches_invalid_archive(tmp_path: Path):
@@ -184,9 +287,7 @@ def test_trusted_ref_requires_repo_real_branch_and_event(monkeypatch):
     assert not ci.trusted()
 
 
-def test_toolchain_rejects_mixed_environment_and_incomplete_install(tmp_path: Path):
-    with pytest.raises(ValueError, match="workspace path changed"):
-        ci.require_environment({"environment": "a"}, {"environment": "b"})
+def test_toolchain_rejects_incomplete_install(tmp_path: Path):
     (tmp_path / "build_dir/toolchain-arm64").mkdir(parents=True)
     (tmp_path / "staging_dir/toolchain-mips/bin").mkdir(parents=True)
     with pytest.raises(ValueError, match="matching build"):

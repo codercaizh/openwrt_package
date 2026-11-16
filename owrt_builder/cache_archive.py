@@ -21,7 +21,8 @@ def pack(archive: Path, root: Path, paths: list[str], *, exclude: list[str] | No
     subprocess.run(
         ["tar", "--format=pax", "--sort=name", "--pax-option=delete=atime,delete=ctime",
          "-I", "zstd -T2 -3", "-cf", str(archive), "-C", str(root),
-         *(f"--exclude={name}" for name in exclude or ()), "--", *paths],
+         *(f"--exclude={name}" for name in exclude or ()), "--null", "--files-from=-"],
+        input=b"".join(os.fsencode(path) + b"\0" for path in paths),
         check=True,
     )
 

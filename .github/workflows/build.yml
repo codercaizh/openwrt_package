@@ -171,10 +171,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OWRT_CACHE_BUDGET_MIB: ${{ vars.OWRT_CACHE_BUDGET_MIB }}
 
-      - name: Verify the second N60 Pro build reused its compiler state
-        if: inputs.validation == '-warm'
-        run: python -m owrt_builder.ci_cache verify-warm
-
       - name: Upload firmware
         if: success()
         uses: actions/upload-artifact@v4
@@ -207,6 +203,10 @@ jobs:
             .owrt/artifacts/**/ipk-packages.tar.gz
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Verify the second N60 Pro build reused its compiler state
+        if: inputs.validation == '-warm'
+        run: python -m owrt_builder.ci_cache verify-warm
 
       - name: Upload build evidence
         if: always()

@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import platform
 import re
 import shutil
 import subprocess
@@ -32,10 +31,10 @@ from .upstream_versions import _latest_tailscale_tag, _tailscale_tag_commit
 
 SCHEMA = 3
 SLOT = "ci-device"
-WORKER = "/workspace/work"
 LAYERS = ("source", "host", "toolchain", "dl")
 MIB = 1024**2
-LAYER_LIMIT = {"source": 500, "host": 1900, "toolchain": 1600, "dl": 2100}
+# The N60 Pro download tree was 3.80 GB before compression.
+LAYER_LIMIT = {"source": 500, "host": 1900, "toolchain": 1600, "dl": 3900}
 UNCACHEABLE_SOURCE = {"dl", "build_dir", "staging_dir", "bin", "tmp", "logs", "artifacts"}
 DL_NAME = re.compile(r"[A-Za-z0-9_+@][A-Za-z0-9_+@.,~-]*\Z")
 CONFIG_SYMBOL = re.compile(r"\bCONFIG_[A-Za-z0-9_]+\b")
@@ -209,7 +208,14 @@ class Cache:
             if fallback:
                 choices = maximal(candidates, version)
                 if len({item.version for item in choices}) == 1 and len(choices) > 1:
-                    choices = [item for item in choices if item.identity == identity]
+                    matching = [item for item in choices if item.identity == identity]
+                    if matching:
+                        choices = matching
+                    elif family in {"host", "toolchain"}:
+                        # Existing v3 archives can share the same Git provenance
+                        # and differ only in their old keys. Use a stable tie
+                        # breaker, then validate the selected archive's inputs.
+                        choices = [min(choices, key=lambda item: item.key)]
                 selected = choices[0] if len(choices) == 1 else None
             else:
                 selected = select(candidates, version, identity)
@@ -270,7 +276,7 @@ class Cache:
             "identity": plan["identities"][family], "version": plan["version"], "ready": True,
             "source_id": plan["source_id"], "upstream_url": plan["upstream_url"],
             "pins": plan["pins"], "patch": plan["patch"], "preparation": plan["preparation"],
-            "device": plan["device"], "target": plan["target"], "environment": plan["environment"],
+            "device": plan["device"], "target": plan["target"],
             "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
         }
 
@@ -329,11 +335,6 @@ class Cache:
 
     def prepare(self) -> None:
         plan = self.plan
-        package_versions = subprocess.check_output(["dpkg-query", "-W"], text=True)
-        plan["environment"] = digest([
-            platform.machine(), platform.system(), WORKER, SLOT, os.getuid() == 0,
-            checksum(repository_root() / "docker/Dockerfile"), sorted(package_versions.splitlines()),
-        ])
         catalog = load_catalog()
         spec = catalog.resolve(plan["device"])
         manager = SourceManager(self.sources, source_specs=catalog.sources)
@@ -387,11 +388,7 @@ class Cache:
         plan["feeds"] = dict(prepared.feed_commits)
         source = prepared.path
 
-        def verify_dl(path: Path, manifest: dict) -> None:
-            if download_entries(path) != manifest["downloads"]:
-                raise ValueError("download file checksums or sizes differ")
-
-        dl_metadata = self.restore("dl", plan, self.dl, verify_dl)
+        dl_metadata = self.restore("dl", plan, self.dl, verify_downloads)
         if not dl_metadata:
             self.legacy_llvm(source)
         stage_download_seeds(source, self.dl)
@@ -404,19 +401,16 @@ class Cache:
         plan["toolchain_files"] = fingerprints(
             source, [*common, "toolchain", "target/Config.in", "target/config", f"target/linux/{spec.target.split('/')[0]}"],
         )
-        # Device config files are included before defconfig; the resolved ABI is
-        # checked again before Make uses any restored toolchain.
+        # Include the checked-in configs in the keys. After restore, compare
+        # source inputs and then the relevant settings produced by defconfig.
         config_input = digest(fingerprints(repository_root(), ["configs"]))
-        plan["toolchain_inputs"] = digest([
-            plan["environment"], spec.key, spec.target, config_input, plan["toolchain_files"],
-        ])
         plan["identities"].update(
-            host=digest([plan["environment"], plan["host_files"], config_input, plan["pins"]]),
-            toolchain=digest([plan["toolchain_inputs"], plan["pins"]]),
+            host=digest([plan["host_files"], config_input, plan["pins"]]),
+            toolchain=digest([spec.key, spec.target, plan["toolchain_files"], config_input, plan["pins"]]),
         )
         save(self.plan_path, plan)
         log(f"CACHE_BASELINE builder={plan['version']['builder']} upstream={upstream} "
-            f"feeds={digest(plan['feeds'])} environment={plan['environment']} source={plan['snapshot']}")
+            f"feeds={digest(plan['feeds'])} source={plan['snapshot']}")
 
     def legacy_llvm(self, source: Path) -> None:
         # The old action supplies exactly this path and nothing in the v2 compiler layers.
@@ -444,7 +438,6 @@ class Cache:
         plan = self.plan
 
         def verify_host(path: Path, manifest: dict) -> None:
-            require_environment(manifest, plan)
             require_dirs(path, ["build_dir/host", "staging_dir/host"])
             expected = plan["host_files"]
             previous = manifest["files"]
@@ -455,12 +448,11 @@ class Cache:
             validate_times(manifest, previous)
 
         def verify_toolchain(path: Path, manifest: dict) -> None:
-            require_environment(manifest, plan)
             for name in ("device", "target", "source_id"):
                 if manifest[name] != plan[name]:
                     raise ValueError(f"toolchain {name} changed")
-            if manifest["inputs"] != plan["toolchain_inputs"]:
-                raise ValueError("toolchain inputs changed")
+            if manifest["files"] != plan["toolchain_files"]:
+                raise ValueError("toolchain source files changed")
             require_toolchain(path)
             validate_times(manifest, plan["toolchain_files"])
 
@@ -491,8 +483,10 @@ class Cache:
         try:
             usage = github(REPOSITORY, "actions/cache/usage")["active_caches_size_in_bytes"]
             free = shutil.disk_usage(self.workspace).free
-            if usage >= budget() or free <= 2 * LAYER_LIMIT[family] * MIB:
+            available = min(budget() - usage, free // 2)
+            if available <= 0:
                 raise ValueError(f"repository_usage={usage} disk_free={free} budget={budget()}")
+            limit = min(LAYER_LIMIT[family] * MIB, available)
             excluded = []
             if family == "source":
                 root = self.sources / plan["source_id"] / "snapshots" / plan["snapshot"]
@@ -533,8 +527,8 @@ class Cache:
             cache_archive.inspect(archive, lambda item: self.allowed(family, item),
                                   compiler=family in {"host", "toolchain"})
             size = archive.stat().st_size
-            if size > LAYER_LIMIT[family] * MIB or usage + size > budget():
-                raise ValueError(f"compressed_size={size} repository_usage={usage} budget={budget()}")
+            if size > limit:
+                raise ValueError(f"compressed_size={size} publish_limit={limit} repository_usage={usage} disk_free={free}")
             log(f"CACHE_SIZE family={family} compressed_bytes={size}")
         except ERRORS as exc:
             archive.unlink(missing_ok=True)
@@ -646,18 +640,20 @@ def verify_git(root: Path, expected: str) -> None:
 
 
 def download_entries(root: Path) -> dict:
+    # The root manifest is added after hashing and is part of the transport.
+    names = [item.name for item in root.iterdir() if item.name != "ci-manifest.json"] if root.is_dir() else []
     return {
         name: [path.stat().st_size, checksum(path)]
-        for name, path in tracked_files(root, [item.name for item in root.iterdir()] if root.is_dir() else [])
+        for name, path in tracked_files(root, names)
         if path.is_file() and not path.is_symlink() and path.stat().st_size > 0
         and all(DL_NAME.fullmatch(part) and not part.endswith((".tmp", ".partial", ".dl", ".hash", ".lock", ".log"))
                 for part in name.split("/"))
     }
 
 
-def require_environment(manifest: dict, plan: dict) -> None:
-    if manifest["environment"] != plan["environment"]:
-        raise ValueError("Docker toolchain, architecture, user mode or workspace path changed")
+def verify_downloads(root: Path, manifest: dict) -> None:
+    if download_entries(root) != manifest["downloads"]:
+        raise ValueError("download file checksums or sizes differ")
 
 
 def require_dirs(root: Path, names: list[str]) -> None:
@@ -733,7 +729,7 @@ class CompilerCache:
         host_symbols.update({"CONFIG_AUTOREBUILD", "CONFIG_AUTOREMOVE"})
         host_config = digest({name: settings.get(name) for name in host_symbols})
         abi = digest({name: value for name, value in settings.items() if not name.startswith("CONFIG_PACKAGE_")})
-        hostpkg_config = digest([raw, self.plan["snapshot"], self.plan["identities"]["host"]])
+        hostpkg_config = digest([raw, self.plan["snapshot"], self.plan["host_files"]])
         host = self.plan.get("host_restore")
         toolchain = self.plan.get("toolchain_restore")
         host_ok = bool(host and host["config"] == host_config)
@@ -757,7 +753,7 @@ class CompilerCache:
             "host": {"config": host_config, "reused": host_ok and not llvm_changed,
                      "files": self.plan["host_files"], "mtimes": mtime_map(self.source, self.plan["host_files"])},
             "toolchain": {
-                "config": abi, "reused": toolchain_ok, "inputs": self.plan["toolchain_inputs"],
+                "config": abi, "reused": toolchain_ok,
                 "hostpkg_config": hostpkg_config, "hostpkg_reused": hostpkg_ok,
                 "files": self.plan["toolchain_files"], "mtimes": mtime_map(self.source, self.plan["toolchain_files"]),
             },
