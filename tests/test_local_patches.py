@@ -16,6 +16,7 @@ BUNDLE = ROOT / "fix_bugs/mediatek-6.18"
 
 
 def master_source(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
     (root / "Makefile").write_text("include $(TOPDIR)/rules.mk\n", encoding="utf-8")
     target = root / "target/linux/mediatek"
     (target / "patches-6.18").mkdir(parents=True)
