@@ -843,6 +843,8 @@ class BuildEngine:
         # Workspace selection is an engine concern.  The public request only
         # carries a device, an optional immutable snapshot, and selections.
         workspace = self.workspace
+        host_cache_scope = self._host_cache_scope(source.branch)
+        host_cache_root = workspace / "cache" / "host-tools" / host_cache_scope
         task_dir = workspace / "tasks" / request.task_id
         build_dir = workspace / "builds" / request.task_id
         artifact_dir = workspace / "artifacts" / spec.key / request.task_id
@@ -975,6 +977,7 @@ class BuildEngine:
                         callback,
                         cancel_event,
                         jobs=request.jobs,
+                        host_cache_root=host_cache_root,
                     )
                     artifacts = self._package(
                         spec,
@@ -1458,6 +1461,15 @@ class BuildEngine:
         output.write_text(rendered, encoding="utf-8")
         return output
 
+    @staticmethod
+    def _host_cache_scope(branch: str) -> str:
+        """Return a safe, stable scope shared by devices on one source branch."""
+
+        scope = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(branch).strip()).strip(".-")
+        if not scope:
+            raise BuildError("source branch is not valid for the shared host cache")
+        return scope
+
     def _stage_device_files(self, spec: DeviceSpec, openwrt_dir: Path) -> None:
         """Stage the device overlay in its private build worktree."""
         overlay = {"k2p": "k2p-router", "netcore_n60-pro": "n60pro"}.get(spec.key)
@@ -1471,6 +1483,54 @@ class BuildEngine:
             raise BuildError(f"unsafe image overlay path: {destination}")
         shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
 
+    @staticmethod
+    def _prepare_shared_host_cache(
+        openwrt_dir: Path,
+        host_cache_root: Path,
+        callback: LogCallback | None = None,
+    ) -> tuple[Path, Path]:
+        """Link OpenWrt's host build/staging directories to a branch-shared cache.
+
+        CMake stores absolute source/build paths in its cache files, so host
+        build trees must use the same workspace-relative path across devices.
+        Keep hostpkg under each device tree: package host builds can be target-
+        configuration-sensitive and are deliberately not shared.
+        """
+
+        shared_build_host = host_cache_root / "build_dir" / "host"
+        shared_staging_host = host_cache_root / "staging_dir" / "host"
+        shared_build_host.mkdir(parents=True, exist_ok=True)
+        shared_staging_host.mkdir(parents=True, exist_ok=True)
+
+        for relative, target in (
+            (Path("build_dir") / "host", shared_build_host),
+            (Path("staging_dir") / "host", shared_staging_host),
+        ):
+            link = openwrt_dir / relative
+            if link.parent.is_symlink():
+                raise BuildError(f"unsafe OpenWrt cache parent: {link.parent}")
+            link.parent.mkdir(parents=True, exist_ok=True)
+            if link.is_symlink():
+                try:
+                    if link.resolve(strict=False) == target.resolve(strict=False):
+                        continue
+                except OSError:
+                    pass
+                link.unlink(missing_ok=True)
+            elif link.exists():
+                if callback:
+                    callback(
+                        "切换共享 Host 缓存：移除旧的设备私有目录 "
+                        f"{link}（其中的 CMake 绝对路径不可跨目录搬迁）"
+                    )
+                if link.is_dir():
+                    shutil.rmtree(link)
+                else:
+                    link.unlink()
+            link.symlink_to(target, target_is_directory=True)
+
+        return shared_build_host, shared_staging_host
+
     def _run_pipeline(
         self,
         spec: DeviceSpec,
@@ -1481,6 +1541,7 @@ class BuildEngine:
         cancel_event: Any,
         *,
         jobs: int,
+        host_cache_root: Path | None = None,
     ) -> None:
         env = os.environ.copy()
         env.update(
@@ -1498,6 +1559,22 @@ class BuildEngine:
                 "V": os.environ.get("OWRT_MAKE_VERBOSE", "s"),
             }
         )
+        make_args: list[str] = []
+        if host_cache_root is not None:
+            shared_build_host, shared_staging_host = self._prepare_shared_host_cache(
+                openwrt_dir,
+                host_cache_root,
+                callback,
+            )
+            # The conditional keeps package/ host builds in their per-device
+            # hostpkg directory while tools/* (including llvm-bpf) use the
+            # stable branch-shared host build directory.
+            make_args = [
+                "BUILD_DIR_HOST=$(if $(IS_PACKAGE_BUILD),$(BUILD_DIR_BASE)/hostpkg,"
+                f"{shared_build_host})",
+                f"STAGING_DIR_HOST={shared_staging_host}",
+            ]
+            self._emit(callback, f"共享 Host 工具缓存: {host_cache_root}")
         # SourceManager has already staged native feeds, project feeds,
         # Passwall packages and the authoritative package catalog.  Running
         # the legacy hooks again here would follow moving branches and could
@@ -1507,7 +1584,7 @@ class BuildEngine:
         self._stage_device_files(spec, openwrt_dir)
         shutil.copyfile(config_path, openwrt_dir / ".config")
         self._run_checked(
-            ["make", "defconfig"],
+            ["make", *make_args, "defconfig"],
             cwd=openwrt_dir,
             env=env,
             callback=callback,
@@ -1535,7 +1612,7 @@ class BuildEngine:
             )
         self._validate_ap_package_exclusions(spec, resolved_config)
         self._run_checked(
-            ["make", f"-j{jobs}", "download"],
+            ["make", f"-j{jobs}", *make_args, "download"],
             cwd=openwrt_dir,
             env=env,
             callback=callback,
@@ -1550,6 +1627,7 @@ class BuildEngine:
             callback,
             cancel_event,
             jobs=jobs,
+            make_args=make_args,
         )
 
     @staticmethod
@@ -1585,6 +1663,7 @@ class BuildEngine:
         cancel_event: Any,
         *,
         jobs: int,
+        make_args: Sequence[str] = (),
     ) -> None:
         """Run the formal compile and retain a verbose failure diagnostic.
 
@@ -1596,7 +1675,7 @@ class BuildEngine:
         command's error while the original failure remains in the log.
         """
 
-        command = ["make", f"-j{jobs}"]
+        command = ["make", f"-j{jobs}", *make_args]
         formal_error: CommandFailed | None = None
         try:
             self._run_checked(
@@ -1624,7 +1703,7 @@ class BuildEngine:
             self._emit(callback, "已收到取消请求，跳过详细诊断编译")
             raise BuildCancelled()
 
-        diagnostic_command = ["make", "V=s", "-j1"]
+        diagnostic_command = ["make", "V=s", "-j1", *make_args]
         try:
             self._run_checked(
                 diagnostic_command,
