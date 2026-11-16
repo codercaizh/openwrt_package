@@ -142,7 +142,7 @@ def test_k2p_router_has_standard_services_and_only_passwall() -> None:
         assert data[f"CONFIG_PACKAGE_luci-app-passwall_INCLUDE_{core}"] == "n"
     for pkg in ("luci-app-lucky", "luci-app-pushbot", "luci-app-ttyd", "tailscale"):
         assert data.get(f"CONFIG_PACKAGE_{pkg}", "n") != "y"
-    for pkg in ("dnsmasq-full", "firewall4", "nftables", "odhcp6c",
+    for pkg in ("dnsmasq-full", "firewall4", "nftables-json", "odhcp6c",
                 "odhcpd-ipv6only", "ppp", "ppp-mod-pppoe", "wpad-openssl"):
         assert data[f"CONFIG_PACKAGE_{pkg}"] == "y"
 
