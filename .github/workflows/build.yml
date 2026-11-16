@@ -218,4 +218,5 @@ jobs:
             owrt-${{ inputs.device || github.event.inputs.device }}.log
             .owrt/cache/transfer/compiled.json
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 7

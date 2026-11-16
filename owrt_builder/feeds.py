@@ -699,10 +699,9 @@ def _git_commits(
     feeds_root = source_root / "feeds"
     if feeds_root.is_dir():
         for path in sorted(feeds_root.iterdir()):
-            # scripts/feeds uses ``<feed>.tmp`` while updating indexes.  Those
-            # transient worktrees are implementation details, not feeds that
-            # belong in the immutable snapshot fingerprint.
-            if path.name.startswith(".") or path.name.endswith(".tmp"):
+            # OpenWrt's base feed links back into the main worktree, so the
+            # upstream SHA identifies it. Skip the temporary feed indexes too.
+            if path.name == "base" or path.name.startswith(".") or path.name.endswith(".tmp"):
                 continue
             if path.is_dir() or path.is_symlink():
                 candidates.append((f"default:{path.name}", path))

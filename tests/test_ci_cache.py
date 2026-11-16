@@ -12,6 +12,7 @@ from owrt_builder import cache_archive
 from owrt_builder import ci_cache as ci
 from owrt_builder.cache_versions import Candidate, REPOSITORY, UPSTREAM, Version, has_newer, select
 from owrt_builder.devices import SourceSpec
+from owrt_builder.feeds import _git_commits
 from owrt_builder.source_sync import retain_mtimes, sync_source
 from owrt_builder.sources import SourceManager
 
@@ -253,3 +254,13 @@ def test_warm_verification_requires_unchanged_actual_compiler_stamps(tmp_path: P
     ci.save(cache.transfer / "compiled.json", result)
     with pytest.raises(ValueError, match="preserve all four"):
         ci.verify_warm(cache)
+
+def test_generated_base_feed_alias_is_not_a_remote_pin(tmp_path: Path):
+    source = tmp_path / "upstream"
+    make_git(source)
+    (source / "feeds").mkdir()
+    (source / "feeds/base").symlink_to("..")
+    native = source / "feeds/packages"
+    make_git(native)
+    expected = command("git", "rev-parse", "HEAD", cwd=native)
+    assert _git_commits(source, (), runner=None) == {"default:packages": expected}
