@@ -1,27 +1,21 @@
-name: Daily Firmware Matrix Dispatcher
+name: Daily Firmware Matrix (disabled on 25.12)
 
 on:
-  schedule:
-    # GitHub cron is UTC: 16:00 UTC = 00:00 Beijing time the next day.
-    - cron: "0 16 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
-  dispatch-master:
-    name: Dispatch matrix build to ImmortalWrt master
-    runs-on: ubuntu-latest
-    steps:
-      - name: Dispatch matrix workflow on master branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_BRANCH: codex/n60pro-immortalwrt-master
-        run: |
-          set -euo pipefail
-          gh workflow run daily-build.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$TARGET_BRANCH"
-          echo "Dispatched daily-build.yml to $TARGET_BRANCH"
+  firmware:
+    # Guard against accidentally running the matrix from this branch.
+    if: ${{ github.ref_name == 'immortalwrt-master' }}
+    name: Firmware ${{ matrix.device }}
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        device: [360t7, n60pro, s905d, vplus, r3g, k2p, k2p-ap]
+    uses: ./.github/workflows/build.yml
+    with:
+      device: ${{ matrix.device }}
