@@ -7,17 +7,24 @@ from owrt_builder.feeds import FEED_SPECS
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_profiles_use_official_2512_tag_except_n60pro_master() -> None:
+def test_all_device_profiles_use_official_immortalwrt_master() -> None:
     catalog = load_catalog(ROOT / "configs/devices.toml")
+    expected_sources = {
+        "360t7": "immortalwrt-master-mediatek",
+        "netcore_n60-pro": "immortalwrt-master-mediatek",
+        "s905d": "armv8",
+        "vplus": "armv8",
+        "r3g": "immortalwrt-master-ramips",
+        "k2p": "immortalwrt-master-ramips",
+        "k2p-ap": "immortalwrt-master-ramips",
+    }
+    assert set(catalog.devices) == set(expected_sources)
     for device in catalog.devices.values():
         source = catalog.source_for(device)
         assert source.url == "https://github.com/immortalwrt/immortalwrt.git"
-        if device.key == "netcore_n60-pro":
-            assert source.id == "immortalwrt-master-mediatek"
-            assert source.branch == "master"
-            assert source.snapshot is None
-        else:
-            assert source.branch == "v25.12.2"
+        assert source.id == expected_sources[device.key]
+        assert source.branch == "master"
+        assert source.snapshot is None
         assert source.platform == device.platform
 
 
@@ -51,13 +58,13 @@ def test_mediatek_packager_collects_official_fit_itb(tmp_path: Path, monkeypatch
     engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
     target = tmp_path / "source/bin/targets/mediatek/filogic"
     target.mkdir(parents=True)
-    image = target / "immortalwrt-25.12.2-mediatek-filogic-netcore_n60-pro-squashfs-sysupgrade.itb"
+    image = target / "immortalwrt-mediatek-filogic-netcore_n60-pro-squashfs-sysupgrade.itb"
     image.write_bytes(b"fit-image")
     (target / "immortalwrt-netcore_n60-pro-recovery.itb").write_bytes(b"recovery")
     output = tmp_path / "out"
     output.mkdir()
     prepared = PreparedSource(
-        "immortalwrt-25.12-mediatek", "test", tmp_path / "source",
+        "immortalwrt-master-mediatek", "test", tmp_path / "source",
         tmp_path / "catalog.json", "sha"
     )
     monkeypatch.setattr(
@@ -79,9 +86,9 @@ def test_360t7_tag_has_expected_device_profile() -> None:
     assert catalog.resolve("n60pro").profile == "netcore_n60-pro"
 
 
-def test_official_2512_does_not_request_237_append_profiles() -> None:
+def test_official_master_does_not_request_237_append_profiles() -> None:
     from owrt_builder.configuration import compose_fragment
-    # Official release has no vendor defconfig/mt7975-ipailna-high-power.
+    # Official master has no vendor defconfig/mt7975-ipailna-high-power.
     for name in ("n60pro", "360t7"):
         text = (ROOT / "configs" / f"{name}.config").read_text()
         assert "#CONFIG_APPEND=" not in text
@@ -120,10 +127,10 @@ def test_ramips_packager_collects_only_correct_device_images(tmp_path: Path) -> 
     engine = BuildEngine(ROOT, tmp_path / "work", use_docker=False)
     images = tmp_path / "source/bin/targets/ramips/mt7621"
     images.mkdir(parents=True)
-    r3g = images / "immortalwrt-25.12.2-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin"
-    v2 = images / "immortalwrt-25.12.2-ramips-mt7621-xiaomi_mi-router-3g-v2-squashfs-sysupgrade.bin"
-    k2p = images / "immortalwrt-25.12.2-ramips-mt7621-phicomm_k2p-squashfs-sysupgrade.bin"
-    recovery = images / "immortalwrt-25.12.2-ramips-mt7621-xiaomi_mi-router-3g-squashfs-kernel1.bin"
+    r3g = images / "immortalwrt-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin"
+    v2 = images / "immortalwrt-ramips-mt7621-xiaomi_mi-router-3g-v2-squashfs-sysupgrade.bin"
+    k2p = images / "immortalwrt-ramips-mt7621-phicomm_k2p-squashfs-sysupgrade.bin"
+    recovery = images / "immortalwrt-ramips-mt7621-xiaomi_mi-router-3g-squashfs-kernel1.bin"
     for image in (r3g, v2, k2p, recovery):
         image.write_bytes(b"firmware")
     artifact_dir = tmp_path / "out"
