@@ -415,10 +415,10 @@ def test_legacy_reuse_prefers_newest_completed_candidate(tmp_path: Path) -> None
 def test_host_tools_lock_is_shared_by_source_branch_not_device(tmp_path: Path) -> None:
     manager = BuildCacheManager(tmp_path)
 
-    with manager.host_tools_lock("v25.12.2"):
-        with pytest.raises(BuildCacheError, match="host-tools-v25.12.2.lock"):
-            with manager.host_tools_lock("v25.12.2"):
+    with manager.host_tools_lock("master"):
+        with pytest.raises(BuildCacheError, match="host-tools-master.lock"):
+            with manager.host_tools_lock("master"):
                 pass
-        # A different source branch has an independent host toolchain cache.
-        with manager.host_tools_lock("master"):
+        # A distinct scope remains independent; production devices all use master.
+        with manager.host_tools_lock("test-branch"):
             pass
