@@ -1,6 +1,9 @@
 name: Daily Firmware Matrix
 
 on:
+  schedule:
+    # GitHub cron is UTC: 16:00 UTC = 00:00 Beijing time the next day.
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 permissions:
@@ -8,7 +11,7 @@ permissions:
 
 jobs:
   firmware:
-    if: ${{ github.ref_name == 'codex/n60pro-immortalwrt-master' }}
+    if: ${{ github.ref_name == 'immortalwrt-master' }}
     name: Firmware ${{ matrix.device }}
     strategy:
       fail-fast: false
