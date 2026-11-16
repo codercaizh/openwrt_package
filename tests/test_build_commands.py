@@ -531,3 +531,52 @@ def test_requested_snapshot_errors_preserve_missing_vs_contaminated_reason(tmp_p
         engine._prepare_snapshot(spec, snapshot_id, workspace, lambda _line: None, None)
     with pytest.raises(BuildError, match=r"source snapshot missing:"):
         engine._prepare_snapshot(spec, "missing-snapshot", workspace, lambda _line: None, None)
+
+def test_pipeline_uses_branch_shared_host_tool_cache(tmp_path: Path) -> None:
+    engine = BuildEngine(repo_root=Path(__file__).resolve().parents[1], workspace=tmp_path, use_docker=False)
+    openwrt = tmp_path / "openwrt"
+    openwrt.mkdir()
+    legacy_build_host = openwrt / "build_dir" / "host"
+    legacy_build_host.mkdir(parents=True)
+    (legacy_build_host / "CMakeCache.txt").write_text("old device-specific path", encoding="utf-8")
+    legacy_staging_host = openwrt / "staging_dir" / "host"
+    legacy_staging_host.mkdir(parents=True)
+    config = tmp_path / "generated.config"
+    config.write_text("CONFIG_TEST=y\\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    lines: list[str] = []
+
+    def run_checked(command, **_kwargs):
+        commands.append(list(command))
+
+    engine._run_checked = run_checked  # type: ignore[method-assign]
+    host_cache_root = tmp_path / "cache" / "host-tools" / "v25.12.2"
+    engine._run_pipeline(
+        SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
+        SimpleNamespace(snapshot_id="snapshot"),
+        openwrt,
+        config,
+        lines.append,
+        None,
+        jobs=3,
+        host_cache_root=host_cache_root,
+    )
+
+    shared_build_host = host_cache_root / "build_dir" / "host"
+    shared_staging_host = host_cache_root / "staging_dir" / "host"
+    build_dir_arg = (
+        "BUILD_DIR_HOST=$(if $(IS_PACKAGE_BUILD),$(BUILD_DIR_BASE)/hostpkg,"
+        f"{shared_build_host})"
+    )
+    staging_dir_arg = f"STAGING_DIR_HOST={shared_staging_host}"
+    assert commands == [
+        ["make", build_dir_arg, staging_dir_arg, "defconfig"],
+        ["make", "-j3", build_dir_arg, staging_dir_arg, "download"],
+        ["make", "-j3", build_dir_arg, staging_dir_arg],
+    ]
+    assert (openwrt / "build_dir" / "host").is_symlink()
+    assert (openwrt / "build_dir" / "host").resolve() == shared_build_host.resolve()
+    assert (openwrt / "staging_dir" / "host").is_symlink()
+    assert (openwrt / "staging_dir" / "host").resolve() == shared_staging_host.resolve()
+    assert not (shared_build_host / "CMakeCache.txt").exists()
+    assert any("不可跨目录搬迁" in line for line in lines)
