@@ -1,4 +1,4 @@
-name: Daily Firmware Matrix
+name: Daily Firmware Matrix Dispatcher
 
 on:
   schedule:
@@ -8,15 +8,20 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
-  firmware:
-    name: Firmware ${{ matrix.device }}
-    strategy:
-      fail-fast: false
-      max-parallel: 10
-      matrix:
-        device: [360t7, n60pro, s905d, vplus, r3g, k2p, k2p-ap]
-    uses: ./.github/workflows/build.yml
-    with:
-      device: ${{ matrix.device }}
+  dispatch-master:
+    name: Dispatch matrix build to ImmortalWrt master
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch matrix workflow on master branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: codex/n60pro-immortalwrt-master
+        run: |
+          set -euo pipefail
+          gh workflow run daily-build.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$TARGET_BRANCH"
+          echo "Dispatched daily-build.yml to $TARGET_BRANCH"
