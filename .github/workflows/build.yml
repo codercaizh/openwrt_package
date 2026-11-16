@@ -64,7 +64,8 @@ jobs:
           echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
       - name: Restore shared host tools cache
-        uses: actions/cache@v4
+        id: host_cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/build_dir/host
@@ -106,6 +107,18 @@ jobs:
         run: |
           set -o pipefail
           ./owrt build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+
+      # Only the representative device for each source branch writes the
+      # shared host cache. This avoids matrix races and guarantees the saved
+      # cache comes from a full toolchain build rather than a minimal AP job.
+      - name: Save shared host tools cache
+        if: success() && steps.host_cache.outputs.cache-hit != 'true' && (steps.cache_scope.outputs.canonical == 'netcore_n60-pro' || steps.cache_scope.outputs.canonical == '360t7')
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/build_dir/host
+            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/staging_dir/host
+          key: owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.host_revision }}
 
       - name: Upload firmware
         if: success()
