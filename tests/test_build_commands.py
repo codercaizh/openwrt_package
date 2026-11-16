@@ -542,7 +542,7 @@ def test_pipeline_uses_branch_shared_host_tool_cache(tmp_path: Path) -> None:
     legacy_staging_host = openwrt / "staging_dir" / "host"
     legacy_staging_host.mkdir(parents=True)
     config = tmp_path / "generated.config"
-    config.write_text("CONFIG_TEST=y\\n", encoding="utf-8")
+    config.write_text("CONFIG_TEST=y\n", encoding="utf-8")
     commands: list[list[str]] = []
     lines: list[str] = []
 
