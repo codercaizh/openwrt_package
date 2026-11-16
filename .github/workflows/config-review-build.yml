@@ -1,9 +1,19 @@
 name: Config Review Build
 
 on:
+  push:
+    branches:
+      - immortalwrt-master
+    paths:
+      - "configs/**"
+      - "owrt_builder/**"
+      - "tests/**"
+      - ".github/workflows/build.yml"
+      - ".github/workflows/config-review-build.yml"
   pull_request:
     branches:
       - immortalwrt-25.12.2
+      - immortalwrt-master
     paths:
       - "configs/**"
       - "owrt_builder/**"
@@ -33,6 +43,7 @@ jobs:
         run: python -m pytest
 
   firmware:
+    if: github.event_name == 'pull_request'
     name: Firmware ${{ matrix.device }}
     needs: unit-tests
     strategy:
