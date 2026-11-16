@@ -6,9 +6,10 @@ MediaTek 设备（N60 Pro、360T7）共用 `mediatek-6.18/`；ARMv8 和 Ramips
 设备不应用旧的 Linux 6.12 回移补丁。根目录的 Linux 6.12 脚本仅为
 `immortalwrt-25.12.2` 归档分支保留，不参与当前 master 构建。
 
-源码准备阶段会按文件名顺序执行根目录的 `NNN-名称.sh`，唯一参数为源码树的绝对路径。
-CLI、Web、GitHub Actions 共用此入口；全部成功后才发布源码快照。脚本失败时保留上一份快照。
-脚本应可重复执行，拒绝不匹配的源码或冲突补丁，不在构建时下载修复内容。
+源码准备阶段按 source ID 选择适用的补丁 bundle，再按文件名顺序执行其中的
+`NNN-名称.sh`，唯一参数为源码树的绝对路径。CLI、Web、GitHub Actions 共用此入口；
+全部成功后才发布源码快照。脚本失败时保留上一份快照。脚本应可重复执行，拒绝不匹配的源码
+或冲突补丁，不在构建时下载修复内容。
 新增脚本和配套文件都放在此目录，并记录上游来源、适用版本和验证方法。
 
 脚本和配套文件的内容参与源码快照指纹；Markdown 文档不参与。
@@ -76,14 +77,14 @@ python3 -m pytest tests/test_ppe_accounting.py tests/test_local_patches.py
 刷入完整固件后，应在硬件卸载开启时以已知大小的实际传输对账，并覆盖空闲重绑定、
 连接立即关闭和长期混合流量。确认源头正确后再处理先前已污染的流量历史；构建脚本不删除路由器统计。
 
-## N60 Pro master 的 PPE 计数修复
+## MediaTek master 的 PPE 计数修复（N60 Pro / 360T7）
 
 `mediatek-6.18/` 将 [OpenWrt PR #26107](https://github.com/openwrt/openwrt/pull/26107)
 的 `3be1a0c4619d433c1ee8aa95d8de9459e6587b74` 适配到官方 ImmortalWrt
 `4765b657625ec5bbda74b44400465fe043802b30`（Linux 6.18.60）。
 补丁排在 MediaTek 官方补丁之后，保留 WED 优先级和 VLAN 检查，重绑或释放桥接子流时先将
-计数汇入父流，删除 flowtable 表项时保留 `NF_FLOW_HW_DEAD`。此目录单独参与 N60 Pro
-源码快照指纹。FullCone 的 conntrack 通知链修复由官方 master 提供。
+计数汇入父流，删除 flowtable 表项时保留 `NF_FLOW_HW_DEAD`。该 bundle 由 N60 Pro
+与 360T7 共用的 MediaTek master 源码快照应用。FullCone 的 conntrack 通知链修复由官方 master 提供。
 
 在官方补丁栈上用 ARM64 GCC 编译 `mtk_ppe.o`、`mtk_ppe_offload.o` 和
 `nf_flow_table_offload.o`。刷机后可开启硬件卸载，对比已知大小的传输、WAN 端口计数和
