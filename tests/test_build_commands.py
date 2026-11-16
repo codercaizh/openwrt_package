@@ -550,7 +550,7 @@ def test_pipeline_uses_branch_shared_host_tool_cache(tmp_path: Path) -> None:
         commands.append(list(command))
 
     engine._run_checked = run_checked  # type: ignore[method-assign]
-    host_cache_root = tmp_path / "cache" / "host-tools" / "v25.12.2"
+    host_cache_root = tmp_path / "cache" / "host-tools" / "master"
     engine._run_pipeline(
         SimpleNamespace(key="n60pro", profile="netcore_n60-pro"),
         SimpleNamespace(snapshot_id="snapshot"),
