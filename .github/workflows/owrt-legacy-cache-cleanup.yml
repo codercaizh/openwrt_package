@@ -1,0 +1,56 @@
+name: Remove three legacy OpenWrt caches
+
+on:
+  push:
+    branches: [immortalwrt-master]
+    paths: [.github/workflows/owrt-legacy-cache-cleanup.yml]
+
+permissions: {}
+
+jobs:
+  delete-legacy-cache:
+    if: >-
+      github.repository == 'codercaizh/openwrt_package' && github.event.head_commit.message == 'ci: remove three retired OpenWrt cache entries'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Delete verified legacy cache IDs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref=refs/heads/immortalwrt-master
+          api="repos/$GITHUB_REPOSITORY/actions/caches"
+
+          inventory() {
+            gh api --method GET --paginate "$api" -f "ref=$ref" -F per_page=100 \
+              --jq '.actions_caches[] | [.id, .key, .ref] | @tsv'
+          }
+
+          legacy=(
+            '10588278530|owrt-host-v2-Linux-master-llvm-22.1.3-v1'
+            '10588341815|owrt-toolchain-v2-Linux-master-netcore_n60-pro-2026-W47'
+            '10588294947|owrt-llvm-source-v1-Linux-22.1.3'
+          )
+          before="$(inventory)"
+          for entry in "${legacy[@]}"; do
+            IFS='|' read -r id key <<< "$entry"
+            row="$id"$'\t'"$key"$'\t'"$ref"
+            if grep -Fxq -- "$row" <<< "$before"; then
+              gh api --method DELETE "$api/$id"
+              printf 'Deleted %s %s\n' "$id" "$key"
+            else
+              printf 'Already absent %s %s\n' "$id" "$key"
+            fi
+          done
+
+          after="$(inventory)"
+          for entry in "${legacy[@]}"; do
+            IFS='|' read -r id key <<< "$entry"
+            if grep -Fxq -- "$id"$'\t'"$key"$'\t'"$ref" <<< "$after"; then
+              printf 'Cache still present %s %s\n' "$id" "$key" >&2
+              exit 1
+            fi
+          done
