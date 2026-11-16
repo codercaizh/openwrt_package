@@ -249,6 +249,15 @@ class BuildCacheManager:
             yield handle
 
     @contextmanager
+    def host_tools_lock(self, source_branch: str, *, timeout: float = 0.0) -> Iterator[Any]:
+        """Serialize builds that share one upstream branch's host tool cache."""
+
+        scope = _safe_device(source_branch)
+        path = self.lock_root / f"host-tools-{scope}.lock"
+        with self._locked_file(path, timeout=timeout) as handle:
+            yield handle
+
+    @contextmanager
     def _locked_file(self, path: Path, *, timeout: float = 0.0) -> Iterator[Any]:
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a+")
