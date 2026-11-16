@@ -60,10 +60,10 @@ the default Docker network. The private `s905d`/`vplus` packager needs root for
 loop/filesystem mounts, so its worker is privileged without host networking;
 the host-side helper restores the workspace to the caller's UID/GID before the
 build command returns. Target-specific compiler trees are kept under
-`workspace/cache/builds/<canonical-device>`; host tools are linked to
-`workspace/cache/host-tools/<source-branch>` and shared only by devices using
-the same upstream branch. The stable host path is important because CMake
-records absolute build paths. `hostpkg` and `toolchain-*` remain device-scoped;
+`workspace/cache/builds/<canonical-device>`; all active devices use ImmortalWrt
+`master`, so Host tools are linked to the single
+`workspace/cache/host-tools/master` cache and shared across all seven builds.
+The stable host path is important because CMake records absolute build paths. `hostpkg` and `toolchain-*` remain device-scoped;
 source refreshes retain those incremental directories while replacing source
 files. The ready marker is only set after compile and packaging finish. Fresh-cache
 capacity uses same-device history, then other compiler trees, with an 8 GiB
