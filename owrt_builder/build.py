@@ -969,34 +969,42 @@ class BuildEngine:
                     # before this build's pipeline so the later archive only
                     # contains packages created or changed by this task.
                     package_before = self._snapshot_package_outputs(openwrt_dir)
-                    self._run_pipeline(
-                        spec,
-                        source_result,
-                        openwrt_dir,
-                        config_path,
-                        callback,
-                        cancel_event,
-                        jobs=request.jobs,
-                        host_cache_root=host_cache_root,
-                    )
-                    artifacts = self._package(
-                        spec,
-                        source_result,
-                        openwrt_dir,
-                        artifact_dir,
-                        callback,
-                        cancel_event,
-                        started_at,
-                    )
-                    package_archive = self._package_archive(
-                        openwrt_dir,
-                        artifact_dir,
-                        package_before,
-                        callback,
-                        cancel_event,
-                    )
-                    if package_archive is not None:
-                        artifacts.append(package_archive)
+                    # Different devices on the same source branch share the
+                    # host CMake tree. Serialize local builds through packaging
+                    # so another build cannot replace fwtool/LLVM mid-package.
+                    self._emit(callback, f"等待共享 Host 工具锁: {host_cache_scope}")
+                    with cache_manager.host_tools_lock(
+                        host_cache_scope,
+                        timeout=request.lock_timeout,
+                    ):
+                        self._run_pipeline(
+                            spec,
+                            source_result,
+                            openwrt_dir,
+                            config_path,
+                            callback,
+                            cancel_event,
+                            jobs=request.jobs,
+                            host_cache_root=host_cache_root,
+                        )
+                        artifacts = self._package(
+                            spec,
+                            source_result,
+                            openwrt_dir,
+                            artifact_dir,
+                            callback,
+                            cancel_event,
+                            started_at,
+                        )
+                        package_archive = self._package_archive(
+                            openwrt_dir,
+                            artifact_dir,
+                            package_before,
+                            callback,
+                            cancel_event,
+                        )
+                        if package_archive is not None:
+                            artifacts.append(package_archive)
                     cache_manager.update_source(
                         cache_lease,
                         source_id=source_result.source_id,
