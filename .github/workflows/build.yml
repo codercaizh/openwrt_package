@@ -37,49 +37,63 @@ jobs:
       - name: Check out builder
         uses: actions/checkout@v4
 
-      # Reusable workflow runs once per device. GitHub runners are ephemeral,
-      # so persist only the download archives and host/toolchain incremental
-      # build state; never cache target packages or firmware output.
+      # The upstream branch determines the host-tool ABI: master uses LLVM 22.1.3,
+      # while v25.12.2 uses LLVM 21.1.6. Share only these host tools across devices
+      # on the same source branch; target toolchains remain device-specific.
       - name: Choose cache scopes
         id: cache_scope
         env:
           DEVICE: ${{ inputs.device || github.event.inputs.device }}
         run: |
           case "$DEVICE" in
-            n60pro) canonical=netcore_n60-pro; family=filogic ;;
-            360t7) canonical=360t7; family=filogic ;;
-            s905d) canonical=s905d; family=armv8 ;;
-            vplus) canonical=vplus; family=armv8 ;;
-            r3g) canonical=r3g; family=mt7621 ;;
-            k2p) canonical=k2p; family=mt7621 ;;
-            k2p-ap) canonical=k2p-ap; family=mt7621 ;;
+            n60pro) canonical=netcore_n60-pro; host_scope=master; llvm_version=22.1.3 ;;
+            360t7) canonical=360t7; host_scope=v25.12.2; llvm_version=21.1.6 ;;
+            s905d) canonical=s905d; host_scope=v25.12.2; llvm_version=21.1.6 ;;
+            vplus) canonical=vplus; host_scope=v25.12.2; llvm_version=21.1.6 ;;
+            r3g) canonical=r3g; host_scope=v25.12.2; llvm_version=21.1.6 ;;
+            k2p) canonical=k2p; host_scope=v25.12.2; llvm_version=21.1.6 ;;
+            k2p-ap) canonical=k2p-ap; host_scope=v25.12.2; llvm_version=21.1.6 ;;
             *) echo "Unsupported cache device: $DEVICE" >&2; exit 1 ;;
           esac
           echo "canonical=$canonical" >> "$GITHUB_OUTPUT"
-          echo "family=$family" >> "$GITHUB_OUTPUT"
-          # Weekly rolling keys limit cache growth. Previous weeks are fallbacks.
+          echo "host_scope=$host_scope" >> "$GITHUB_OUTPUT"
+          echo "llvm_version=$llvm_version" >> "$GITHUB_OUTPUT"
+          # Bump this epoch when the LLVM build options or host compiler image changes.
+          echo "host_revision=llvm-$llvm_version-v1" >> "$GITHUB_OUTPUT"
+          # Device toolchain caches rotate weekly; previous weeks remain fallbacks.
           echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
-      - name: Restore host tools and cross-toolchain cache
+      - name: Restore shared host tools cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/build_dir/host
+            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/staging_dir/host
+          key: owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.host_revision }}
+          restore-keys: |
+            owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-
+
+      - name: Restore device cross-toolchain cache
         uses: actions/cache@v4
         with:
           path: |
             .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/cache.json
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/host*
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/hostpkg
             .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/toolchain-*
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/host*
+            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/hostpkg
             .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/toolchain-*
-          key: owrt-tools-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-${{ steps.cache_scope.outputs.week }}
+          key: owrt-toolchain-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.canonical }}-${{ steps.cache_scope.outputs.week }}
           restore-keys: |
-            owrt-tools-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.canonical }}-
+            owrt-toolchain-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.canonical }}-
 
-      - name: Restore downloaded source archives
+      # The full dl cache is several GiB per family and competes with compiled
+      # toolchain caches under GitHub's default storage quota. Keep the costly
+      # LLVM source archive, but let smaller package archives download normally.
+      - name: Restore LLVM source archive
         uses: actions/cache@v4
         with:
-          path: .owrt/cache/dl
-          key: owrt-dl-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.family }}-${{ steps.cache_scope.outputs.week }}
-          restore-keys: |
-            owrt-dl-v1-${{ runner.os }}-${{ github.ref_name }}-${{ steps.cache_scope.outputs.family }}-
+          path: .owrt/cache/dl/llvm-project-${{ steps.cache_scope.outputs.llvm_version }}.src.tar.xz
+          key: owrt-llvm-source-v1-${{ runner.os }}-${{ steps.cache_scope.outputs.llvm_version }}
 
       - name: Check Docker and builder catalog
         run: |
