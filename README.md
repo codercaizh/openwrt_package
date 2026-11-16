@@ -193,7 +193,9 @@ MediaTek 编译容器使用默认 Docker 隔离；只有 ARM packit 阶段按设
 受限的 `--privileged` 并以容器 root 完成分区挂载，随后自动恢复工作区的宿主
 UID；编译容器不使用 host network。
 
-更完整的模块边界和任务状态见 [docs/architecture.md](docs/architecture.md)。
+完整的缓存目录、GitHub Actions 缓存 Key、复用边界、容量估算和清理策略见
+[构建缓存设计说明](docs/build-cache.md)。模块边界和任务状态见
+[docs/architecture.md](docs/architecture.md)。
 
 ## 全设备统一 ImmortalWrt master
 
@@ -211,9 +213,10 @@ N60 Pro 额外在首次启动时（包括保留配置升级）通过 UCI 设置 
 
 ## ImmortalWrt v25.12.2 历史归档
 
-本仓库的 `immortalwrt-25.12.2` 分支保留旧版官方发布标签及 Linux 6.12 修复记录，
-仅作归档，不参与当前默认分支的七设备矩阵编译。当前活跃设备不再引用
-`v25.12.2` 上游源码。迁移历史、插件来源和 n2 部署记录见
+本仓库的 `immortalwrt-25.12.2` 分支独立保留旧版官方发布标签及历史修复实现，
+仅作归档，不参与当前默认分支的七设备矩阵编译。当前 `immortalwrt-master` 分支
+不包含 Linux 6.12 的补丁、安装脚本或测试夹具；七种活跃设备全部使用上游
+`master`。迁移历史、插件来源和 n2 部署记录见
 [25.12.2 迁移运行手册](docs/immortalwrt-25.12.2-migration.md)。
 
 ## MT7621 设备说明（R3G / K2P）

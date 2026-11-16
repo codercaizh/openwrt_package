@@ -51,9 +51,10 @@ StatusCallback = Callable[[Mapping[str, Any]], None]
 # the incompatible moving Tailscale recipe with its Go 1.26-compatible pin.
 # Version 15 restores the Go 1.27 upgrade and tracks latest stable Tailscale.
 # Version 16 installs the reviewed fix_bugs bundle and its compiler-cache stamp.
-# Version 17 switches all device targets to ImmortalWrt master and scopes the
-# Linux 6.12 patch bundle to archived source IDs only.
-PREPARATION_VERSION = 17
+# Version 17 switches all device targets to ImmortalWrt master.
+# Version 18 removes obsolete Linux 6.12 backport assets from this active branch;
+# only the MediaTek Linux 6.18 PPE fix bundle remains.
+PREPARATION_VERSION = 18
 _GENERATED_TREE_NAMES = ("build_dir", "staging_dir", "tmp", "dl", "logs", "bin")
 
 

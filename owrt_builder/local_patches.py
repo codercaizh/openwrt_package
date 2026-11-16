@@ -1,4 +1,4 @@
-"""Apply reviewed, offline firmware fixes before publishing a source snapshot."""
+"""Apply the reviewed MediaTek Linux 6.18 fix bundle before publishing a source snapshot."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from .paths import repository_root
 
 
 FIX_STAMP = ".owrt-fix-bugs"
-# Kept only for the archived 25.12 branch; active devices all use master.
-_LEGACY_612_SOURCES = frozenset({"immortalwrt-25.12-armv8", "immortalwrt-25.12-mediatek"})
 _MASTER_SOURCE = "immortalwrt-master-mediatek"
 _MASTER_BUNDLE = "mediatek-6.18"
 
@@ -27,8 +25,6 @@ def _fix_root() -> Path:
 def _bundle(source_id: str) -> Path | None:
     if source_id == _MASTER_SOURCE:
         return _fix_root() / _MASTER_BUNDLE
-    if source_id in _LEGACY_612_SOURCES:
-        return _fix_root()
     return None
 
 
@@ -49,13 +45,13 @@ def patch_fingerprint(source_id: str) -> str:
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
-        if relative.parts[0] == _MASTER_BUNDLE:
-            continue
         if path.is_symlink():
             raise LocalPatchError(f"firmware fix assets must not be symlinks: {path}")
         if not path.is_file() or path.suffix.lower() == ".md":
             continue
-        digest.update(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {relative.as_posix()}\n".encode())
+        digest.update(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {relative.as_posix()}\n".encode()
+        )
     return digest.hexdigest()
 
 

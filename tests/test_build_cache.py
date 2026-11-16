@@ -128,7 +128,7 @@ def test_fix_bundle_changes_rebuild_targets_and_retain_toolchains(
     if old_fix is not None:
         (root / FIX_STAMP).write_text(old_fix)
     retained = ["build_dir/host", "build_dir/toolchain-aarch64", "staging_dir/host", "staging_dir/toolchain-aarch64"]
-    targets = ["build_dir/target-aarch64_musl/linux-mediatek/linux-6.12.103", "staging_dir/target-aarch64_musl"]
+    targets = ["build_dir/target-aarch64_musl/linux-mediatek/linux-6.18.60", "staging_dir/target-aarch64_musl"]
     for relative in retained + targets:
         path = root / relative
         path.mkdir(parents=True)
