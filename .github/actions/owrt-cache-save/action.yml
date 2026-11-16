@@ -1,0 +1,31 @@
+name: Publish an immutable OpenWrt cache layer
+description: Verify the current provenance, save one cache and check the repository inventory
+inputs:
+  family:
+    description: Cache layer
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Compare versions before upload
+      id: compare
+      shell: bash
+      env:
+        OWRT_CACHE_FAMILY: ${{ inputs.family }}
+      run: |
+        python -m owrt_builder.ci_cache stage "$OWRT_CACHE_FAMILY"
+        python -m owrt_builder.ci_cache publish "$OWRT_CACHE_FAMILY"
+
+    - uses: actions/cache/save@v4
+      if: steps.compare.outputs.key != ''
+      with:
+        path: .owrt/cache/transfer/${{ inputs.family }}.tar.zst
+        key: ${{ steps.compare.outputs.key }}
+
+    - name: Check published cache
+      if: always() && steps.compare.outputs.key != ''
+      shell: bash
+      env:
+        OWRT_CACHE_FAMILY: ${{ inputs.family }}
+        OWRT_CACHE_KEY: ${{ steps.compare.outputs.key }}
+      run: python -m owrt_builder.ci_cache audit "$OWRT_CACHE_FAMILY" "$OWRT_CACHE_KEY"

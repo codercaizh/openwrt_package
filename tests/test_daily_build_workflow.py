@@ -33,15 +33,18 @@ def test_daily_build_matrix_covers_all_supported_devices() -> None:
 
 def test_build_workflow_shares_host_tools_and_keeps_target_toolchains_device_scoped() -> None:
     workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
-    assert ".owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/build_dir/host" in workflow
-    assert "owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}" in workflow
-    assert "owrt-toolchain-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.canonical }}" in workflow
-    assert ".owrt/cache/dl/llvm-project-${{ steps.cache_scope.outputs.llvm_version }}.src.tar.xz" in workflow
-    assert "github.ref_name" not in workflow
+    assert "refs/heads/immortalwrt-master" in workflow
+    assert "github.repository == 'codercaizh/openwrt_package'" in workflow
+    assert "restore-keys:" not in workflow
+    assert "uses: actions/cache@v4" not in workflow
+    assert "contents: read" in workflow and "actions: read" in workflow
+    assert "actions: write" not in workflow and "contents: write" not in workflow
+    for layer in ("source", "host", "toolchain", "dl"):
+        assert f".owrt/cache/transfer/{layer}.tar.zst" in workflow
+        assert f"family: {layer}" in workflow
+    validation = (ROOT / ".github/workflows/config-review-build.yml").read_text()
+    assert "needs: cache-cold" in validation
+    assert validation.count("device: n60pro") == 2
+    assert "needs.cache-cold.outputs.feed_pins" in validation
     catalog = load_catalog(ROOT / "configs/devices.toml")
     assert {catalog.source_for(device).branch for device in catalog.devices.values()} == {"master"}
-    assert "host_scope=master" in workflow
-    assert "llvm_version=22.1.3" in workflow
-    assert "v25.12.2" not in workflow
-    assert "21.1.6" not in workflow
-    assert ".owrt/cache/dl\n" not in workflow

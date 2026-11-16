@@ -22,11 +22,12 @@ on:
       - ".github/workflows/config-review-build.yml"
 
 concurrency:
-  group: config-review-${{ github.event.pull_request.number }}
+  group: config-review-${{ github.event.pull_request.number || (contains(github.event.head_commit.message, '[verify n60pro cache]') && github.sha) || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   unit-tests:
@@ -53,3 +54,21 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       device: ${{ matrix.device }}
+
+  cache-cold:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/immortalwrt-master' && contains(github.event.head_commit.message, '[verify n60pro cache]')
+    needs: unit-tests
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro
+      validation: -cold
+
+  cache-warm:
+    if: needs.cache-cold.outputs.upstream != '' && needs.cache-cold.outputs.feed_pins != ''
+    needs: cache-cold
+    uses: ./.github/workflows/build.yml
+    with:
+      device: n60pro
+      validation: -warm
+      upstream: ${{ needs.cache-cold.outputs.upstream }}
+      feed_pins: ${{ needs.cache-cold.outputs.feed_pins }}

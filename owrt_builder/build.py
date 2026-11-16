@@ -872,10 +872,16 @@ class BuildEngine:
         config_path = build_dir / "generated.config"
         result: BuildResult | None = None
         cache_reused: bool | None = None
-        cache_manager = BuildCacheManager(
-            workspace,
-            device_resolver=lambda value: self.catalog.resolve(value).key,
-        )
+        if os.environ.get("OWRT_CI_CACHE") == "1":
+            from .ci_cache import SLOT
+
+            def cache_device(value: str) -> str:
+                return SLOT
+        else:
+            def cache_device(value: str) -> str:
+                return self.catalog.resolve(value).key
+
+        cache_manager = BuildCacheManager(workspace, device_resolver=cache_device)
 
         def execute() -> BuildResult:
             nonlocal source_result, config_path, cache_reused
@@ -1193,7 +1199,11 @@ class BuildEngine:
     ) -> PreparedSource:
         """Obtain a source snapshot through the shared SourceManager."""
 
-        manager = SourceManager(workspace / "sources", source_specs=self.catalog.sources)
+        sources = workspace / "sources"
+        if os.environ.get("OWRT_CI_CACHE") == "1":
+            from .ci_cache import Cache
+            sources = Cache(workspace).sources
+        manager = SourceManager(sources, source_specs=self.catalog.sources)
 
         def source_status(event: Mapping[str, Any]) -> None:
             phase = event.get("phase", "source")
@@ -1220,6 +1230,8 @@ class BuildEngine:
 
         prepared = manager.current(spec)
         if prepared is None:
+            if os.environ.get("OWRT_CI_CACHE") == "1":
+                raise BuildError("CI build requires the pinned prepared snapshot")
             try:
                 prepared = manager.prepare_source(spec, update=True, status=source_status)
             except SourceError as exc:
@@ -1601,6 +1613,13 @@ class BuildEngine:
         self._emit(callback, "使用已准备的源码与 feed 快照")
         self._stage_device_files(spec, openwrt_dir)
         shutil.copyfile(config_path, openwrt_dir / ".config")
+        ci = None
+        if os.environ.get("OWRT_CI_CACHE") == "1":
+            from .ci_cache import CompilerCache, stamp_status
+            ci = CompilerCache(self.workspace, openwrt_dir)
+            ci.before_defconfig()
+            if not ci.plan["download_same_inputs"]:
+                env["OWRT_RECHECK_CACHED_DOWNLOADS"] = "1"
         self._run_checked(
             ["make", *make_args, "defconfig"],
             cwd=openwrt_dir,
@@ -1629,24 +1648,65 @@ class BuildEngine:
                 + "; ".join(missing_selections[:25])
             )
         self._validate_ap_package_exclusions(spec, resolved_config)
+        if ci:
+            clean = ci.after_defconfig()
+            if clean:
+                self._run_checked(
+                    ["make", *make_args, *clean], cwd=openwrt_dir, env=env,
+                    callback=callback, cancel_event=cancel_event,
+                )
+            before = stamp_status(openwrt_dir, host_cache_root)
+            self._emit(callback, f"CACHE_STAMPS before={json.dumps(before, sort_keys=True)}")
+
+        counters = {"llvm_c_cpp": 0, "toolchain_compile": 0, "downloads_rejected": 0}
+
+        def compiler_log(line: str) -> None:
+            if ci:
+                if "CACHE_DOWNLOAD rechecking rejected" in line:
+                    counters["downloads_rejected"] += 1
+                if re.search(r"Building C(?:XX)? object .*?(?:llvm|clang|lld)[^\s]*", line, re.IGNORECASE):
+                    counters["llvm_c_cpp"] += 1
+                if re.search(r"build_dir/toolchain-.*(?:gcc|binutils|musl).*\s-c\s", line):
+                    counters["toolchain_compile"] += 1
+            callback(line)
+
+        start = time.monotonic()
         self._run_checked(
             ["make", f"-j{jobs}", *make_args, "download"],
             cwd=openwrt_dir,
             env=env,
-            callback=callback,
+            callback=compiler_log,
             cancel_event=cancel_event,
             retry_once=True,
             heartbeat_label=f"make -j{jobs} download",
             heartbeat_seconds=COMMAND_HEARTBEAT_SECONDS,
         )
+        download_elapsed = time.monotonic() - start
+        download_counts = counters.copy()
         self._run_compile_with_diagnostics(
             openwrt_dir,
             env,
-            callback,
+            compiler_log,
             cancel_event,
             jobs=jobs,
             make_args=make_args,
         )
+
+        if ci:
+            after = stamp_status(openwrt_dir, host_cache_root)
+            changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
+            self._emit(callback, f"CACHE_STAMPS after={json.dumps(after, sort_keys=True)}")
+            self._emit(
+                callback,
+                f"CACHE_MAKE download_seconds={download_elapsed:.1f} "
+                f"compile_seconds={time.monotonic() - start - download_elapsed:.1f} "
+                f"download_commands={download_counts} total_commands={counters} changed_stamps={changed}",
+            )
+            ci.record({
+                "before": before, "after": after, "changed": changed, "commands": counters,
+                "download_seconds": download_elapsed,
+                "compile_seconds": time.monotonic() - start - download_elapsed,
+            })
 
     @staticmethod
     def _validate_ap_package_exclusions(spec: DeviceSpec, config: ConfigDocument) -> None:

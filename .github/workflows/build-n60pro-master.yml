@@ -5,6 +5,7 @@ on:
       - codex/n60pro-immortalwrt-master
 permissions:
   contents: read
+  actions: read
 jobs:
   firmware:
     uses: ./.github/workflows/build.yml

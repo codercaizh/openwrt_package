@@ -13,6 +13,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -21,6 +22,7 @@ import tempfile
 import uuid
 from typing import Any, Callable, Mapping, Sequence
 
+from .source_sync import remove, retain_mtimes
 from .local_patches import install_local_patches, patch_fingerprint
 from .devices import DeviceSpec, SourceSpec, load_catalog, resolve_device as _resolve_device
 
@@ -526,6 +528,54 @@ class SourceManager:
         args += [spec.url, str(destination)]
         self._run_git(args)
 
+    def checkout_pinned(
+        self, spec: SourceSpec, destination: Path, commit: str, baseline: Path | None
+    ) -> None:
+        """Fetch the pinned object and update an isolated copy of the restored worktree."""
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise SourceError("pinned upstream must be a full Git SHA")
+        if baseline is None:
+            destination.mkdir(parents=True)
+            self._run_git(["init", "--quiet"], cwd=destination)
+        else:
+            shutil.copytree(baseline, destination, symlinks=True)
+        # Use a reviewed URL and minimal config even when Git metadata was restored.
+        git_dir = destination / ".git"
+        for relative in ("hooks", "objects/info/alternates", "objects/info/http-alternates",
+                         "info/grafts", "refs/replace", "config", "config.worktree"):
+            remove(git_dir / relative)
+        self._run_git(["config", "--local", "remote.origin.url", spec.url], cwd=destination)
+        self._run_git(["fetch", "--no-tags", "--depth=1", spec.url, commit], cwd=destination)
+        if baseline is not None:
+            self._reset_prepared_files(destination)
+            # A copied index has different ctimes. Refresh its stat records
+            # before checking out so clean files are left in place.
+            self._run_git(["update-index", "--refresh"], cwd=destination)
+        self._run_git(["-c", "core.hooksPath=/dev/null", "checkout", "--detach", commit], cwd=destination)
+        if self._source_commit(destination) != commit:
+            raise SourceError(f"unable to check out pinned source {commit}")
+        if baseline is not None:
+            self._run_git(["reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all"],
+                          cwd=destination)
+            self._run_git(["gc", "--quiet", "--prune=now"], cwd=destination)
+
+    def _reset_prepared_files(self, destination: Path) -> None:
+        dirty = _git_run(destination, ["diff", "--no-ext-diff", "--name-only", "-z", "HEAD", "--"])
+        if dirty:
+            subprocess.run(
+                ["git", "--literal-pathspecs", "-c", "core.hooksPath=/dev/null", "restore",
+                 "--source=HEAD", "--staged", "--worktree", "--pathspec-from-file=-", "--pathspec-file-nul"],
+                cwd=destination, input=dirty, check=True,
+            )
+        # Remove only additions identified by the index in this private copy.
+        paths = _git_run(destination, ["ls-files", "--others", "-z"])
+        for relative in paths.decode(errors="surrogateescape").split("\0"):
+            if relative:
+                remove(destination / relative)
+        for name in ("feeds", "package/feeds", "staging/upstream"):
+            if not _git_run(destination, ["ls-files", "--", name]):
+                remove(destination / name)
+
     def _source_commit(self, path: Path) -> str:
         commit = self._run_git(["rev-parse", "HEAD"], cwd=path)
         if not commit or any(ch.isspace() for ch in commit):
@@ -782,6 +832,8 @@ class SourceManager:
         status: StatusCallback | None = None,
         feed_preparer: Callable[[Path, StatusCallback | None], Mapping[str, str]] | None = None,
         catalog_builder: Callable[[Path], Any] | None = None,
+        pinned_commit: str | None = None,
+        baseline: Path | None = None,
     ) -> PreparedSource:
         """Serialize and prepare one immutable source snapshot."""
 
@@ -792,6 +844,8 @@ class SourceManager:
                 status=status,
                 feed_preparer=feed_preparer,
                 catalog_builder=catalog_builder,
+                pinned_commit=pinned_commit,
+                baseline=baseline,
             )
 
     def _prepare_source(
@@ -802,6 +856,8 @@ class SourceManager:
         status: StatusCallback | None = None,
         feed_preparer: Callable[[Path, StatusCallback | None], Mapping[str, str]] | None = None,
         catalog_builder: Callable[[Path], Any] | None = None,
+        pinned_commit: str | None = None,
+        baseline: Path | None = None,
     ) -> PreparedSource:
         """Clone, prepare feeds, scan metadata, then atomically publish.
 
@@ -837,8 +893,19 @@ class SourceManager:
         source_path = staging / "source"
         feed_commits: Mapping[str, str] = {}
         try:
-            _emit(status, "source", f"cloning {spec.url} ({spec.branch})", source_id=source_id)
-            self._clone(spec, source_path)
+            if pinned_commit is None:
+                _emit(status, "source", f"cloning {spec.url} ({spec.branch})", source_id=source_id)
+                self._clone(spec, source_path)
+            else:
+                try:
+                    self.checkout_pinned(spec, source_path, pinned_commit, baseline)
+                except (SourceError, OSError, subprocess.CalledProcessError) as exc:
+                    if baseline is None:
+                        raise
+                    _emit(status, "source", f"cached Git checkout rejected, fetching a clean tree: {exc}")
+                    remove(source_path)
+                    baseline = None
+                    self.checkout_pinned(spec, source_path, pinned_commit, None)
             source_commit = self._source_commit(source_path)
             local_patch_id = install_local_patches(source_path, source_id)
             if local_patch_id:
@@ -877,6 +944,8 @@ class SourceManager:
             # after that authoritative scan succeeds is it safe to remove
             # generated build metadata and host tools from the source copy.
             self._clean_generated_tree(source_path)
+            if baseline is not None:
+                retain_mtimes(baseline, source_path)
 
             fingerprint = {
                 "preparation_version": PREPARATION_VERSION,

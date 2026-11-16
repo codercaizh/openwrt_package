@@ -201,7 +201,7 @@ UID；编译容器不使用 host network。
 
 当前七种设备固件（N60 Pro、360T7、S905D、V-Plus、R3G、K2P Router、K2P AP）
 全部跟随官方 `master` 当前提交，三个目标平台均使用 Linux 6.18。GitHub Actions
-使用同一套 LLVM 22.1.3 Host 工具缓存，设备交叉工具链仍分别缓存。
+缓存 Git 源码工作区和共享下载文件，并按输入校验 Host/LLVM 与设备交叉工具链。
 
 MediaTek 的 N60 Pro 和 360T7 共用适配 Linux 6.18 的 PPE 计数修复；
 FullCone 与 nlbwmon 共用 conntrack 通知链的修复由官方 master 提供。

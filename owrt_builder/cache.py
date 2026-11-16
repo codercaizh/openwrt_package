@@ -29,6 +29,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .sources import SourceError, stage_download_seeds
 from .local_patches import FIX_STAMP
+from .source_sync import sync_source
 
 
 LogCallback = Callable[[str], None]
@@ -1232,7 +1233,7 @@ class BuildCacheManager:
         """Refresh source files while retaining OpenWrt compiler state.
 
         ``build_dir``, ``staging_dir`` and the shared ``dl`` symlink contain
-        expensive incremental state.  All other source files are replaced by
+        expensive incremental state.  Other source files are synchronized with
         the immutable prepared snapshot, which also removes files deleted by
         an upstream update.  The device lock is held by ``lease`` throughout.
         A changed firmware fix bundle clears target state so a prepared old
@@ -1279,18 +1280,7 @@ class BuildCacheManager:
                 f"{lease.previous.snapshot_id if lease.previous else ''} -> {snapshot_id}；"
                 "保留 build_dir/staging_dir/dl"
             )
-        for item in list(destination.iterdir()):
-            if item.name in preserve:
-                continue
-            _remove_tree(item)
-        for item in snapshot_path.iterdir():
-            if item.name in preserve:
-                continue
-            target = destination / item.name
-            if item.is_dir() and not item.is_symlink():
-                shutil.copytree(item, target, symlinks=True, dirs_exist_ok=True)
-            else:
-                shutil.copy2(item, target, follow_symlinks=False)
+        sync_source(snapshot_path, destination, preserve=preserve)
         self._ensure_download_link(destination)
         self.touch(
             lease.device,

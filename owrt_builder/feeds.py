@@ -301,37 +301,33 @@ def _clone_feed(
             clone_destination.unlink()
         else:
             shutil.rmtree(clone_destination)
-    args = ["clone", "--single-branch"]
-    depth = feed.depth
-    if depth:
-        args.extend(["--depth", str(depth)])
-    if feed.branch:
-        args.extend(["--branch", feed.branch])
-    if feed.source_subdir:
-        # Sparse checkout limits the working tree; blob filtering also keeps
-        # unrelated package contents out of the shallow clone's object store.
-        args.extend(["--filter=blob:none", "--sparse"])
-    args.extend([feed.url, str(clone_destination)])
-    _run_git(args, runner=runner)
-    if feed.source_subdir:
-        _run_git(
-            ["sparse-checkout", "set", "--no-cone", feed.source_subdir],
-            cwd=clone_destination,
-            runner=runner,
-        )
     if feed.commit is not None:
-        # A shallow branch checkout need not contain the reviewed revision.
-        # Fetch it explicitly and detach before copying the package files.
-        _run_git(
-            ["fetch", "--depth", "1", "origin", feed.commit],
-            cwd=clone_destination,
-            runner=runner,
-        )
-        _run_git(
-            ["checkout", "--detach", feed.commit],
-            cwd=clone_destination,
-            runner=runner,
-        )
+        clone_destination.mkdir()
+        _run_git(["init", "--quiet"], cwd=clone_destination, runner=runner)
+        _run_git(["remote", "add", "origin", feed.url], cwd=clone_destination, runner=runner)
+        args = ["fetch", "--depth=1", "--no-tags"]
+        if feed.source_subdir:
+            args.append("--filter=blob:none")
+            _run_git(
+                ["sparse-checkout", "set", "--no-cone", feed.source_subdir],
+                cwd=clone_destination, runner=runner,
+            )
+        _run_git([*args, "origin", feed.commit], cwd=clone_destination, runner=runner)
+        _run_git(["checkout", "--detach", feed.commit], cwd=clone_destination, runner=runner)
+    else:
+        args = ["clone", "--single-branch"]
+        if feed.depth:
+            args.extend(["--depth", str(feed.depth)])
+        if feed.branch:
+            args.extend(["--branch", feed.branch])
+        if feed.source_subdir:
+            args.extend(["--filter=blob:none", "--sparse"])
+        _run_git([*args, feed.url, str(clone_destination)], runner=runner)
+        if feed.source_subdir:
+            _run_git(
+                ["sparse-checkout", "set", "--no-cone", feed.source_subdir],
+                cwd=clone_destination, runner=runner,
+            )
     commit = _run_git(["rev-parse", "HEAD"], cwd=clone_destination, runner=runner)
     if not commit or any(ch.isspace() for ch in commit):
         raise FeedError(f"feed {feed.name} did not produce a usable HEAD")
@@ -740,6 +736,7 @@ def prepare_feeds_sync(
     feed_specs: Sequence[FeedSpec] = FEED_SPECS,
     runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     require_native: bool = True,
+    pinned_tailscale: tuple[str, str] | None = None,
     require_metadata: bool = True,
 ) -> dict[str, str]:
     """Prepare all project feeds inside an un-published source staging tree.
@@ -773,7 +770,8 @@ def prepare_feeds_sync(
         if any(feed.name == "openwrt-packages-tailscale" for feed in feed_specs):
             from .upstream_versions import sync_latest_tailscale
 
-            release = sync_latest_tailscale(root, go_version=_go_toolchain_version(root))
+            options = {"pinned": pinned_tailscale} if pinned_tailscale is not None else {}
+            release = sync_latest_tailscale(root, go_version=_go_toolchain_version(root), **options)
             cloned_commits["tailscale-source"] = release["commit"]
             _emit(
                 status, "feed",

@@ -8,10 +8,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   firmware:
-    if: ${{ github.ref_name == 'immortalwrt-master' }}
+    if: ${{ github.repository == 'codercaizh/openwrt_package' && github.ref == 'refs/heads/immortalwrt-master' }}
     name: Firmware ${{ matrix.device }}
     strategy:
       fail-fast: false

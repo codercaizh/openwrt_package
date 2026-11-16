@@ -70,7 +70,8 @@ def _download(url: str, destination: Path) -> str:
 
 
 def sync_latest_tailscale(
-    source_root: Path, *, go_version: tuple[int, int, int] | None
+    source_root: Path, *, go_version: tuple[int, int, int] | None,
+    pinned: tuple[str, str] | None = None,
 ) -> dict[str, str]:
     """Download, check and select the latest stable Tailscale source.
 
@@ -81,9 +82,14 @@ def sync_latest_tailscale(
 
     makefile = source_root / "feeds/packages/net/tailscale/Makefile"
     recipe = makefile.read_text(encoding="utf-8")
-    tag = _latest_tailscale_tag()
+    if pinned is None:
+        tag = _latest_tailscale_tag()
+        commit = _tailscale_tag_commit(tag)
+    else:
+        tag, commit = pinned
+        if _tailscale_tag_commit(tag) != commit:
+            raise UpstreamVersionError(f"Tailscale tag {tag} moved after it was pinned")
     version = tag[1:]
-    commit = _tailscale_tag_commit(tag)
 
     with tempfile.TemporaryDirectory(prefix=".tailscale-release-", dir=source_root) as directory:
         archive = Path(directory) / f"tailscale-{version}.tar.gz"

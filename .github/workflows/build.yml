@@ -22,110 +22,164 @@ on:
         description: Supported device key or alias
         required: true
         type: string
+      upstream:
+        description: Upstream commit from the first validation runner
+        type: string
+      feed_pins:
+        description: Feed commits from the first validation runner
+        type: string
+      validation:
+        description: Artifact suffix for the two-run cache validation
+        type: string
+    outputs:
+      upstream:
+        value: ${{ jobs.build.outputs.upstream }}
+      feed_pins:
+        value: ${{ jobs.build.outputs.feed_pins }}
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
-    name: build-${{ inputs.device || github.event.inputs.device }}
+    name: build-${{ inputs.device || github.event.inputs.device }}${{ inputs.validation }}
     runs-on: ubuntu-22.04
-    # GitHub-hosted runners cap a job at six hours.  Use a self-hosted runner
-    # for a larger feed/plugin set that needs more time.
     timeout-minutes: 360
+    outputs:
+      upstream: ${{ steps.plan.outputs.upstream }}
+      feed_pins: ${{ steps.plan.outputs.feed_pins }}
+    env:
+      OWRT_DEVICE: ${{ inputs.device || github.event.inputs.device }}
+      OWRT_ACTIVE_CACHE: ${{ github.repository == 'codercaizh/openwrt_package' && github.ref == 'refs/heads/immortalwrt-master' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push') && vars.OWRT_DISABLE_V3_CACHE != '1' }}
     steps:
       - name: Check out builder
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      # Every supported device now builds ImmortalWrt master (LLVM 22.1.3).
-      # Keep exactly one shared Host/LLVM cache; target toolchains remain per-device.
-      - name: Choose cache scopes
-        id: cache_scope
+      - uses: actions/setup-python@v5
+        if: env.OWRT_ACTIVE_CACHE == 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Pin source and select source and download candidates
+        id: plan
+        if: env.OWRT_ACTIVE_CACHE == 'true'
         env:
-          DEVICE: ${{ inputs.device || github.event.inputs.device }}
-        run: |
-          case "$DEVICE" in
-            n60pro) canonical=netcore_n60-pro ;;
-            360t7) canonical=360t7 ;;
-            s905d) canonical=s905d ;;
-            vplus) canonical=vplus ;;
-            r3g) canonical=r3g ;;
-            k2p) canonical=k2p ;;
-            k2p-ap) canonical=k2p-ap ;;
-            *) echo "Unsupported cache device: $DEVICE" >&2; exit 1 ;;
-          esac
-          # One active upstream source branch and one Host LLVM toolchain.
-          host_scope=master
-          llvm_version=22.1.3
-          echo "canonical=$canonical" >> "$GITHUB_OUTPUT"
-          echo "host_scope=$host_scope" >> "$GITHUB_OUTPUT"
-          echo "llvm_version=$llvm_version" >> "$GITHUB_OUTPUT"
-          # Bump this epoch when the LLVM build options or host compiler image changes.
-          echo "host_revision=llvm-$llvm_version-v1" >> "$GITHUB_OUTPUT"
-          # Device toolchain caches rotate weekly; previous weeks remain fallbacks.
-          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+          GH_TOKEN: ${{ github.token }}
+          PINNED_UPSTREAM: ${{ inputs.upstream }}
+          PINNED_FEEDS: ${{ inputs.feed_pins }}
+        run: python -m owrt_builder.ci_cache plan "$OWRT_DEVICE" "$PINNED_UPSTREAM"
 
-      - name: Restore shared host tools cache
-        id: host_cache
+      - name: Restore source workspace
+        if: steps.plan.outputs.source != ''
         uses: actions/cache/restore@v4
         with:
-          path: |
-            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/build_dir/host
-            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/staging_dir/host
-          key: owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.host_revision }}
-          restore-keys: |
-            owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-
+          path: .owrt/cache/transfer/source.tar.zst
+          key: ${{ steps.plan.outputs.source }}
 
-      - name: Restore device cross-toolchain cache
-        uses: actions/cache@v4
+      - name: Restore shared downloads
+        id: downloads
+        if: steps.plan.outputs.dl != ''
+        uses: actions/cache/restore@v4
         with:
-          path: |
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/cache.json
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/hostpkg
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/build_dir/toolchain-*
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/hostpkg
-            .owrt/cache/builds/${{ steps.cache_scope.outputs.canonical }}/openwrt/staging_dir/toolchain-*
-          key: owrt-toolchain-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.canonical }}-${{ steps.cache_scope.outputs.week }}
-          restore-keys: |
-            owrt-toolchain-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.canonical }}-
+          path: .owrt/cache/transfer/dl.tar.zst
+          key: ${{ steps.plan.outputs.dl }}
 
-      # The full dl cache is several GiB per family and competes with compiled
-      # toolchain caches under GitHub's default storage quota. Keep the costly
-      # LLVM source archive, but let smaller package archives download normally.
-      - name: Restore LLVM source archive
-        uses: actions/cache@v4
+      - name: Migrate the verified LLVM source download
+        if: env.OWRT_ACTIVE_CACHE == 'true' && steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
         with:
-          path: .owrt/cache/dl/llvm-project-${{ steps.cache_scope.outputs.llvm_version }}.src.tar.xz
-          key: owrt-llvm-source-v1-${{ runner.os }}-${{ steps.cache_scope.outputs.llvm_version }}
+          path: .owrt/cache/dl/llvm-project-22.1.3.src.tar.xz
+          key: owrt-llvm-source-v1-Linux-22.1.3
 
-      - name: Check Docker and builder catalog
+      - name: Build worker and prepare pinned source
+        if: env.OWRT_ACTIVE_CACHE == 'true'
         run: |
-          docker version
-          ./owrt doctor --json
+          docker build --file docker/Dockerfile --tag owrt-builder:ci .
+          bash scripts/ci-worker.sh owrt_builder.ci_cache prepare
+
+      - name: Select compatible compiler cache candidates
+        id: compiler
+        if: env.OWRT_ACTIVE_CACHE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m owrt_builder.ci_cache compiler-keys
+
+      - name: Restore shared Host tools
+        if: steps.compiler.outputs.host != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/transfer/host.tar.zst
+          key: ${{ steps.compiler.outputs.host }}
+
+      - name: Restore device toolchain and host packages
+        if: steps.compiler.outputs.toolchain != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/transfer/toolchain.tar.zst
+          key: ${{ steps.compiler.outputs.toolchain }}
 
       - name: Build firmware
-        env:
-          OWRT_DEVICE: ${{ inputs.device || github.event.inputs.device }}
         run: |
           set -o pipefail
-          ./owrt build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+          if [[ "$OWRT_ACTIVE_CACHE" == true ]]; then
+            bash scripts/ci-worker.sh owrt_builder.ci_cache restore-compilers
+            bash scripts/ci-worker.sh owrt_builder.cli build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+          else
+            ./owrt build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+          fi
 
-      # N60 Pro is the single cache writer for the shared master Host/LLVM cache.
-      # Other matrix jobs restore it; target toolchains are still cached per device.
-      - name: Save shared host tools cache
-        if: success() && steps.host_cache.outputs.cache-hit != 'true' && steps.cache_scope.outputs.canonical == 'netcore_n60-pro'
-        uses: actions/cache/save@v4
+      - name: Return ARM artifacts and cache manifests to the runner
+        if: always() && env.OWRT_ACTIVE_CACHE == 'true' && (env.OWRT_DEVICE == 's905d' || env.OWRT_DEVICE == 'vplus')
+        run: sudo chown -R "$(id -u):$(id -g)" .owrt
+
+      - name: Publish Host tools
+        if: success() && env.OWRT_ACTIVE_CACHE == 'true'
+        uses: ./.github/actions/owrt-cache-save
         with:
-          path: |
-            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/build_dir/host
-            .owrt/cache/host-tools/${{ steps.cache_scope.outputs.host_scope }}/staging_dir/host
-          key: owrt-host-v2-${{ runner.os }}-${{ steps.cache_scope.outputs.host_scope }}-${{ steps.cache_scope.outputs.host_revision }}
+          family: host
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWRT_CACHE_BUDGET_MIB: ${{ vars.OWRT_CACHE_BUDGET_MIB }}
+
+      - name: Publish device toolchain
+        if: success() && env.OWRT_ACTIVE_CACHE == 'true'
+        uses: ./.github/actions/owrt-cache-save
+        with:
+          family: toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWRT_CACHE_BUDGET_MIB: ${{ vars.OWRT_CACHE_BUDGET_MIB }}
+
+      - name: Publish source workspace
+        if: success() && env.OWRT_ACTIVE_CACHE == 'true'
+        uses: ./.github/actions/owrt-cache-save
+        with:
+          family: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWRT_CACHE_BUDGET_MIB: ${{ vars.OWRT_CACHE_BUDGET_MIB }}
+
+      - name: Publish shared downloads
+        if: success() && env.OWRT_ACTIVE_CACHE == 'true'
+        uses: ./.github/actions/owrt-cache-save
+        with:
+          family: dl
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWRT_CACHE_BUDGET_MIB: ${{ vars.OWRT_CACHE_BUDGET_MIB }}
+
+      - name: Verify the second N60 Pro build reused its compiler state
+        if: inputs.validation == '-warm'
+        run: python -m owrt_builder.ci_cache verify-warm
 
       - name: Upload firmware
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          name: openwrt-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}${{ inputs.validation }}
           # BuildEngine stores artifacts under the canonical device key, so
           # aliases such as n60pro must not narrow this glob.
           # Keep the per-build APK/IPK archive in its own downloadable artifact.
@@ -142,7 +196,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-packages-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          name: openwrt-packages-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}${{ inputs.validation }}
           # BuildEngine emits this stable basename inside the canonical
           # device/task directory.  Upload it independently so users can
           # download APK/IPK packages without the firmware bundle.
@@ -158,9 +212,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-evidence-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}
+          name: openwrt-evidence-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}${{ inputs.validation }}
           path: |
             .owrt/tasks/**/result.json
             owrt-${{ inputs.device || github.event.inputs.device }}.log
+            .owrt/cache/transfer/compiled.json
           if-no-files-found: warn
           retention-days: 7
