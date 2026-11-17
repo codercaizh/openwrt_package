@@ -21,13 +21,13 @@ SHA = re.compile(r"[0-9a-f]{40}\Z")
 DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
 
-def github(repo: str, resource: str):
+def github(repo: str, resource: str, *, method: str = "GET"):
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "owrt-cache"}
     if token := os.environ.get("GH_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
-    req = Request(f"https://api.github.com/repos/{repo}/{resource}", headers=headers)
+    req = Request(f"https://api.github.com/repos/{repo}/{resource}", headers=headers, method=method)
     with urlopen(req, timeout=35) as response:
-        return json.load(response)
+        return None if response.status == 204 else json.load(response)
 
 
 def inventory(prefix: str | None = None) -> list[dict]:

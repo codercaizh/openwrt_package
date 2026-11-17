@@ -38,9 +38,11 @@ Host 在 `tools/` 和公共构建输入一致、Host 相关 Kconfig 一致时复
 
 检查和上传之间允许有另一个 Runner 完成上传。A 和 B 的 Key 独立，Cache API 的不可变对象确保 A 无法覆盖 B。后续的祖先选择会优先 B，即使 A 后到。若需要保证 A 连旧对象也不能创建，需使用串行 Publisher，把校验、比较和保存放在同一独占窗口，并通过单独的传输把构建产物交给它。当前实现保留并行编译及只读仓库 token。
 
-单层压缩归档上限分别为 Source 500 MiB、Host 1900 MiB、Toolchain 1600 MiB、Downloads 3900 MiB。Downloads 通过 tar 的 NUL 分隔文件清单生成归档，可处理大量文件，同时保留普通文件和 SHA-256 校验。上传前再次查仓库用量。默认发布预算 8704 MiB，可用仓库变量 `OWRT_CACHE_BUDGET_MIB` 调低。预算与 GitHub 的实际配额独立，并发检查也没有原子容量预留。预算或 Runner 磁盘空间不足时跳过相应缓存写入，GitHub 管理已有对象的过期与淘汰。日志记录压缩字节数、REST 确认大小、恢复原因及下载增量。查看 [仓库缓存清单](https://github.com/codercaizh/openwrt_package/actions/caches)。
+上传并由 GitHub 清单确认后，构建任务会保存新缓存 ID 和上传前已存在的同 Git 版本变体 ID。独立的清理工作流在可信的 master 构建成功后读取这些记录，重新确认新归档仍存在，并按 Git 祖先关系删除同作用域中被替代的旧缓存。同版本只删除上传前已经记录的 ID。后来上传的同版本变体、提交关系不可比较的缓存及其他设备或源码的缓存保持独立。只有清理作业需要 `actions: write`。
 
-旧 Host/Toolchain 对象保留以便回滚。v3 优先恢复共享 Downloads，未命中时可只读恢复旧 LLVM 归档，使用当前 LLVM 配方的 SHA-256 验证后才复用。其他从旧源码身份继承的下载文件在 `make download` 时按当前配方的哈希重新核验。N60 Pro 会把它实际下载的 LLVM、Linux、工具链和包归档合入共享层；其他设备缺少的目标专用下载在各自 Runner 取得。
+单层压缩归档上限分别为 Source 500 MiB、Host 1900 MiB、Toolchain 1600 MiB、Downloads 3900 MiB。Downloads 通过 tar 的 NUL 分隔文件清单生成归档，可处理大量文件，同时保留普通文件和 SHA-256 校验。上传前再次查仓库用量。默认发布预算 8704 MiB，可用仓库变量 `OWRT_CACHE_BUDGET_MIB` 调低。预算与 GitHub 的实际配额独立，并发检查也没有原子容量预留。预算或 Runner 磁盘空间不足时跳过上传和随之发生的清理，保留当前可用归档。GitHub 仍按其策略处理到期和淘汰。日志记录压缩字节数、REST 确认大小、恢复原因及下载增量。查看 [仓库缓存清单](https://github.com/codercaizh/openwrt_package/actions/caches)。
+
+自动清理的范围限于本分支对应作用域的 v3 归档。v3 优先恢复共享 Downloads，未命中时可只读恢复旧 LLVM 归档，使用当前 LLVM 配方的 SHA-256 验证后才复用。其他从旧源码身份继承的下载文件在 `make download` 时按当前配方的哈希重新核验。N60 Pro 会把它实际下载的 LLVM、Linux、工具链和包归档合入共享层；其他设备缺少的目标专用下载在各自 Runner 取得。
 
 ## 验证和回滚
 

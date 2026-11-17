@@ -208,6 +208,16 @@ jobs:
         if: inputs.validation == '-warm'
         run: python -m owrt_builder.ci_cache verify-warm
 
+      - name: Upload verified cache publication records
+        if: success() && env.OWRT_ACTIVE_CACHE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-cache-publications-${{ github.run_attempt }}-${{ inputs.device || github.event.inputs.device }}${{ inputs.validation }}
+          path: .owrt/cache/transfer/published/*.json
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 1
+
       - name: Upload build evidence
         if: always()
         uses: actions/upload-artifact@v4

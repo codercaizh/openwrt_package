@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from . import cache_archive
@@ -552,9 +553,11 @@ class Cache:
             if not version.precedes(head) or has_newer(latest, version):
                 log(f"CACHE_PUBLISH family={family} decision=SKIP_STALE_PUBLISH")
                 return
-            if family in {"source", "dl"} and any(
-                item.version == version and item.identity != plan["identities"][family] for item in latest
-            ) and feed_pins(version.upstream) != plan["pins"]:
+            same_version = {
+                item.key for item in latest
+                if item.version == version and item.identity != plan["identities"][family]
+            }
+            if same_version and feed_pins(version.upstream) != plan["pins"]:
                 log(f"CACHE_PUBLISH family={family} decision=SKIP_STALE_PUBLISH reason=moved_feeds")
                 return
             key = f"{self.prefix(family, plan)}{version.builder}-{version.upstream}-{plan['identities'][family]}"
@@ -565,6 +568,13 @@ class Cache:
             if usage + self.archive(family).stat().st_size > budget():
                 log(f"CACHE_PUBLISH family={family} decision=skip reason=repository_cache_budget")
                 return
+            # A new cache with the same Git commits may represent newer
+            # feeds. Only retire variants whose IDs existed before our upload.
+            previous_ids = [
+                row["id"] for row in inventory(self.prefix(family, plan))
+                if row["key"] in same_version
+            ] if same_version else []
+            save(self.transfer / f"pending-{family}.json", {"key": key, "same_version_ids": previous_ids})
             log(f"CACHE_PUBLISH family={family} decision=PUBLISH_IMMUTABLE key={key}")
             set_output("key", key)
         except ERRORS as exc:
@@ -580,11 +590,82 @@ class Cache:
             else:
                 log(f"CACHE_PUBLISH family={family} decision=confirmed key={key} "
                     f"bytes={row['size_in_bytes']} ref={row['ref']}")
+                pending = load(self.transfer / f"pending-{family}.json")
+                if pending["key"] != key or row["size_in_bytes"] <= 0:
+                    raise ValueError("published cache does not match the pending upload")
+                save(self.transfer / "published" / f"{family}.json", {
+                    **pending, "id": row["id"], "family": family, "device": self.plan["device"],
+                    "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                })
         except ERRORS as exc:
             log(f"CACHE_PUBLISH family={family} decision=unconfirmed reason={exc}")
         finally:
             self.archive(family).unlink(missing_ok=True)
 
+    def prune_publication(self, record: dict, *, run: str, attempt: str, builder: str) -> None:
+        family = record["family"]
+        if family not in LAYERS or (record["run"], record["attempt"]) != (run, attempt):
+            raise ValueError("unexpected publication family or originating run")
+        catalog = load_catalog()
+        spec = catalog.resolve(record["device"])
+        source = catalog.source_for(spec)
+        if family in {"host", "dl"} and spec.key != "netcore_n60-pro":
+            raise ValueError("unexpected writer for a shared cache layer")
+        prefix = self.prefix(family, {"source_id": spec.source_id, "device": spec.key})
+        keeper = Candidate.read(prefix, record["key"])
+        if keeper is None or keeper.version.builder != builder:
+            raise ValueError("publication key does not match the originating build")
+        if type(record["id"]) is not int or record["id"] < 1:
+            raise ValueError("invalid published cache ID")
+        previous_ids = set(record["same_version_ids"])
+        if any(type(cache_id) is not int or cache_id < 1 for cache_id in previous_ids):
+            raise ValueError("invalid predecessor cache ID")
+
+        head = Version(
+            git_head(f"https://github.com/{REPOSITORY}.git", REF),
+            git_head(source.url, f"refs/heads/{source.branch}"),
+        )
+        if not keeper.version.precedes(head):
+            log(f"CACHE_PRUNE family={family} decision=skip reason=unreachable_publication")
+            return
+
+        entries = [
+            (item, row) for row in inventory(prefix)
+            if row["ref"] == REF and (item := Candidate.read(prefix, row["key"])) is not None
+        ]
+        if not any(item == keeper and row["id"] == record["id"] and row["size_in_bytes"] > 0
+                   for item, row in entries):
+            log(f"CACHE_PRUNE family={family} decision=skip reason=unconfirmed_replacement")
+            return
+        if has_newer([item for item, _ in entries], keeper.version):
+            log(f"CACHE_PRUNE family={family} decision=skip reason=newer_layer_exists")
+            return
+        for item, row in entries:
+            if item == keeper:
+                continue
+            replaced = (row["id"] in previous_ids if item.version == keeper.version
+                        else item.version.precedes(keeper.version))
+            if not replaced:
+                continue
+            try:
+                github(REPOSITORY, f"actions/caches/{row['id']}", method="DELETE")
+            except HTTPError as exc:
+                if exc.code != 404:
+                    raise
+            log(f"CACHE_PRUNE family={family} decision=removed id={row['id']} key={item.key} kept={keeper.key}")
+
+    def prune(self, records: Path) -> None:
+        if (
+            os.environ.get("GITHUB_REPOSITORY") != REPOSITORY
+            or os.environ.get("GITHUB_REF") != REF
+            or os.environ.get("GITHUB_EVENT_NAME") != "workflow_run"
+        ):
+            raise ValueError("cache pruning is restricted to the master cleanup workflow")
+        run = os.environ["OWRT_PUBLISH_RUN"]
+        attempt = os.environ["OWRT_PUBLISH_ATTEMPT"]
+        builder = os.environ["OWRT_PUBLISH_SHA"]
+        for path in sorted(records.rglob("*.json")):
+            self.prune_publication(load(path), run=run, attempt=attempt, builder=builder)
 
 def trusted() -> bool:
     return (
@@ -803,7 +884,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", default=os.environ.get("OWRT_WORKSPACE", ".owrt"), type=Path)
     parser.add_argument("phase", choices=(
-        "plan", "prepare", "compiler-keys", "restore-compilers", "stage", "publish", "audit", "verify-warm"))
+        "plan", "prepare", "compiler-keys", "restore-compilers", "stage", "publish", "audit", "verify-warm", "prune"))
     parser.add_argument("value", nargs="?", default="")
     parser.add_argument("option", nargs="?", default="")
     args = parser.parse_args()
@@ -824,6 +905,8 @@ def main() -> None:
         cache.audit(args.value, args.option)
     elif args.phase == "verify-warm":
         verify_warm(cache)
+    elif args.phase == "prune":
+        cache.prune(Path(args.value))
 
 
 if __name__ == "__main__":

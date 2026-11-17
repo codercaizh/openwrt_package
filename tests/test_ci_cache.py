@@ -365,3 +365,79 @@ def test_generated_base_feed_alias_is_not_a_remote_pin(tmp_path: Path):
     make_git(native)
     expected = command("git", "rev-parse", "HEAD", cwd=native)
     assert _git_commits(source, (), runner=None) == {"default:packages": expected}
+
+
+@pytest.mark.parametrize("keeper_present,newer_present,expected", [
+    (True, False, [11, 13]), (False, False, []), (True, True, []),
+])
+def test_prune_removes_only_superseded_cache_ids(
+    tmp_path: Path, monkeypatch, keeper_present: bool, newer_present: bool, expected: list[int],
+):
+    cache = ci.Cache(tmp_path)
+    prefix = cache.prefix("toolchain", {"device": "netcore_n60-pro"})
+    other_device = cache.prefix("toolchain", {"device": "360t7"})
+    branch = ci.REF
+    old = Version("a" * 40, "d" * 40)
+    current = Version("b" * 40, "e" * 40)
+    newer = Version("c" * 40, "f" * 40)
+    fork = Version("c" * 40, "d" * 40)
+    comparable = {(old, current), (old, newer), (current, newer)}
+    monkeypatch.setattr(Version, "precedes", lambda a, b, *_: a == b or (a, b) in comparable)
+    monkeypatch.setattr(ci, "git_head", lambda url, ref: newer.upstream if UPSTREAM in url else newer.builder)
+
+    def row(cache_id, version, identity, *, ref=branch, scope=prefix):
+        key = f"{scope}{version.builder}-{version.upstream}-{identity * 64}"
+        return {"key": key, "id": cache_id, "ref": ref, "size_in_bytes": 100}
+
+    keeper = row(12, current, "a")
+    entries = [
+        row(11, old, "b"),
+        row(13, current, "c"),   # Existing variant at upload time.
+        row(14, current, "d"),   # Arrived concurrently.
+        row(15, fork, "e"),
+        row(16, old, "f", ref="refs/heads/unrelated"),
+        row(17, old, "1", scope=other_device),
+    ]
+    if keeper_present:
+        entries.append(keeper)
+    if newer_present:
+        entries.append(row(18, newer, "b"))
+    monkeypatch.setattr(ci, "inventory", lambda scope: entries if scope == prefix else [])
+    deleted = []
+
+    def delete(repo, path, *, method):
+        assert (repo, method) == (REPOSITORY, "DELETE")
+        deleted.append(int(path.rsplit("/", 1)[1]))
+
+    monkeypatch.setattr(ci, "github", delete)
+    cache.prune_publication({
+        "family": "toolchain", "device": "n60pro", "key": keeper["key"], "id": keeper["id"],
+        "same_version_ids": [13], "run": "99", "attempt": "2",
+    }, run="99", attempt="2", builder=current.builder)
+    assert deleted == expected
+
+
+def test_prune_does_not_accept_publication_from_another_attempt(tmp_path: Path):
+    cache = ci.Cache(tmp_path)
+    with pytest.raises(ValueError, match="originating run"):
+        cache.prune_publication({"family": "host", "run": "80", "attempt": "1"},
+                                run="80", attempt="2", builder="b" * 40)
+
+
+def test_audit_creates_a_prune_record_only_for_confirmed_upload(tmp_path: Path, monkeypatch):
+    cache = ci.Cache(tmp_path)
+    key = "compiler-cache-key"
+    ci.save(cache.plan_path, {"device": "netcore_n60-pro"})
+    ci.save(cache.transfer / "pending-host.json", {"key": key, "same_version_ids": [7]})
+    monkeypatch.setenv("GITHUB_RUN_ID", "80")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setattr(ci, "inventory", lambda _: [])
+    cache.audit("host", key)
+    published = cache.transfer / "published" / "host.json"
+    assert not published.exists()
+    monkeypatch.setattr(ci, "inventory", lambda _: [{"id": 9, "key": key, "ref": ci.REF, "size_in_bytes": 100}])
+    cache.audit("host", key)
+    assert ci.load(published) == {
+        "family": "host", "id": 9, "key": key, "same_version_ids": [7],
+        "device": "netcore_n60-pro", "run": "80", "attempt": "2",
+    }
