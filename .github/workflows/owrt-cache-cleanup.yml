@@ -1,8 +1,9 @@
 name: Prune replaced OpenWrt caches
 
 on:
+  workflow_call:
   workflow_run:
-    workflows: [OpenWrt Build, Daily Firmware Matrix, Config Review Build]
+    workflows: [OpenWrt Build, Config Review Build]
     branches: [immortalwrt-master]
     types: [completed]
 
@@ -12,11 +13,17 @@ jobs:
   prune:
     if: >-
       github.repository == 'codercaizh/openwrt_package' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.head_branch == 'immortalwrt-master' &&
-      github.event.workflow_run.conclusion == 'success' &&
+      github.ref == 'refs/heads/immortalwrt-master' &&
       vars.OWRT_DISABLE_V3_CACHE != '1' &&
-      contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event.workflow_run.event)
+      (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.head_repository.full_name == github.repository &&
+         github.event.workflow_run.head_branch == 'immortalwrt-master' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event.workflow_run.event)) ||
+        (github.workflow_ref == format('{0}/.github/workflows/daily-build.yml@refs/heads/immortalwrt-master', github.repository) &&
+         contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name))
+      )
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -33,9 +40,9 @@ jobs:
       - name: Prune caches superseded by confirmed uploads
         env:
           GH_TOKEN: ${{ github.token }}
-          OWRT_PUBLISH_RUN: ${{ github.event.workflow_run.id }}
-          OWRT_PUBLISH_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          OWRT_PUBLISH_SHA: ${{ github.event.workflow_run.head_sha }}
+          OWRT_PUBLISH_RUN: ${{ github.event.workflow_run.id || github.run_id }}
+          OWRT_PUBLISH_ATTEMPT: ${{ github.event.workflow_run.run_attempt || github.run_attempt }}
+          OWRT_PUBLISH_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
           prefix="openwrt-cache-publications-$OWRT_PUBLISH_ATTEMPT-"

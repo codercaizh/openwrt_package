@@ -655,10 +655,16 @@ class Cache:
             log(f"CACHE_PRUNE family={family} decision=removed id={row['id']} key={item.key} kept={keeper.key}")
 
     def prune(self, records: Path) -> None:
+        event = os.environ.get("GITHUB_EVENT_NAME")
+        in_daily_matrix = (
+            event in {"schedule", "workflow_dispatch"}
+            and os.environ.get("GITHUB_WORKFLOW_REF")
+            == f"{REPOSITORY}/.github/workflows/daily-build.yml@{REF}"
+        )
         if (
             os.environ.get("GITHUB_REPOSITORY") != REPOSITORY
             or os.environ.get("GITHUB_REF") != REF
-            or os.environ.get("GITHUB_EVENT_NAME") != "workflow_run"
+            or (event != "workflow_run" and not in_daily_matrix)
         ):
             raise ValueError("cache pruning is restricted to the master cleanup workflow")
         run = os.environ["OWRT_PUBLISH_RUN"]
