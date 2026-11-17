@@ -29,8 +29,10 @@ jobs:
           gh api "$api/runs/44013997141" |
             jq -e --arg sha "$sha" '.conclusion == "success" and .head_sha == $sha and .head_branch == "immortalwrt-master"'
           inventory="$(gh api --method GET "$api/caches" -f "ref=$ref" -f "key=$scope" -F per_page=100)"
-          jq -e --arg ref "$ref" --arg prefix "$scope$sha-" +            'any(.actions_caches[]; .id == 10644323971 and .ref == $ref and .size_in_bytes > 0 and (.key | startswith($prefix)))' <<< "$inventory"
-          if jq -e --arg ref "$ref" --arg prefix "${scope}c37359bd8f3243ad641da3a7e5548e30941b41bd-" +            'any(.actions_caches[]; .id == 10636186943 and .ref == $ref and (.key | startswith($prefix)))' <<< "$inventory"; then
+          jq -e --arg ref "$ref" --arg prefix "$scope$sha-" \
+            'any(.actions_caches[]; .id == 10644323971 and .ref == $ref and .size_in_bytes > 0 and (.key | startswith($prefix)))' <<< "$inventory"
+          if jq -e --arg ref "$ref" --arg prefix "${scope}c37359bd8f3243ad641da3a7e5548e30941b41bd-" \
+            'any(.actions_caches[]; .id == 10636186943 and .ref == $ref and (.key | startswith($prefix)))' <<< "$inventory"; then
             gh api --method DELETE "$api/caches/10636186943"
             echo "Removed 10636186943, kept verified replacement 10644323971."
           fi
