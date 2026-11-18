@@ -44,6 +44,10 @@ def test_build_workflow_shares_host_tools_and_keeps_target_toolchains_device_sco
         assert f".owrt/cache/transfer/{layer}.tar.zst" in workflow
         assert f"family: {layer}" in publisher
     assert "needs: build" in publisher
+    download, publish = publisher.split("      - name: Publish device toolchain", 1)
+    assert "merge-multiple: true" in download
+    assert "id: check-bundle" in download and "transfer/plan.json" in download
+    assert publish.count("steps.check-bundle.outcome == 'success'") == 3
     assert "group: owrt-master-cache-writes" in publisher and "queue: max" in publisher
     assert "actions: write" in publisher and "contents: write" not in publisher
     validation = (ROOT / ".github/workflows/config-review-build.yml").read_text()

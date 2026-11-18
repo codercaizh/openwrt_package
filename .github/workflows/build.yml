@@ -80,11 +80,22 @@ jobs:
           python-version: "3.11"
 
       - name: Download validated cache archives
-        id: bundle
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ needs.build.outputs.staged_cache }}
           path: .owrt/cache/transfer
+          merge-multiple: true
+
+      - name: Check downloaded cache bundle
+        id: check-bundle
+        shell: bash
+        run: |
+          shopt -s nullglob
+          archives=(.owrt/cache/transfer/*.tar.zst)
+          if [[ ! -s .owrt/cache/transfer/plan.json || ${#archives[@]} -eq 0 ]]; then
+            echo "::error::Cache bundle must contain plan.json and cache archives directly in .owrt/cache/transfer"
+            exit 1
+          fi
 
       - name: Publish device toolchain
         uses: ./.github/actions/owrt-cache-save
@@ -92,19 +103,19 @@ jobs:
           family: toolchain
 
       - name: Publish Host tools
-        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.check-bundle.outcome == 'success' }}
         uses: ./.github/actions/owrt-cache-save
         with:
           family: host
 
       - name: Publish shared downloads
-        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.check-bundle.outcome == 'success' }}
         uses: ./.github/actions/owrt-cache-save
         with:
           family: dl
 
       - name: Publish source workspace
-        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.check-bundle.outcome == 'success' }}
         uses: ./.github/actions/owrt-cache-save
         with:
           family: source
