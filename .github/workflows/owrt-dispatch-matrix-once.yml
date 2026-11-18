@@ -1,0 +1,26 @@
+name: Dispatch OpenWrt matrix once
+
+on:
+  push:
+    branches: [immortalwrt-master]
+    paths: [.github/workflows/owrt-dispatch-matrix-once.yml]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'codercaizh/openwrt_package' &&
+      github.event.head_commit.message == 'ci: dispatch one seven-device firmware matrix'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the existing Daily Firmware Matrix workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/daily-build.yml/dispatches" \
+            -H 'X-GitHub-Api-Version: 2026-03-10' -f ref=immortalwrt-master
