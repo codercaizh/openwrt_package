@@ -80,6 +80,7 @@ jobs:
           python-version: "3.11"
 
       - name: Download validated cache archives
+        id: bundle
         uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ needs.build.outputs.staged_cache }}
@@ -91,29 +92,22 @@ jobs:
           family: toolchain
 
       - name: Publish Host tools
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         uses: ./.github/actions/owrt-cache-save
         with:
           family: host
 
       - name: Publish shared downloads
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         uses: ./.github/actions/owrt-cache-save
         with:
           family: dl
 
       - name: Publish source workspace
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         uses: ./.github/actions/owrt-cache-save
         with:
           family: source
-
-      - name: Upload verified cache publication records
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-cache-publications-${{ github.run_attempt }}-${{ inputs.device }}${{ inputs.validation }}
-          path: .owrt/cache/transfer/published/*.json
-          if-no-files-found: ignore
-          include-hidden-files: true
-          retention-days: 1
 
       - name: Remove temporary cache archives
         env:

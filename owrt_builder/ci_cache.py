@@ -538,6 +538,7 @@ class Cache:
         set_output("key", "")
         if not trusted() or not self.archive(family).is_file():
             return
+        replacing = False
         try:
             plan = self.plan
             version = Version(**plan["version"])
@@ -560,38 +561,55 @@ class Cache:
             if same_version and feed_pins(version.upstream) != plan["pins"]:
                 log(f"CACHE_PUBLISH family={family} decision=SKIP_STALE_PUBLISH reason=moved_feeds")
                 return
-            key = f"{self.prefix(family, plan)}{version.builder}-{version.upstream}-{plan['identities'][family]}"
+            prefix = self.prefix(family, plan)
+            key = f"{prefix}{version.builder}-{version.upstream}-{plan['identities'][family]}"
             if any(item.key == key for item in latest):
                 log(f"CACHE_PUBLISH family={family} decision=skip reason=immutable_key_exists key={key}")
                 return
             needed = self.archive(family).stat().st_size + UPLOAD_OVERHEAD
-            removed = self.prune_before_upload(head)
             limit = budget()
+            self.prune_before_upload(head)
+            rows = inventory(all_refs=True)
+            entries = self.prune_entries(prefix, rows)
+            if any(item.key == key for item, _ in entries) or has_newer([item for item, _ in entries], version):
+                log(f"CACHE_PUBLISH family={family} decision=skip reason=cache_changed_before_replacement")
+                return
+            replacement = Candidate(key, version, plan["identities"][family])
+            previous_ids = {row["id"] for item, row in entries if item.key in same_version}
+            obsolete = self.superseded(replacement, entries, previous_ids)
+            removing = {row["id"] for _, row in obsolete}
+            usage = sum(row["size_in_bytes"] for row in rows)
+            projected = usage - sum(row["size_in_bytes"] for _, row in obsolete)
+            if projected + needed > limit:
+                log(f"CACHE_PUBLISH family={family} decision=skip reason=repository_cache_budget "
+                    f"needed={needed} repository_usage={usage} after_replacement={projected} budget={limit}")
+                return
+
+            replacing = bool(obsolete)
+            self.remove_entries(family, replacement, obsolete)
             for retry in range(4):
                 if retry:
                     sleep(2)
-                usage = sum(row["size_in_bytes"] for row in inventory(all_refs=True))
-                if usage + needed <= limit or not removed:
+                if removing or retry:
+                    rows = inventory(all_refs=True)
+                remaining = any(row["id"] in removing for row in rows)
+                usage = sum(row["size_in_bytes"] for row in rows)
+                if not remaining and usage + needed <= limit:
                     break
-            if usage + needed > limit:
-                log(f"CACHE_PUBLISH family={family} decision=skip reason=repository_cache_budget "
-                    f"needed={needed} repository_usage={usage} budget={limit}")
-                return
-            # A new cache with the same Git commits may represent newer
-            # feeds. Only retire variants whose IDs existed before our upload.
-            previous_ids = [
-                row["id"] for row in inventory(self.prefix(family, plan))
-                if row["key"] in same_version
-            ] if same_version else []
-            save(self.transfer / f"pending-{family}.json", {"key": key, "same_version_ids": previous_ids})
+            else:
+                raise ValueError(f"replacement_space_not_confirmed needed={needed} repository_usage={usage} "
+                                 f"budget={limit} old_entries_present={remaining}")
             log(f"CACHE_PUBLISH family={family} decision=PUBLISH_IMMUTABLE key={key}")
             set_output("key", key)
         except ERRORS as exc:
+            if replacing:
+                raise
             log(f"CACHE_PUBLISH family={family} decision=skip reason={exc}")
 
-    def audit(self, family: str, key: str) -> None:
+    def audit(self, family: str, key: str) -> bool:
+        set_output("confirmed", "false")
         if not key:
-            return
+            return False
         try:
             row = None
             for retry in range(4):
@@ -606,24 +624,11 @@ class Cache:
             else:
                 log(f"CACHE_PUBLISH family={family} decision=confirmed key={key} "
                     f"bytes={row['size_in_bytes']} ref={row['ref']}")
-                pending = load(self.transfer / f"pending-{family}.json")
-                if pending["key"] != key:
-                    raise ValueError("published cache does not match the pending upload")
-                record = {
-                    **pending, "id": row["id"], "family": family, "device": self.plan["device"],
-                    "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-                }
-                save(self.transfer / "published" / f"{family}.json", record)
-                if trusted():
-                    try:
-                        self.prune_publication(record, run=record["run"], attempt=record["attempt"],
-                                               builder=os.environ["GITHUB_SHA"])
-                    except ERRORS as exc:
-                        log(f"CACHE_PRUNE family={family} decision=deferred reason={exc}")
+                set_output("confirmed", "true")
+                return True
         except ERRORS as exc:
             log(f"CACHE_PUBLISH family={family} decision=unconfirmed reason={exc}")
-        finally:
-            self.archive(family).unlink(missing_ok=True)
+        return False
 
     def prune_before_upload(self, head: Version) -> int:
         """Reclaim strict predecessors with a unique, existing replacement."""
@@ -643,7 +648,9 @@ class Cache:
                     continue
                 keepers = maximal(candidates, head)
                 if len(keepers) == 1 and not has_newer(candidates, keepers[0].version):
-                    removed += self.remove_superseded(family, keepers[0], entries)
+                    keeper = keepers[0]
+                    obsolete = self.superseded(keeper, entries, set())
+                    removed += self.remove_entries(family, keeper, obsolete)
         return removed
 
     @staticmethod
@@ -655,25 +662,28 @@ class Cache:
         ]
 
     @staticmethod
-    def remove_superseded(
-        family: str, keeper: Candidate, entries: list[tuple[Candidate, dict]],
-        previous_ids: set[int] | None = None,
+    def superseded(
+        keeper: Candidate, entries: list[tuple[Candidate, dict]], previous_ids: set[int],
+    ) -> list[tuple[Candidate, dict]]:
+        return [
+            (item, row) for item, row in entries
+            if item != keeper and (row["id"] in previous_ids if item.version == keeper.version
+                                   else item.version.precedes(keeper.version))
+        ]
+
+    @staticmethod
+    def remove_entries(
+        family: str, keeper: Candidate, obsolete: list[tuple[Candidate, dict]],
     ) -> int:
         removed = 0
-        for item, row in entries:
-            if item == keeper:
-                continue
-            replaced = (row["id"] in (previous_ids or ()) if item.version == keeper.version
-                        else item.version.precedes(keeper.version))
-            if not replaced:
-                continue
+        for item, row in obsolete:
             try:
                 github(REPOSITORY, f"actions/caches/{row['id']}", method="DELETE")
             except HTTPError as exc:
                 if exc.code != 404:
                     raise
             removed += 1
-            log(f"CACHE_PRUNE family={family} decision=removed id={row['id']} key={item.key} kept={keeper.key}")
+            log(f"CACHE_PRUNE family={family} decision=removed id={row['id']} key={item.key} replacement={keeper.key}")
         return removed
 
     def prune_publication(self, record: dict, *, run: str, attempt: str, builder: str) -> None:
@@ -710,9 +720,10 @@ class Cache:
         if has_newer([item for item, _ in entries], keeper.version):
             log(f"CACHE_PRUNE family={family} decision=skip reason=newer_layer_exists")
             return
-        self.remove_superseded(family, keeper, entries, previous_ids)
+        self.remove_entries(family, keeper, self.superseded(keeper, entries, previous_ids))
 
     def prune(self, records: Path) -> None:
+        # Older matrix runs still call this command from their pinned workflow.
         event = os.environ.get("GITHUB_EVENT_NAME")
         in_daily_matrix = (
             event in {"schedule", "workflow_dispatch"}
@@ -946,6 +957,7 @@ def verify_warm(cache: Cache) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", default=os.environ.get("OWRT_WORKSPACE", ".owrt"), type=Path)
+    parser.add_argument("--require-confirmed", action="store_true", help="Fail if audit cannot confirm the upload")
     parser.add_argument("phase", choices=(
         "plan", "prepare", "compiler-keys", "restore-compilers", "stage", "publish", "audit", "verify-warm", "prune"))
     parser.add_argument("value", nargs="?", default="")
@@ -965,7 +977,8 @@ def main() -> None:
     elif args.phase == "publish":
         cache.publish(args.value)
     elif args.phase == "audit":
-        cache.audit(args.value, args.option)
+        if not cache.audit(args.value, args.option) and args.require_confirmed:
+            raise SystemExit("GitHub did not confirm the cache upload after retry")
     elif args.phase == "verify-warm":
         verify_warm(cache)
     elif args.phase == "prune":

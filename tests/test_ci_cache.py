@@ -329,7 +329,8 @@ def test_stale_publish_checks_both_authoritative_heads_and_newer_cache(tmp_path:
 
     monkeypatch.setattr(scope, "candidates", lambda *_: [])
     monkeypatch.setattr(ci, "inventory", lambda *_, **kwargs: (
-        [{"size_in_bytes": ci.budget()}] if kwargs.get("all_refs") else []
+        [{"size_in_bytes": ci.budget(), "ref": "refs/heads/another-branch", "id": 9}]
+        if kwargs.get("all_refs") else []
     ))
     scope.publish("host")
     assert "repository_cache_budget" in capsys.readouterr().out
@@ -360,7 +361,10 @@ def test_warm_verification_requires_unchanged_actual_compiler_stamps(tmp_path: P
         ci.verify_warm(cache)
 
 
-def test_publish_reclaims_confirmed_predecessor_before_counting_space(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("budget_mib,can_replace", [(8, True), (7, False)])
+def test_publish_removes_old_cache_before_upload_when_replacement_fits(
+    tmp_path, monkeypatch, capsys, budget_mib, can_replace,
+):
     cache = ci.Cache(tmp_path)
     old = Version("a" * 40, "b" * 40)
     new = Version("c" * 40, "b" * 40)
@@ -376,8 +380,9 @@ def test_publish_reclaims_confirmed_predecessor_before_counting_space(tmp_path, 
         row(1, source, old), row(2, source, new), row(3, source, old, ref=foreign_ref),
         row(4, cache.prefix("toolchain", {"device": "vplus"}), old),
         row(5, source, new, identity="b", size=0),
+        row(6, toolchain, old),
     ]
-    monkeypatch.setenv("OWRT_CACHE_BUDGET_MIB", "8")
+    monkeypatch.setenv("OWRT_CACHE_BUDGET_MIB", str(budget_mib))
     monkeypatch.setenv("GITHUB_SHA", new.builder)
     monkeypatch.setattr(ci, "trusted", lambda: True)
     monkeypatch.setattr(ci, "git_head", lambda url, _: new.upstream if UPSTREAM in url else new.builder)
@@ -389,8 +394,9 @@ def test_publish_reclaims_confirmed_predecessor_before_counting_space(tmp_path, 
 
     def delete(repo, path, *, method):
         assert (repo, method) == (REPOSITORY, "DELETE")
-        assert path == "actions/caches/1"
-        rows.pop(0)
+        cache_id = int(path.rsplit("/", 1)[1])
+        assert cache_id in {1, 6}
+        rows[:] = [entry for entry in rows if entry["id"] != cache_id]
 
     monkeypatch.setattr(ci, "github", delete)
     ci.save(cache.plan_path, {"version": asdict(new), "device": "s905d",
@@ -399,9 +405,17 @@ def test_publish_reclaims_confirmed_predecessor_before_counting_space(tmp_path, 
     cache.archive("toolchain").write_bytes(bytes(ci.MIB))
     cache.publish("toolchain")
     log = capsys.readouterr().out
-    assert log.index("decision=removed id=1") < log.index("decision=PUBLISH_IMMUTABLE")
-    assert f"key={toolchain}{new.builder}-{new.upstream}" in log
-    assert {entry["id"] for entry in rows} == {2, 3, 4, 5}
+    assert "decision=removed id=1" in log
+    ids = {entry["id"] for entry in rows}
+    if can_replace:
+        assert log.index("decision=removed id=1") < log.index("decision=removed id=6")
+        assert log.index("decision=removed id=6") < log.index("decision=PUBLISH_IMMUTABLE")
+        assert f"key={toolchain}{new.builder}-{new.upstream}" in log
+        assert ids == {2, 3, 4, 5}
+    else:
+        assert "reason=repository_cache_budget" in log
+        assert "decision=PUBLISH_IMMUTABLE" not in log
+        assert ids == {2, 3, 4, 5, 6}
 
 
 def test_generated_base_feed_alias_is_not_a_remote_pin(tmp_path: Path):
@@ -472,21 +486,11 @@ def test_prune_does_not_accept_publication_from_another_attempt(tmp_path: Path):
                                 run="80", attempt="2", builder="b" * 40)
 
 
-def test_audit_creates_a_prune_record_only_for_confirmed_upload(tmp_path: Path, monkeypatch):
+def test_audit_only_confirms_nonempty_upload(tmp_path: Path, monkeypatch):
     cache = ci.Cache(tmp_path)
     key = "compiler-cache-key"
-    ci.save(cache.plan_path, {"device": "netcore_n60-pro"})
-    ci.save(cache.transfer / "pending-host.json", {"key": key, "same_version_ids": [7]})
-    monkeypatch.setenv("GITHUB_RUN_ID", "80")
-    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
     monkeypatch.setattr(ci, "sleep", lambda _: None)
-    monkeypatch.setattr(ci, "inventory", lambda _: [])
-    cache.audit("host", key)
-    published = cache.transfer / "published" / "host.json"
-    assert not published.exists()
+    monkeypatch.setattr(ci, "inventory", lambda _: [{"id": 9, "key": key, "ref": ci.REF, "size_in_bytes": 0}])
+    assert not cache.audit("host", key)
     monkeypatch.setattr(ci, "inventory", lambda _: [{"id": 9, "key": key, "ref": ci.REF, "size_in_bytes": 100}])
-    cache.audit("host", key)
-    assert ci.load(published) == {
-        "family": "host", "id": 9, "key": key, "same_version_ids": [7],
-        "device": "netcore_n60-pro", "run": "80", "attempt": "2",
-    }
+    assert cache.audit("host", key)

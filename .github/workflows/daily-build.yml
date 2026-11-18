@@ -25,12 +25,3 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       device: ${{ matrix.device }}
-
-  prune-caches:
-    name: Prune replaced caches
-    needs: firmware
-    if: ${{ needs.firmware.result == 'success' }}
-    permissions:
-      contents: read
-      actions: write
-    uses: ./.github/workflows/owrt-cache-cleanup.yml

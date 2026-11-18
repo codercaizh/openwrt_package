@@ -16,14 +16,32 @@ runs:
 
     - uses: actions/cache/save@v4
       if: steps.compare.outputs.key != ''
+      continue-on-error: true
       with:
         path: .owrt/cache/transfer/${{ inputs.family }}.tar.zst
         key: ${{ steps.compare.outputs.key }}
 
-    - name: Confirm upload and prune the caches it replaces
-      if: always() && steps.compare.outputs.key != ''
+    - name: Confirm upload
+      id: verify
+      if: steps.compare.outputs.key != ''
       shell: bash
       env:
         OWRT_CACHE_FAMILY: ${{ inputs.family }}
         OWRT_CACHE_KEY: ${{ steps.compare.outputs.key }}
       run: python -m owrt_builder.ci_cache audit "$OWRT_CACHE_FAMILY" "$OWRT_CACHE_KEY"
+
+    - name: Retry unconfirmed cache upload
+      if: steps.compare.outputs.key != '' && steps.verify.outputs.confirmed != 'true'
+      uses: actions/cache/save@v4
+      continue-on-error: true
+      with:
+        path: .owrt/cache/transfer/${{ inputs.family }}.tar.zst
+        key: ${{ steps.compare.outputs.key }}
+
+    - name: Verify retry succeeded
+      if: steps.compare.outputs.key != '' && steps.verify.outputs.confirmed != 'true'
+      shell: bash
+      env:
+        OWRT_CACHE_FAMILY: ${{ inputs.family }}
+        OWRT_CACHE_KEY: ${{ steps.compare.outputs.key }}
+      run: python -m owrt_builder.ci_cache audit "$OWRT_CACHE_FAMILY" "$OWRT_CACHE_KEY" --require-confirmed
