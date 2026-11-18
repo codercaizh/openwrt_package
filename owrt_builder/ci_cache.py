@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from time import sleep
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -34,6 +35,7 @@ SCHEMA = 3
 SLOT = "ci-device"
 LAYERS = ("source", "host", "toolchain", "dl")
 MIB = 1024**2
+UPLOAD_OVERHEAD = MIB
 # The N60 Pro download tree was 3.80 GB before compression.
 LAYER_LIMIT = {"source": 500, "host": 1900, "toolchain": 1600, "dl": 3900}
 UNCACHEABLE_SOURCE = {"dl", "build_dir", "staging_dir", "bin", "tmp", "logs", "artifacts"}
@@ -482,12 +484,8 @@ class Cache:
             log(f"CACHE_PUBLISH family={family} decision=skip reason=n60pro_is_shared_layer_writer")
             return
         try:
-            usage = github(REPOSITORY, "actions/cache/usage")["active_caches_size_in_bytes"]
             free = shutil.disk_usage(self.workspace).free
-            available = min(budget() - usage, free // 2)
-            if available <= 0:
-                raise ValueError(f"repository_usage={usage} disk_free={free} budget={budget()}")
-            limit = min(LAYER_LIMIT[family] * MIB, available)
+            limit = min(LAYER_LIMIT[family] * MIB, free // 2)
             excluded = []
             if family == "source":
                 root = self.sources / plan["source_id"] / "snapshots" / plan["snapshot"]
@@ -529,7 +527,7 @@ class Cache:
                                   compiler=family in {"host", "toolchain"})
             size = archive.stat().st_size
             if size > limit:
-                raise ValueError(f"compressed_size={size} publish_limit={limit} repository_usage={usage} disk_free={free}")
+                raise ValueError(f"compressed_size={size} stage_limit={limit} disk_free={free}")
             log(f"CACHE_SIZE family={family} compressed_bytes={size}")
         except ERRORS as exc:
             archive.unlink(missing_ok=True)
@@ -543,6 +541,8 @@ class Cache:
         try:
             plan = self.plan
             version = Version(**plan["version"])
+            if version.builder != os.environ["GITHUB_SHA"]:
+                raise ValueError("staged cache belongs to a different builder revision")
             latest = self.candidates(family, plan)
             head = Version(
                 git_head(f"https://github.com/{REPOSITORY}.git", REF),
@@ -564,9 +564,18 @@ class Cache:
             if any(item.key == key for item in latest):
                 log(f"CACHE_PUBLISH family={family} decision=skip reason=immutable_key_exists key={key}")
                 return
-            usage = github(REPOSITORY, "actions/cache/usage")["active_caches_size_in_bytes"]
-            if usage + self.archive(family).stat().st_size > budget():
-                log(f"CACHE_PUBLISH family={family} decision=skip reason=repository_cache_budget")
+            needed = self.archive(family).stat().st_size + UPLOAD_OVERHEAD
+            removed = self.prune_before_upload(head)
+            limit = budget()
+            for retry in range(4):
+                if retry:
+                    sleep(2)
+                usage = sum(row["size_in_bytes"] for row in inventory(all_refs=True))
+                if usage + needed <= limit or not removed:
+                    break
+            if usage + needed > limit:
+                log(f"CACHE_PUBLISH family={family} decision=skip reason=repository_cache_budget "
+                    f"needed={needed} repository_usage={usage} budget={limit}")
                 return
             # A new cache with the same Git commits may represent newer
             # feeds. Only retire variants whose IDs existed before our upload.
@@ -584,23 +593,88 @@ class Cache:
         if not key:
             return
         try:
-            row = next((item for item in inventory(key) if item["key"] == key), None)
+            row = None
+            for retry in range(4):
+                if retry:
+                    sleep(2)
+                row = next((item for item in inventory(key)
+                            if item["key"] == key and item["size_in_bytes"] > 0), None)
+                if row is not None:
+                    break
             if row is None:
                 log(f"CACHE_PUBLISH family={family} decision=unconfirmed key={key}")
             else:
                 log(f"CACHE_PUBLISH family={family} decision=confirmed key={key} "
                     f"bytes={row['size_in_bytes']} ref={row['ref']}")
                 pending = load(self.transfer / f"pending-{family}.json")
-                if pending["key"] != key or row["size_in_bytes"] <= 0:
+                if pending["key"] != key:
                     raise ValueError("published cache does not match the pending upload")
-                save(self.transfer / "published" / f"{family}.json", {
+                record = {
                     **pending, "id": row["id"], "family": family, "device": self.plan["device"],
                     "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-                })
+                }
+                save(self.transfer / "published" / f"{family}.json", record)
+                if trusted():
+                    try:
+                        self.prune_publication(record, run=record["run"], attempt=record["attempt"],
+                                               builder=os.environ["GITHUB_SHA"])
+                    except ERRORS as exc:
+                        log(f"CACHE_PRUNE family={family} decision=deferred reason={exc}")
         except ERRORS as exc:
             log(f"CACHE_PUBLISH family={family} decision=unconfirmed reason={exc}")
         finally:
             self.archive(family).unlink(missing_ok=True)
+
+    def prune_before_upload(self, head: Version) -> int:
+        """Reclaim strict predecessors with a unique, existing replacement."""
+        catalog = load_catalog()
+        scopes = {"host": {self.prefix("host", {})}, "dl": {self.prefix("dl", {})}}
+        scopes["source"] = {self.prefix("source", {"source_id": spec.source_id})
+                            for spec in catalog.devices.values()}
+        scopes["toolchain"] = {self.prefix("toolchain", {"device": device})
+                               for device in catalog.devices}
+        rows = inventory()
+        removed = 0
+        for family, prefixes in scopes.items():
+            for prefix in sorted(prefixes):
+                entries = self.prune_entries(prefix, rows)
+                candidates = list(dict.fromkeys(item for item, _ in entries))
+                if len({item.version for item in candidates}) < 2:
+                    continue
+                keepers = maximal(candidates, head)
+                if len(keepers) == 1 and not has_newer(candidates, keepers[0].version):
+                    removed += self.remove_superseded(family, keepers[0], entries)
+        return removed
+
+    @staticmethod
+    def prune_entries(prefix: str, rows: list[dict]) -> list[tuple[Candidate, dict]]:
+        return [
+            (item, row) for row in rows
+            if row["ref"] == REF and row["size_in_bytes"] > 0
+            and (item := Candidate.read(prefix, row["key"])) is not None
+        ]
+
+    @staticmethod
+    def remove_superseded(
+        family: str, keeper: Candidate, entries: list[tuple[Candidate, dict]],
+        previous_ids: set[int] | None = None,
+    ) -> int:
+        removed = 0
+        for item, row in entries:
+            if item == keeper:
+                continue
+            replaced = (row["id"] in (previous_ids or ()) if item.version == keeper.version
+                        else item.version.precedes(keeper.version))
+            if not replaced:
+                continue
+            try:
+                github(REPOSITORY, f"actions/caches/{row['id']}", method="DELETE")
+            except HTTPError as exc:
+                if exc.code != 404:
+                    raise
+            removed += 1
+            log(f"CACHE_PRUNE family={family} decision=removed id={row['id']} key={item.key} kept={keeper.key}")
+        return removed
 
     def prune_publication(self, record: dict, *, run: str, attempt: str, builder: str) -> None:
         family = record["family"]
@@ -629,30 +703,14 @@ class Cache:
             log(f"CACHE_PRUNE family={family} decision=skip reason=unreachable_publication")
             return
 
-        entries = [
-            (item, row) for row in inventory(prefix)
-            if row["ref"] == REF and (item := Candidate.read(prefix, row["key"])) is not None
-        ]
-        if not any(item == keeper and row["id"] == record["id"] and row["size_in_bytes"] > 0
-                   for item, row in entries):
+        entries = self.prune_entries(prefix, inventory(prefix))
+        if not any(item == keeper and row["id"] == record["id"] for item, row in entries):
             log(f"CACHE_PRUNE family={family} decision=skip reason=unconfirmed_replacement")
             return
         if has_newer([item for item, _ in entries], keeper.version):
             log(f"CACHE_PRUNE family={family} decision=skip reason=newer_layer_exists")
             return
-        for item, row in entries:
-            if item == keeper:
-                continue
-            replaced = (row["id"] in previous_ids if item.version == keeper.version
-                        else item.version.precedes(keeper.version))
-            if not replaced:
-                continue
-            try:
-                github(REPOSITORY, f"actions/caches/{row['id']}", method="DELETE")
-            except HTTPError as exc:
-                if exc.code != 404:
-                    raise
-            log(f"CACHE_PRUNE family={family} decision=removed id={row['id']} key={item.key} kept={keeper.key}")
+        self.remove_superseded(family, keeper, entries, previous_ids)
 
     def prune(self, records: Path) -> None:
         event = os.environ.get("GITHUB_EVENT_NAME")
@@ -681,8 +739,7 @@ def trusted() -> bool:
 
 
 def budget() -> int:
-    # Reserve headroom for two writers and the small Actions outer archive.
-    return int((os.environ.get("OWRT_CACHE_BUDGET_MIB") or "8704")) * MIB
+    return int((os.environ.get("OWRT_CACHE_BUDGET_MIB") or "9984")) * MIB
 
 
 def source_names(source: Path) -> list[str]:

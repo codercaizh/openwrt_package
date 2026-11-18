@@ -30,14 +30,16 @@ def github(repo: str, resource: str, *, method: str = "GET"):
         return None if response.status == 204 else json.load(response)
 
 
-def inventory(prefix: str | None = None) -> list[dict]:
+def inventory(prefix: str | None = None, *, all_refs: bool = False) -> list[dict]:
     result: list[dict] = []
     for page in range(1, 21):
-        parameters = {"ref": REF, "per_page": 100, "page": page}
+        parameters = {"per_page": 100, "page": page}
+        if not all_refs:
+            parameters["ref"] = REF
         if prefix is not None:
             parameters["key"] = prefix
         batch = github(REPOSITORY, "actions/caches?" + urlencode(parameters))["actions_caches"]
-        result.extend(row for row in batch if row["ref"] == REF)
+        result.extend(row for row in batch if all_refs or row["ref"] == REF)
         if len(batch) < 100:
             return result
     raise ValueError("cache inventory exceeded pagination limit")

@@ -9,6 +9,7 @@ on:
       - "owrt_builder/**"
       - "tests/**"
       - ".github/workflows/build.yml"
+      - ".github/workflows/owrt-firmware.yml"
       - ".github/workflows/config-review-build.yml"
   pull_request:
     branches:
@@ -19,6 +20,7 @@ on:
       - "owrt_builder/**"
       - "tests/**"
       - ".github/workflows/build.yml"
+      - ".github/workflows/owrt-firmware.yml"
       - ".github/workflows/config-review-build.yml"
 
 concurrency:
@@ -51,13 +53,16 @@ jobs:
       fail-fast: false
       matrix:
         device: [360t7, n60pro, s905d, vplus, r3g, k2p, k2p-ap]
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/owrt-firmware.yml
     with:
       device: ${{ matrix.device }}
 
   cache-cold:
     if: github.event_name == 'push' && github.ref == 'refs/heads/immortalwrt-master' && contains(github.event.head_commit.message, '[verify n60pro cache]')
     needs: unit-tests
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/build.yml
     with:
       device: n60pro
@@ -66,6 +71,9 @@ jobs:
   cache-warm:
     if: needs.cache-cold.outputs.upstream != '' && needs.cache-cold.outputs.feed_pins != ''
     needs: cache-cold
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/build.yml
     with:
       device: n60pro

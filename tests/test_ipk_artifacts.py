@@ -128,13 +128,13 @@ def test_web_registers_package_archives_as_downloadable_artifacts(tmp_path: Path
 
 
 def test_github_actions_uploads_apk_ipk_archive_separately() -> None:
-    workflow = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "build.yml"
+    workflow = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "owrt-firmware.yml"
     text = workflow.read_text(encoding="utf-8")
     firmware_step = text[text.index("- name: Upload firmware") : text.index("- name: Upload APK/IPK package archive")]
     package_step = text[text.index("- name: Upload APK/IPK package archive") : text.index("- name: Upload build evidence")]
 
     assert "name: Upload APK/IPK package archive" in text
-    assert "name: openwrt-packages-${{ inputs.device || github.event.inputs.device }}-${{ github.run_id }}" in text
+    assert "name: openwrt-packages-${{ inputs.device }}-${{ github.run_id }}" in text
     assert "!.owrt/artifacts/**/packages.tar.gz" in firmware_step
     assert "!.owrt/artifacts/**/ipk-packages.tar.gz" in firmware_step
     assert "path: |\n            .owrt/artifacts/**/packages.tar.gz" in package_step

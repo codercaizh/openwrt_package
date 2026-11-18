@@ -32,7 +32,8 @@ def test_daily_build_matrix_covers_all_supported_devices() -> None:
 
 
 def test_build_workflow_shares_host_tools_and_keeps_target_toolchains_device_scoped() -> None:
-    workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/owrt-firmware.yml").read_text(encoding="utf-8")
+    publisher = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     assert "refs/heads/immortalwrt-master" in workflow
     assert "github.repository == 'codercaizh/openwrt_package'" in workflow
     assert "restore-keys:" not in workflow
@@ -41,7 +42,10 @@ def test_build_workflow_shares_host_tools_and_keeps_target_toolchains_device_sco
     assert "actions: write" not in workflow and "contents: write" not in workflow
     for layer in ("source", "host", "toolchain", "dl"):
         assert f".owrt/cache/transfer/{layer}.tar.zst" in workflow
-        assert f"family: {layer}" in workflow
+        assert f"family: {layer}" in publisher
+    assert "needs: build" in publisher
+    assert "group: owrt-master-cache-writes" in publisher and "queue: max" in publisher
+    assert "actions: write" in publisher and "contents: write" not in publisher
     validation = (ROOT / ".github/workflows/config-review-build.yml").read_text()
     assert "needs: cache-cold" in validation
     assert validation.count("device: n60pro") == 2

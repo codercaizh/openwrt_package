@@ -1,0 +1,200 @@
+name: Compile OpenWrt firmware
+
+on:
+  workflow_call:
+    inputs:
+      device:
+        description: Supported device key or alias
+        required: true
+        type: string
+      upstream:
+        description: Upstream commit from the first validation runner
+        type: string
+      feed_pins:
+        description: Feed commits from the first validation runner
+        type: string
+      validation:
+        description: Artifact suffix for the two-run cache validation
+        type: string
+    outputs:
+      staged_cache:
+        value: ${{ jobs.build.outputs.staged_cache }}
+      upstream:
+        value: ${{ jobs.build.outputs.upstream }}
+      feed_pins:
+        value: ${{ jobs.build.outputs.feed_pins }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: build-${{ inputs.device }}${{ inputs.validation }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    outputs:
+      staged_cache: ${{ steps.cache-bundle.outputs.artifact-id }}
+      upstream: ${{ steps.plan.outputs.upstream }}
+      feed_pins: ${{ steps.plan.outputs.feed_pins }}
+    env:
+      OWRT_DEVICE: ${{ inputs.device }}
+      OWRT_ACTIVE_CACHE: ${{ github.repository == 'codercaizh/openwrt_package' && github.ref == 'refs/heads/immortalwrt-master' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push') && vars.OWRT_DISABLE_V3_CACHE != '1' }}
+    steps:
+      - name: Check out builder
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        if: env.OWRT_ACTIVE_CACHE == 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Pin source and select source and download candidates
+        id: plan
+        if: env.OWRT_ACTIVE_CACHE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED_UPSTREAM: ${{ inputs.upstream }}
+          PINNED_FEEDS: ${{ inputs.feed_pins }}
+        run: python -m owrt_builder.ci_cache plan "$OWRT_DEVICE" "$PINNED_UPSTREAM"
+
+      - name: Restore source workspace
+        if: steps.plan.outputs.source != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/transfer/source.tar.zst
+          key: ${{ steps.plan.outputs.source }}
+
+      - name: Restore shared downloads
+        id: downloads
+        if: steps.plan.outputs.dl != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/transfer/dl.tar.zst
+          key: ${{ steps.plan.outputs.dl }}
+
+      - name: Migrate the verified LLVM source download
+        if: env.OWRT_ACTIVE_CACHE == 'true' && steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/dl/llvm-project-22.1.3.src.tar.xz
+          key: owrt-llvm-source-v1-Linux-22.1.3
+
+      - name: Build worker and prepare pinned source
+        if: env.OWRT_ACTIVE_CACHE == 'true'
+        run: |
+          docker build --file docker/Dockerfile --tag owrt-builder:ci .
+          bash scripts/ci-worker.sh owrt_builder.ci_cache prepare
+
+      - name: Select compatible compiler cache candidates
+        id: compiler
+        if: env.OWRT_ACTIVE_CACHE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m owrt_builder.ci_cache compiler-keys
+
+      - name: Restore shared Host tools
+        if: steps.compiler.outputs.host != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/transfer/host.tar.zst
+          key: ${{ steps.compiler.outputs.host }}
+
+      - name: Restore device toolchain and host packages
+        if: steps.compiler.outputs.toolchain != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .owrt/cache/transfer/toolchain.tar.zst
+          key: ${{ steps.compiler.outputs.toolchain }}
+
+      - name: Build firmware
+        run: |
+          set -o pipefail
+          if [[ "$OWRT_ACTIVE_CACHE" == true ]]; then
+            bash scripts/ci-worker.sh owrt_builder.ci_cache restore-compilers
+            bash scripts/ci-worker.sh owrt_builder.cli build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+          else
+            ./owrt build "$OWRT_DEVICE" 2>&1 | tee "owrt-${OWRT_DEVICE}.log"
+          fi
+
+      - name: Return ARM artifacts and cache manifests to the runner
+        if: always() && env.OWRT_ACTIVE_CACHE == 'true' && (env.OWRT_DEVICE == 's905d' || env.OWRT_DEVICE == 'vplus')
+        run: sudo chown -R "$(id -u):$(id -g)" .owrt
+
+      - name: Upload firmware
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-${{ inputs.device }}-${{ github.run_id }}${{ inputs.validation }}
+          # BuildEngine stores artifacts under the canonical device key, so
+          # aliases such as n60pro must not narrow this glob.
+          # Keep the per-build APK/IPK archive in its own downloadable artifact.
+          # Exclude the old basename too if a reused workspace contains a
+          # legacy archive from a build before the neutral naming change.
+          path: |
+            .owrt/artifacts/**/*
+            !.owrt/artifacts/**/packages.tar.gz
+            !.owrt/artifacts/**/ipk-packages.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload APK/IPK package archive
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-packages-${{ inputs.device }}-${{ github.run_id }}${{ inputs.validation }}
+          # BuildEngine emits this stable basename inside the canonical
+          # device/task directory.  Upload it independently so users can
+          # download APK/IPK packages without the firmware bundle.
+          # A pre-existing task directory may still contain the legacy
+          # archive. Keep it downloadable without generating that name.
+          path: |
+            .owrt/artifacts/**/packages.tar.gz
+            .owrt/artifacts/**/ipk-packages.tar.gz
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Verify the second N60 Pro build reused its compiler state
+        if: inputs.validation == '-warm'
+        run: python -m owrt_builder.ci_cache verify-warm
+
+      - name: Stage eligible cache archives
+        id: cache-stage
+        if: success() && env.OWRT_ACTIVE_CACHE == 'true'
+        run: |
+          set -euo pipefail
+          for family in toolchain host dl source; do
+            python -m owrt_builder.ci_cache stage "$family"
+          done
+          if compgen -G '.owrt/cache/transfer/*.tar.zst' > /dev/null; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hand off cache archives to the publisher
+        id: cache-bundle
+        if: steps.cache-stage.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-cache-stage-${{ github.run_attempt }}-${{ inputs.device }}${{ inputs.validation }}
+          path: |
+            .owrt/cache/transfer/plan.json
+            .owrt/cache/transfer/*.tar.zst
+          if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-evidence-${{ inputs.device }}-${{ github.run_id }}${{ inputs.validation }}
+          path: |
+            .owrt/tasks/**/result.json
+            owrt-${{ inputs.device }}.log
+            .owrt/cache/transfer/compiled.json
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7

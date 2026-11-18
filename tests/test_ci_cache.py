@@ -317,6 +317,7 @@ def test_stale_publish_checks_both_authoritative_heads_and_newer_cache(tmp_path:
     ci.save(scope.plan_path, plan)
     scope.archive("host").write_bytes(b"data")
     monkeypatch.setattr(ci, "trusted", lambda: True)
+    monkeypatch.setenv("GITHUB_SHA", builder)
     monkeypatch.setattr(
         ci, "git_head",
         lambda url, _: latest.upstream if UPSTREAM in url else latest.builder,
@@ -327,11 +328,13 @@ def test_stale_publish_checks_both_authoritative_heads_and_newer_cache(tmp_path:
     assert "SKIP_STALE_PUBLISH" in capsys.readouterr().out
 
     monkeypatch.setattr(scope, "candidates", lambda *_: [])
-    monkeypatch.setattr(ci, "github", lambda *_: {"active_caches_size_in_bytes": ci.budget()})
+    monkeypatch.setattr(ci, "inventory", lambda *_, **kwargs: (
+        [{"size_in_bytes": ci.budget()}] if kwargs.get("all_refs") else []
+    ))
     scope.publish("host")
     assert "repository_cache_budget" in capsys.readouterr().out
 
-    monkeypatch.setattr(ci, "github", lambda *_: {"active_caches_size_in_bytes": 0})
+    monkeypatch.setattr(ci, "inventory", lambda *_, **__: [])
     scope.publish("host")
     assert f"PUBLISH_IMMUTABLE key={scope.prefix('host', plan)}{builder}-{upstream}" in capsys.readouterr().out
 
@@ -355,6 +358,51 @@ def test_warm_verification_requires_unchanged_actual_compiler_stamps(tmp_path: P
     ci.save(cache.transfer / "compiled.json", result)
     with pytest.raises(ValueError, match="preserve all four"):
         ci.verify_warm(cache)
+
+
+def test_publish_reclaims_confirmed_predecessor_before_counting_space(tmp_path, monkeypatch, capsys):
+    cache = ci.Cache(tmp_path)
+    old = Version("a" * 40, "b" * 40)
+    new = Version("c" * 40, "b" * 40)
+    source = cache.prefix("source", {"source_id": "armv8"})
+    foreign_ref = "refs/heads/immortalwrt-25.12.2"
+    toolchain = cache.prefix("toolchain", {"device": "s905d"})
+
+    def row(cache_id, prefix, version, *, ref=ci.REF, size=2 * ci.MIB, identity="a"):
+        return {"id": cache_id, "ref": ref, "size_in_bytes": size,
+                "key": f"{prefix}{version.builder}-{version.upstream}-{identity * 64}"}
+
+    rows = [
+        row(1, source, old), row(2, source, new), row(3, source, old, ref=foreign_ref),
+        row(4, cache.prefix("toolchain", {"device": "vplus"}), old),
+        row(5, source, new, identity="b", size=0),
+    ]
+    monkeypatch.setenv("OWRT_CACHE_BUDGET_MIB", "8")
+    monkeypatch.setenv("GITHUB_SHA", new.builder)
+    monkeypatch.setattr(ci, "trusted", lambda: True)
+    monkeypatch.setattr(ci, "git_head", lambda url, _: new.upstream if UPSTREAM in url else new.builder)
+    monkeypatch.setattr(Version, "precedes", lambda a, b, *_: a == b or (a, b) == (old, new))
+    monkeypatch.setattr(ci, "inventory", lambda prefix=None, *, all_refs=False: [
+        x for x in rows if (all_refs or x["ref"] == ci.REF)
+        and (prefix is None or x["key"].startswith(prefix))
+    ])
+
+    def delete(repo, path, *, method):
+        assert (repo, method) == (REPOSITORY, "DELETE")
+        assert path == "actions/caches/1"
+        rows.pop(0)
+
+    monkeypatch.setattr(ci, "github", delete)
+    ci.save(cache.plan_path, {"version": asdict(new), "device": "s905d",
+                              "identities": {"toolchain": "f" * 64},
+                              "upstream_url": "https://github.com/immortalwrt/immortalwrt.git"})
+    cache.archive("toolchain").write_bytes(bytes(ci.MIB))
+    cache.publish("toolchain")
+    log = capsys.readouterr().out
+    assert log.index("decision=removed id=1") < log.index("decision=PUBLISH_IMMUTABLE")
+    assert f"key={toolchain}{new.builder}-{new.upstream}" in log
+    assert {entry["id"] for entry in rows} == {2, 3, 4, 5}
+
 
 def test_generated_base_feed_alias_is_not_a_remote_pin(tmp_path: Path):
     source = tmp_path / "upstream"
@@ -431,6 +479,7 @@ def test_audit_creates_a_prune_record_only_for_confirmed_upload(tmp_path: Path, 
     ci.save(cache.transfer / "pending-host.json", {"key": key, "same_version_ids": [7]})
     monkeypatch.setenv("GITHUB_RUN_ID", "80")
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setattr(ci, "sleep", lambda _: None)
     monkeypatch.setattr(ci, "inventory", lambda _: [])
     cache.audit("host", key)
     published = cache.transfer / "published" / "host.json"

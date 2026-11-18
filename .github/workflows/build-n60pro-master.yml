@@ -8,6 +8,6 @@ permissions:
   actions: read
 jobs:
   firmware:
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/owrt-firmware.yml
     with:
       device: n60pro

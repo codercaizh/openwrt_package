@@ -7,14 +7,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Compare versions before upload
+    - name: Prune superseded caches and check capacity before upload
       id: compare
       shell: bash
       env:
         OWRT_CACHE_FAMILY: ${{ inputs.family }}
-      run: |
-        python -m owrt_builder.ci_cache stage "$OWRT_CACHE_FAMILY"
-        python -m owrt_builder.ci_cache publish "$OWRT_CACHE_FAMILY"
+      run: python -m owrt_builder.ci_cache publish "$OWRT_CACHE_FAMILY"
 
     - uses: actions/cache/save@v4
       if: steps.compare.outputs.key != ''
@@ -22,7 +20,7 @@ runs:
         path: .owrt/cache/transfer/${{ inputs.family }}.tar.zst
         key: ${{ steps.compare.outputs.key }}
 
-    - name: Check published cache
+    - name: Confirm upload and prune the caches it replaces
       if: always() && steps.compare.outputs.key != ''
       shell: bash
       env:

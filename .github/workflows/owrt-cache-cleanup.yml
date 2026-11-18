@@ -26,6 +26,9 @@ jobs:
       )
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    concurrency:
+      group: owrt-master-cache-writes
+      queue: max
     permissions:
       contents: read
       actions: write
